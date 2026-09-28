@@ -1,6 +1,9 @@
 import { setApiKey, setApiUrl } from '../api/config';
 import { ApiError, parseErrorBody, request, setFetcher, withRetry } from '../api/client';
 import { api } from '../api/endpoints';
+import { errorMessage, translate } from '../i18n';
+
+const translator = ((key: string, params?: Record<string, string | number>) => translate('en', key as never, params)) as Parameters<typeof errorMessage>[0];
 
 type Call = { url: string; init: RequestInit };
 
@@ -35,6 +38,15 @@ describe('request serialization', () => {
     expect(JSON.parse(String(calls[0].init.body))).toEqual({ spec: { garment: 'jersey' }, sizes: ['M'] });
   });
 
+  it('sends the same random install id on every request', async () => {
+    const calls = mockFetch([json(200, {})]);
+    await request('GET', '/api/v1/health');
+    await request('GET', '/api/v1/ai/allowance');
+    const ids = calls.map((c) => (c.init.headers as Record<string, string>)['X-Device-Id']);
+    expect(ids[0]).toMatch(/^uj-[0-9a-f]{32}$/);
+    expect(ids[1]).toBe(ids[0]);
+  });
+
   it('omits the key header when no key is stored', async () => {
     const calls = mockFetch([json(200, {})]);
     await request('GET', '/api/v1/health');
@@ -54,6 +66,15 @@ describe('request serialization', () => {
 });
 
 describe('error mapping', () => {
+  it('maps 429 to a quota error and keeps the remaining allowance', () => {
+    const e = parseErrorBody(429, { detail: { message: 'used up', code: 'ai_quota', ai: { remaining: 0, limit: 10 } } });
+    expect(e.kind).toBe('quota');
+    expect(e.retryable).toBe(false);
+    expect((e.data as { code: string; ai: { remaining: number } }).ai.remaining).toBe(0);
+    expect(errorMessage(translator, e)).toMatch(/free AI edits/);
+    expect(errorMessage(translator, parseErrorBody(429, { detail: { message: 'slow', code: 'ai_rate' } }))).toMatch(/in a minute/);
+  });
+
   it('maps pydantic field errors to a validation error with paths', () => {
     const e = parseErrorBody(422, { detail: [{ loc: ['body', 'items', 0, 'number'], msg: 'Value error, bad number' }] });
     expect(e.kind).toBe('validation');

@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
+import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
@@ -14,11 +15,13 @@ import { Platform } from 'react-native';
 
 const URL_KEY = 'urjersey.apiUrl';
 const API_KEY_KEY = 'urjersey.apiKey';
+const DEVICE_KEY = 'urjersey.deviceId';
 const API_PORT = 8000;
 
 let cachedUrl: string | null = null;
 let cachedKey: string | null | undefined;
 let memoryKey: string | null = null;
+let deviceId: Promise<string> | null = null;
 
 export function normalizeUrl(url: string): string {
   const trimmed = String(url ?? '').trim().replace(/\/+$/, '');
@@ -100,4 +103,23 @@ export async function setApiKey(key: string | null): Promise<void> {
     // Web has no secure keystore; keep the key for this session only.
     memoryKey = value;
   }
+}
+
+/**
+ * A random id for this install, sent as X-Device-Id so the server can count free
+ * AI edits per phone. It is not tied to the person or the hardware.
+ */
+export function getDeviceId(): Promise<string> {
+  deviceId ??= (async () => {
+    try {
+      const saved = await AsyncStorage.getItem(DEVICE_KEY);
+      if (saved && /^[A-Za-z0-9_-]{8,64}$/.test(saved)) return saved;
+    } catch {
+      /* storage unavailable: use a per-session id */
+    }
+    const id = `uj-${Crypto.randomUUID().replace(/-/g, '')}`;
+    AsyncStorage.setItem(DEVICE_KEY, id).catch(() => undefined);
+    return id;
+  })();
+  return deviceId;
 }

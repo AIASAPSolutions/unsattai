@@ -93,6 +93,17 @@ try {
     await id('refine-apply').click();
     await id('refine-result').waitFor({ timeout: 15000 });
     await shot('08-refine');
+    // Only when the API has AI edits on (AI_EDITS): the rules can't map this, so the model does.
+    if (process.env.E2E_AI === '1') {
+      await id('ai-left').waitFor({ timeout: 15000 });
+      const before = await id('ai-left').innerText();
+      await id('refine-input').fill('make it look more premium and classy');
+      await id('refine-apply').click();
+      await id('refine-result').filter({ hasText: /✨ AI ·/ }).waitFor({ timeout: 20000 });
+      const after = await id('ai-left').innerText();
+      if (before === after) throw new Error(`AI edit count did not change: ${after}`);
+      await shot('08b-refine-ai');
+    }
   });
 
   await step('checks', async () => {

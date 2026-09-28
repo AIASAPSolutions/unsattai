@@ -16,6 +16,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("DESIGN_PROVIDER", "rule")
     monkeypatch.delenv("FACTORY_URL", raising=False)
     monkeypatch.delenv("API_KEYS", raising=False)
+    monkeypatch.setenv("AI_EDITS", "off")
     for m in [m for m in sys.modules if m.startswith("app")]:
         del sys.modules[m]
     from fastapi.testclient import TestClient

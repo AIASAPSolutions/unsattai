@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { View } from 'react-native';
+import { ApiError } from '../../../api/client';
 import { api } from '../../../api/endpoints';
-import type { RefineChange } from '../../../api/types';
+import type { AiAllowance, RefineChange } from '../../../api/types';
 import { VoiceInput } from '../../../components/VoiceInput';
 import { errorMessage, useT } from '../../../i18n';
 import { usePrefs } from '../../../state/prefs';
@@ -24,6 +25,16 @@ export function RefineTab({ edit }: StudioTools) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ tone: 'pass' | 'info' | 'fail'; text: string; changes: RefineChange[] } | null>(null);
   const [base, setBase] = useState('');
+  const [ai, setAi] = useState<AiAllowance | null>(null);
+
+  // How many AI edits are left today. Older servers without AI edits just show nothing.
+  useEffect(() => {
+    let live = true;
+    api.aiAllowance().then((a) => live && setAi(a)).catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
 
   const apply = async () => {
     const spec = latestSpec();
@@ -33,9 +44,11 @@ export function RefineTab({ edit }: StudioTools) {
     setResult(null);
     try {
       const res = await api.refine(spec, instruction, lang);
+      if (res.ai) setAi(res.ai);
       if (res.changes.length) {
         edit(res.spec);
-        const msg = t('refineDone', { summary: res.changes.map((c) => c.message).join('; ') });
+        const summary = res.source === 'ai' && res.message ? res.message : res.changes.map((c) => c.message).join('; ');
+        const msg = `${res.source === 'ai' ? `✨ ${t('refineByAi')} · ` : ''}${t('refineDone', { summary })}`;
         setResult({ tone: 'pass', text: msg, changes: res.changes });
         speak(msg);
         setText('');
@@ -45,7 +58,11 @@ export function RefineTab({ edit }: StudioTools) {
         speak(msg);
       }
     } catch (e) {
-      setResult({ tone: 'fail', text: errorMessage(t, e), changes: [] });
+      const allowance = e instanceof ApiError && e.kind === 'quota' ? (e.data as { ai?: AiAllowance } | null)?.ai : null;
+      if (allowance) setAi(allowance);
+      const msg = errorMessage(t, e);
+      setResult({ tone: e instanceof ApiError && e.kind === 'quota' ? 'info' : 'fail', text: msg, changes: [] });
+      speak(msg);
     } finally {
       setBusy(false);
     }
@@ -64,6 +81,14 @@ export function RefineTab({ edit }: StudioTools) {
           <Button testID="refine-apply" compact label={t('refineCta')} onPress={apply} busy={busy} disabled={!text.trim() || busy} />
         </View>
         <T variant="caption" style={{ marginTop: space(3) }}>{t('refineExamples')}</T>
+        {ai?.enabled ? (
+          <>
+            <T variant="caption" style={{ marginTop: space(2) }}>{t('aiHint')}</T>
+            <T variant="label" style={{ marginTop: space(1) }} testID="ai-left">
+              ✨ {t('aiLeft', { n: ai.remaining, limit: ai.limit })}
+            </T>
+          </>
+        ) : null}
       </Card>
       {result ? (
         <Banner tone={result.tone} text={result.text} testID="refine-result">

@@ -48,6 +48,10 @@ export function errorMessage(t: T, e: unknown): string {
       case 'not_found': return t('errNotFound');
       case 'conflict': return t('errConflict', { detail: e.message });
       case 'too_large': return t('errTooLarge');
+      case 'quota': {
+        const code = (e.data as { code?: string } | null)?.code;
+        return t(code === 'ai_rate' ? 'errAiRate' : code === 'ai_busy' ? 'errAiBusy' : 'errAiQuota');
+      }
       case 'server': return t('errServer');
       default: return t('errUnknown', { detail: e.message });
     }

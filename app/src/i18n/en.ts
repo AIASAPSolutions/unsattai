@@ -311,6 +311,13 @@ const en = {
   show: 'Show',
   removeKey: 'Remove key',
   keyRemoved: 'API key removed from this device.',
+  // AI edits
+  aiLeft: "AI edits left today: {n} of {limit}",
+  aiHint: "Simple edits like colours, patterns and names are instant and free. For anything else, UrJersey's AI helps.",
+  refineByAi: "AI",
+  errAiQuota: "You have used today's free AI edits. Simple edits like \"make the collar gold\" still work, and more AI edits unlock tomorrow or after an order.",
+  errAiRate: "Too many AI edits in a minute. Wait a moment and try again.",
+  errAiBusy: "AI edits are paused for today. Simple edits still work.",
 };
 
 export type Strings = typeof en;

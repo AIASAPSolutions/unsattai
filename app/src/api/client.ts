@@ -1,4 +1,4 @@
-import { getApiKey, getApiUrl } from './config';
+import { getApiKey, getApiUrl, getDeviceId } from './config';
 
 export type ApiErrorKind =
   | 'network'      // server unreachable / offline
@@ -9,6 +9,7 @@ export type ApiErrorKind =
   | 'conflict'     // 409
   | 'not_found'
   | 'too_large'    // 413
+  | 'quota'        // 429: free AI edits used up, or too many too fast
   | 'server'       // 5xx
   | 'http';        // anything else
 
@@ -61,6 +62,7 @@ function kindFor(status: number): ApiErrorKind {
   if (status === 409) return 'conflict';
   if (status === 413) return 'too_large';
   if (status === 422) return 'validation';
+  if (status === 429) return 'quota';
   if (status >= 500) return 'server';
   return 'http';
 }
@@ -87,6 +89,7 @@ export async function request<T>(method: 'GET' | 'POST', path: string, opts: Req
   const headers: Record<string, string> = { Accept: opts.text ? 'image/svg+xml, text/plain, */*' : 'application/json' };
   if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
   if (key) headers['X-API-Key'] = key;
+  headers['X-Device-Id'] = await getDeviceId();
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), opts.timeoutMs ?? 30_000);

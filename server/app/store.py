@@ -31,6 +31,17 @@ CREATE TABLE IF NOT EXISTS factory_jobs (
     job_id TEXT PRIMARY KEY, order_id TEXT NOT NULL UNIQUE, queue TEXT NOT NULL,
     accepted_at TEXT NOT NULL, receipt_json TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS ai_usage (
+    device TEXT NOT NULL, day TEXT NOT NULL, count INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (device, day)
+);
+CREATE TABLE IF NOT EXISTS ai_calls (device TEXT NOT NULL, at REAL NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_ai_calls ON ai_calls(device, at);
+CREATE TABLE IF NOT EXISTS ai_cache (
+    key TEXT PRIMARY KEY, created_at TEXT NOT NULL, hits INTEGER NOT NULL DEFAULT 0, result_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS device_orders (
+    order_id TEXT PRIMARY KEY, device TEXT NOT NULL, created_at TEXT NOT NULL
+);
 """
 
 
@@ -167,3 +178,50 @@ class Store:
             d = c.execute("SELECT COUNT(*) total, SUM(rating IS NOT NULL) rated, SUM(selected) selected, "
                           "SUM(edited) edited, AVG(rating) avg_rating FROM designs").fetchone()
         return {"generations_by_provider": {r["provider"]: r["n"] for r in gens}, **dict(d)}
+
+    # ------------------------------------------------------------- AI edit allowance and cache
+
+    def ai_used(self, device: str, day: str) -> int:
+        with self._conn() as c:
+            row = c.execute("SELECT count FROM ai_usage WHERE device = ? AND day = ?", (device, day)).fetchone()
+        return row["count"] if row else 0
+
+    def ai_used_total(self, day: str) -> int:
+        with self._conn() as c:
+            row = c.execute("SELECT COALESCE(SUM(count), 0) AS n FROM ai_usage WHERE day = ?", (day,)).fetchone()
+        return row["n"]
+
+    def ai_record_call(self, device: str, day: str, at: float) -> None:
+        with self._conn() as c:
+            c.execute("INSERT INTO ai_usage (device, day, count) VALUES (?, ?, 1) "
+                      "ON CONFLICT(device, day) DO UPDATE SET count = count + 1", (device, day))
+            c.execute("INSERT INTO ai_calls VALUES (?, ?)", (device, at))
+            c.execute("DELETE FROM ai_calls WHERE at < ?", (at - 3600,))
+
+    def ai_calls_since(self, device: str, since: float) -> list[float]:
+        with self._conn() as c:
+            rows = c.execute("SELECT at FROM ai_calls WHERE device = ? AND at >= ? ORDER BY at",
+                             (device, since)).fetchall()
+        return [r["at"] for r in rows]
+
+    def ai_cache_get(self, key: str) -> dict | None:
+        with self._conn() as c:
+            row = c.execute("SELECT result_json FROM ai_cache WHERE key = ?", (key,)).fetchone()
+            if row:
+                c.execute("UPDATE ai_cache SET hits = hits + 1 WHERE key = ?", (key,))
+        return json.loads(row["result_json"]) if row else None
+
+    def ai_cache_put(self, key: str, result: dict) -> None:
+        with self._conn() as c:
+            c.execute("INSERT OR REPLACE INTO ai_cache (key, created_at, hits, result_json) VALUES (?, ?, 0, ?)",
+                      (key, _now(), json.dumps(result)))
+
+    def link_order_device(self, order_id: str, device: str) -> None:
+        with self._conn() as c:
+            c.execute("INSERT OR IGNORE INTO device_orders VALUES (?, ?, ?)", (order_id, device, _now()))
+
+    def device_paid_orders(self, device: str) -> int:
+        with self._conn() as c:
+            # Only paid orders earn extra AI edits, so creating unpaid orders gains nothing.
+            return c.execute("SELECT COUNT(*) AS n FROM device_orders d JOIN orders o ON o.id = d.order_id "
+                             "WHERE d.device = ? AND o.status != 'awaiting_payment'", (device,)).fetchone()["n"]

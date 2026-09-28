@@ -233,11 +233,24 @@ export interface RefineChange {
   message: string;
 }
 
+/** Free AI edits for this phone today. Simple edits handled by the rules don't count. */
+export interface AiAllowance {
+  enabled: boolean;
+  limit: number;
+  used: number;
+  remaining: number;
+  cached?: boolean;
+  error?: boolean;
+}
+
 export interface RefineResponse extends Preview {
   spec: DesignSpec;
   changes: RefineChange[];
   understood: boolean;
   message: string;
+  /** Older servers leave these out. */
+  source?: 'rules' | 'ai';
+  ai?: AiAllowance;
 }
 
 export interface LogoSuggestion {

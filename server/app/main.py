@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field
 
-from . import logos, orders, service
+from . import ai_edit, logos, orders, service
 from .background import remove_background
 from .config import settings
 from .engine.garments import GARMENT_PANELS
@@ -82,7 +82,8 @@ KEY = [Depends(require_key)]
 def health():
     return {"status": "ok", "app": "UrJersey API", "version": VERSION, "default_provider": settings.provider,
             "providers": {name: p.available() for name, p in PROVIDERS.items()},
-            "factory_connected": bool(settings.factory_url), "auth_required": bool(settings.api_keys)}
+            "factory_connected": bool(settings.factory_url), "auth_required": bool(settings.api_keys),
+            "ai_edits": ai_edit.provider()}
 
 
 @app.get("/api/v1/meta")
@@ -122,9 +123,29 @@ def render_panels(req: PanelsRequest):
     return service.render_panels(req.spec, include_elements=req.include_elements, sizes=req.sizes)
 
 
+def device_of(request: Request, x_device_id: str | None = Header(default=None)) -> str:
+    return ai_edit.device_key(x_device_id, request.client.host if request.client else None)
+
+
+@app.exception_handler(ai_edit.QuotaExceeded)
+async def ai_quota(_: Request, exc: ai_edit.QuotaExceeded):
+    headers = {"Retry-After": str(exc.retry_after)} if exc.retry_after else None
+    return JSONResponse({"detail": {"message": exc.message, "code": exc.code, "ai": exc.status}},
+                        status_code=429, headers=headers)
+
+
+@app.get("/api/v1/ai/allowance", dependencies=KEY)
+def ai_allowance(device: str = Depends(device_of)):
+    return ai_edit.allowance(store, device)
+
+
 @app.post("/api/v1/designs/refine", dependencies=KEY)
-def refine(req: RefineRequest):
+def refine(req: RefineRequest, device: str = Depends(device_of)):
     out = refine_spec(req)
+    if out["understood"]:
+        out = {**out, "source": "rules", "ai": {**ai_edit.allowance(store, device), "cached": False}}
+    else:
+        out = ai_edit.refine_with_ai(store, req, out, device)
     spec = DesignSpec.model_validate(out["spec"])
     return {**out, **service.render_preview(spec)}
 
@@ -200,11 +221,12 @@ def feedback(design_id: str, fb: FeedbackRequest):
 # ----------------------------------------------------------------- orders
 
 @app.post("/api/v1/orders", dependencies=KEY)
-def create_order(req: OrderRequest):
+def create_order(req: OrderRequest, device: str = Depends(device_of)):
     try:
         order, created = orders.create(store, req)
     except KeyError as e:
         raise HTTPException(409, "This idempotency key was already used for a different order.") from e
+    store.link_order_device(order["id"], device)
     return JSONResponse({**order, "duplicate": not created}, status_code=201 if created else 200)
 
 

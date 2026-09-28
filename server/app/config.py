@@ -26,6 +26,13 @@ class Settings:
     factory_url: str = os.getenv("FACTORY_URL", "").rstrip("/")        # empty: jobs go to the TEST queue
     factory_token: str = os.getenv("FACTORY_TOKEN", "")
     cors_origins: tuple[str, ...] = field(default_factory=lambda: _list("CORS_ORIGINS", "*"))
+    # "Ask" tab: rules first, a small model only for what the rules don't understand.
+    ai_edits: str = os.getenv("AI_EDITS", "auto")                    # auto | claude | slm | off
+    ai_edit_model: str = os.getenv("AI_EDIT_MODEL", "claude-haiku-4-5")
+    ai_free_edits_per_day: int = int(os.getenv("AI_FREE_EDITS_PER_DAY", "10"))
+    ai_bonus_edits_per_order: int = int(os.getenv("AI_BONUS_EDITS_PER_ORDER", "20"))
+    ai_edits_per_minute: int = int(os.getenv("AI_EDITS_PER_MINUTE", "4"))
+    ai_daily_budget: int = int(os.getenv("AI_DAILY_BUDGET", "2000"))  # all phones together; 0 = no cap
 
 
 settings = Settings()
