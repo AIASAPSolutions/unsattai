@@ -5,8 +5,10 @@ import { StyleSheet, View } from 'react-native';
 import { api } from '../../api/endpoints';
 import type { Order } from '../../api/types';
 import { ChecksList } from '../../components/ChecksList';
+import { PriceSummary } from '../../components/PriceSummary';
 import { saveTextFile } from '../../features/share/saveFile';
-import { errorMessage, useT } from '../../i18n';
+import { errorMessage, tMaybe, useT } from '../../i18n';
+import { formatDay } from '../../lib/money';
 import { useFlow } from '../../state/flow';
 import { Banner } from '../../ui/Banner';
 import { Button } from '../../ui/Button';
@@ -92,17 +94,79 @@ export default function OrderStatusScreen() {
     }
   };
 
+  const saveInvoice = async () => {
+    setBusy('invoice');
+    setError(null);
+    try {
+      const html = await api.invoice(order.id);
+      const out = await saveTextFile(`invoice-${order.number ?? order.id}.html`, html, 'text/html');
+      if (out === 'unavailable') setError(t('shareFailed'));
+    } catch (e) {
+      setError(errorMessage(t, e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const f = order.fulfilment;
+  const eta = f?.promised_delivery_date ?? f?.estimate?.delivery_date ?? null;
+  const pickup = order.delivery?.method === 'pickup';
+  const stages = f?.stages ?? [];
   const receipt = order.factory;
   const paid = order.status !== 'awaiting_payment';
   const statusTone = order.status === 'paid_release_failed' ? colors.fail : paid ? colors.pass : colors.warn;
 
   return (
     <Screen testID="screen-order-status">
-      <T variant="title" accessibilityRole="header">{t('orderStatus', { id: order.id })}</T>
+      <T variant="title" accessibilityRole="header">{t('orderStatus', { id: order.number ?? order.id })}</T>
       <View style={[styles.badge, { borderColor: statusTone }]}>
         <T variant="label" color={statusTone} testID="order-status">{t(`status_${order.status}`)}</T>
       </View>
       {duplicate === '1' || order.duplicate ? <Banner tone="info" text={t('duplicateOrder')} testID="duplicate-order" /> : null}
+
+      {f ? (
+        <Card title={t('progress')}>
+          <T variant="label" testID="fulfilment-status">{tMaybe(t, `fstatus_${f.status}`, f.status)}</T>
+          {f.hold ? <Banner tone="warn" text={t('onHold')} testID="on-hold" /> : null}
+          {eta && f.status !== 'delivered' && f.status !== 'cancelled' ? (
+            <T variant="body" style={{ marginTop: space(1) }} testID="order-eta">
+              {t(f.promised_delivery_date ? (pickup ? 'promisedPickup' : 'promisedDelivery') : (pickup ? 'estimatedPickup' : 'estimatedDelivery'),
+                { date: formatDay(pickup ? (f.promised_ship_date ?? f.estimate?.ship_date) : eta) })}
+            </T>
+          ) : null}
+          {f.rush ? <T variant="caption">{t('expressChosen')}</T> : null}
+          {stages.length ? (
+            <View style={styles.stages} testID="stages">
+              {stages.map((st) => (
+                <View key={st.id} style={styles.stage}>
+                  <T variant="label" color={st.done_at ? colors.pass : colors.muted}>{st.done_at ? '✓' : '○'}</T>
+                  <T variant="body" style={{ flex: 1, marginLeft: space(2) }} color={st.done_at ? colors.ink : colors.muted}>{st.name}</T>
+                  {st.done_at ? <T variant="caption">{formatTime(st.done_at)}</T> : null}
+                </View>
+              ))}
+            </View>
+          ) : null}
+          {order.timeline?.length ? (
+            <View style={{ marginTop: space(3) }} testID="timeline">
+              <T variant="label" style={{ marginBottom: space(1) }}>{t('updates')}</T>
+              {[...order.timeline].reverse().map((e, i) => (
+                <View key={`${e.at}-${i}`} style={styles.event}>
+                  <T variant="caption">{formatTime(e.at)}</T>
+                  <T variant="body">{e.text}</T>
+                </View>
+              ))}
+            </View>
+          ) : null}
+        </Card>
+      ) : null}
+
+      {order.pricing ? (
+        <Card title={t('priceTitle')}>
+          <PriceSummary pricing={order.pricing} compact />
+          <Button testID="save-invoice" kind="secondary" label={paid ? t('saveInvoice') : t('saveProforma')} style={{ marginTop: space(3) }}
+            busy={busy === 'invoice'} disabled={busy !== null} onPress={saveInvoice} />
+        </Card>
+      ) : null}
 
       <Card title={t('orderLines')}>
         {order.lines.map((l) => (
@@ -179,5 +243,8 @@ export default function OrderStatusScreen() {
 const styles = StyleSheet.create({
   badge: { alignSelf: 'flex-start', borderWidth: 2, borderRadius: radius.pill, paddingHorizontal: space(3), paddingVertical: space(1), marginVertical: space(3) },
   line: { flexDirection: 'row', alignItems: 'center', paddingVertical: space(2), borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.line },
+  stages: { marginTop: space(3) },
+  stage: { flexDirection: 'row', alignItems: 'center', paddingVertical: space(1) },
+  event: { paddingVertical: space(1.5), borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.line },
   kv: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: space(1.5) },
 });

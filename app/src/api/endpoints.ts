@@ -1,6 +1,6 @@
 import { request, withRetry } from './client';
 import type {
-  AiAllowance, BackgroundRemoval, Design, FromImageRequest, FromImageResponse, DesignSpec, GenerateRequest, GenerateResponse, Health, Language, LogoSuggestResponse,
+  AiAllowance, BackgroundRemoval, Catalogue, Quote, QuoteRequest, Design, FromImageRequest, FromImageResponse, DesignSpec, GenerateRequest, GenerateResponse, Health, Language, LogoSuggestResponse,
   Meta, Order, OrderRequest, Palette, PanelsResponse, Preview, RefineResponse, Size, UnderstandRequest, Understanding,
 } from './types';
 
@@ -43,6 +43,14 @@ export const api = {
   /** Safe to retry: the server returns the same order for the same idempotency key. */
   createOrder: (body: OrderRequest) =>
     withRetry(() => request<Order>('POST', '/api/v1/orders', { body, timeoutMs: 60_000 })),
+
+  catalogue: () => withRetry(() => request<Catalogue>('GET', '/api/v1/shop/catalogue')),
+
+  quote: (body: QuoteRequest, signal?: AbortSignal) =>
+    request<Quote>('POST', '/api/v1/shop/quote', { body, signal }),
+
+  invoice: (id: string) =>
+    request<string>('GET', `/api/v1/orders/${encodeURIComponent(id)}/invoice`, { text: true }),
 
   order: (id: string) => request<Order>('GET', `/api/v1/orders/${encodeURIComponent(id)}`),
 

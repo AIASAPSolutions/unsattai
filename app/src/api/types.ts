@@ -329,7 +329,94 @@ export interface OrderRequest {
   customer: Customer;
   language: Language;
   idempotency_key: string;
+  /** Commerce options; older servers ignore them. */
+  fabric?: string;
+  delivery?: OrderDelivery | null;
+  rush?: boolean;
+  coupon?: string;
+  channel?: 'app' | 'web' | 'sales';
 }
+
+export interface Address {
+  line1: string;
+  line2: string;
+  city: string;
+  state: string;
+  pincode: string;
+}
+
+export interface OrderDelivery {
+  method: 'ship' | 'pickup';
+  address?: Address | null;
+}
+
+export interface Fabric {
+  id: string;
+  name: string;
+  surcharge: number;
+  garments: Garment[];
+  description?: string;
+}
+
+export interface Catalogue {
+  currency: string;
+  fabrics: Fabric[];
+  minimum_pieces: number;
+  rush: { enabled: boolean; fee_rate: number; label: string };
+  pickup: { enabled: boolean; label: string; fee: number };
+  quantity_tiers: { min: number; discount: number }[];
+  company: { name: string; email: string; phone: string; support_hours: string };
+}
+
+export interface QuoteRequest {
+  garment: Garment;
+  fabric: string;
+  logos: number;
+  lines: { size: Size; quantity: number; player_name: string; number: string }[];
+  delivery: { method: 'ship' | 'pickup'; pincode: string; state: string };
+  rush: boolean;
+  coupon: string;
+}
+
+export interface DeliveryEstimate {
+  ship_date: string;
+  delivery_date: string;
+  ready_date: string;
+}
+
+export interface Pricing {
+  currency: string;
+  fabric: { id: string; name: string };
+  pieces: number;
+  subtotal: number;
+  quantity_discount: { min: number; rate: number; amount: number; next: { min: number; rate: number; pieces_needed: number } | null };
+  rush: { selected: boolean; amount: number; rate: number; label: string };
+  coupon: { code: string; amount: number; error?: string; note?: string } | null;
+  shipping: { method: 'ship' | 'pickup'; amount: number; free: boolean; label?: string; zone_name?: string; transit_days: number };
+  tax: { name: string; rate: number; amount: number; inclusive: boolean };
+  total: number;
+  average_per_piece: number;
+  problems: string[];
+}
+
+export interface Quote extends Pricing {
+  estimate: DeliveryEstimate;
+  estimate_standard?: DeliveryEstimate;
+}
+
+export type FulfilmentStatus =
+  | 'awaiting_payment' | 'queued' | 'in_production' | 'ready' | 'dispatched' | 'delivered' | 'cancelled';
+
+export interface Fulfilment {
+  status: FulfilmentStatus;
+  rush: boolean;
+  hold?: boolean;
+  estimate?: DeliveryEstimate;
+  promised_ship_date?: string | null;
+  promised_delivery_date?: string | null;
+  stages?: { id: string; name: string; done_at: string | null }[];
+}
+
 
 export interface OrderFile {
   name: string;
@@ -376,6 +463,12 @@ export interface Order {
   notes: string[];
   duplicate?: boolean;
   spec: DesignSpec;
+  /** Present when the server runs the ordering platform. */
+  number?: string;
+  pricing?: Pricing;
+  delivery?: OrderDelivery & { transit_days?: number; zone?: string | null };
+  fulfilment?: Fulfilment;
+  timeline?: { at: string; code: string; text: string }[];
 }
 
 export interface OrderFailure {

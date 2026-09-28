@@ -137,10 +137,28 @@ try {
     await id('row-size-1-XL').click();
     await id('customer-name').fill('Arul');
     await id('customer-phone').fill('+91 98765 43210');
-    await page.waitForTimeout(1200);
+    // Shop options: fabric, address, express, coupon, then the live price and date.
+    await id('fabric-premium').click();
+    await id('addr-line1').fill('12 Gandhi Street');
+    await id('addr-city').fill('Chennai');
+    await id('addr-state').fill('TN');
+    await id('addr-pincode').fill('600001');
+    await id('express').click();
+    await id('coupon').fill('WELCOME10');
+    await id('coupon-ok').waitFor({ timeout: 15000 });
+    await page.waitForFunction(() => /\d/.test(document.querySelector('[data-testid="quote-eta"]')?.textContent ?? ''), null, { timeout: 15000 });
+    const total = await id('price-total').innerText();
+    const footer = await id('footer-total').innerText();
+    if (!total.startsWith('₹') || total !== footer) throw new Error(`price mismatch: ${total} vs ${footer}`);
     await shot('11-order');
+    await id('price-summary').scrollIntoViewIfNeeded();
+    await shot('11b-price');
     await id('place-order').click();
     await id('screen-order-status').waitFor({ timeout: 30000 });
+    const status = await id('fulfilment-status').innerText();
+    if (!/payment/i.test(status)) throw new Error(`unexpected fulfilment status: ${status}`);
+    const placedTotal = await id('price-total').innerText();
+    if (placedTotal !== total) throw new Error(`order total ${placedTotal} differs from quote ${total}`);
     await shot('12-status');
   });
 
@@ -149,7 +167,12 @@ try {
     await id('receipt').waitFor({ timeout: 20000 });
     const job = await id('job-id').innerText();
     if (!job.startsWith('TEST-')) throw new Error(`expected a TEST job id, got ${job}`);
+    await page.waitForFunction(() => /start/i.test(document.querySelector('[data-testid="fulfilment-status"]')?.textContent ?? ''), null, { timeout: 15000 });
+    await id('stages').waitFor();
+    await id('order-eta').waitFor();
     await shot('13-receipt');
+    await id('timeline').scrollIntoViewIfNeeded();
+    await shot('13b-progress');
   });
 
   await step('design from a picture', async () => {

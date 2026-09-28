@@ -2,12 +2,13 @@ import { setApiUrl } from '../api/config';
 import { setFetcher } from '../api/client';
 import { api } from '../api/endpoints';
 import type { DesignSpec } from '../api/types';
-import { buildItems, orderPayload, payloadHash, validateDraft } from '../features/order/buildOrder';
-import type { OrderDraft } from '../state/flow';
+import { addressIssues, buildItems, logoCount, orderPayload, payloadHash, quoteRequest, validateDraft } from '../features/order/buildOrder';
+import { formatDay, formatMoney } from '../lib/money';
+import { EMPTY_COMMERCE, mergePersisted, type Commerce, type OrderDraft } from '../state/flow';
 
 const spec = { garment: 'jersey', typography: { team_name: 'Kings', player_name: 'ARUL', number: '7', font: 'block' }, elements: [] } as unknown as DesignSpec;
 const draft = (over: Partial<OrderDraft> = {}): OrderDraft => ({
-  mode: 'single', single: { size: 'L', quantity: 2 }, rows: [],
+  mode: 'single', commerce: EMPTY_COMMERCE, single: { size: 'L', quantity: 2 }, rows: [],
   customer: { name: 'Arul', phone: '+91 98765 43210', email: '' }, idempotencyKey: null, keyFor: null, ...over,
 });
 
@@ -62,5 +63,58 @@ describe('idempotent retry', () => {
     await expect(p).resolves.toMatchObject({ id: 'ord_1' });
     jest.useRealTimers();
     expect(keys).toEqual(['ord_abc12345', 'ord_abc12345']);
+  });
+});
+
+describe('shop options', () => {
+  const home: Commerce = {
+    fabric: 'premium', method: 'ship', rush: true, coupon: ' welcome10 ',
+    address: { line1: '12 Gandhi St', line2: '', city: 'Chennai', state: 'tn', pincode: '600 001' },
+  };
+
+  it('needs a full address only when shipping', () => {
+    expect(addressIssues(home)).toEqual([]);
+    expect(addressIssues({ ...home, address: { ...home.address, pincode: '6000', state: 'Tamil Nadu' } }))
+      .toEqual([{ kind: 'address', field: 'state' }, { kind: 'address', field: 'pincode' }]);
+    expect(addressIssues({ ...home, method: 'pickup', address: { line1: '', line2: '', city: '', state: '', pincode: '' } })).toEqual([]);
+  });
+
+  it('asks for a quote with the logos, lines and PIN code', () => {
+    const withLogo = { ...spec, elements: [{ type: 'logo' }, { type: 'text' }] } as unknown as DesignSpec;
+    expect(logoCount(withLogo)).toBe(1);
+    const q = quoteRequest(withLogo, buildItems(draft(), spec), home);
+    expect(q).toEqual({
+      garment: 'jersey', fabric: 'premium', logos: 1, rush: true, coupon: 'welcome10',
+      lines: [{ size: 'L', quantity: 2, player_name: 'ARUL', number: '7' }],
+      delivery: { method: 'ship', pincode: '600001', state: 'TN' },
+    });
+  });
+
+  it('sends the shop options with the order, and the old payload when the server has no shop', () => {
+    const items = buildItems(draft(), spec);
+    const withShop = orderPayload('d1', spec, items, draft().customer, 'en', home);
+    expect(withShop).toMatchObject({
+      fabric: 'premium', rush: true, coupon: 'welcome10', channel: 'app',
+      delivery: { method: 'ship', address: { line1: '12 Gandhi St', city: 'Chennai', state: 'TN', pincode: '600001' } },
+    });
+    expect(orderPayload('d1', spec, items, draft().customer, 'en', { ...home, method: 'pickup' }).delivery).toEqual({ method: 'pickup' });
+    const plain = orderPayload('d1', spec, items, draft().customer, 'en');
+    expect(Object.keys(plain).sort()).toEqual(['customer', 'design_id', 'items', 'language', 'spec']);
+  });
+
+  it('fills shop options into a draft saved by an older version', () => {
+    const old = { order: { mode: 'team', single: { size: 'S', quantity: 3 }, rows: [], customer: { name: '', phone: '', email: '' } } };
+    const merged = mergePersisted(old, { order: draft() });
+    expect(merged.order.mode).toBe('team');
+    expect(merged.order.commerce).toEqual(EMPTY_COMMERCE);
+  });
+
+  it('formats rupees with Indian grouping', () => {
+    expect(formatMoney(123456.5, 'INR')).toBe('₹1,23,456.50');
+    expect(formatMoney(999, 'INR')).toBe('₹999');
+    expect(formatMoney(-50, 'INR')).toBe('−₹50');
+    expect(formatMoney(1234, 'AED')).toBe('AED 1,234');
+    expect(formatDay('not a date')).toBe('not a date');
+    expect(formatDay(null)).toBe('');
   });
 });

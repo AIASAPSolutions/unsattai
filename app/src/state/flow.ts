@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { api } from '../api/endpoints';
 import type {
+  Address,
   Design, DesignSpec, Garment, GenerateResponse, Language, Order, OrderItem, Question, Size, Understanding,
 } from '../api/types';
 import { canRedo, canUndo, commitFrom, createHistory, push, redo, replace, undo, type History } from '../lib/history';
@@ -31,8 +32,20 @@ export interface RosterRow extends OrderItem {
   key: string;
 }
 
+export interface Commerce {
+  fabric: string;
+  method: 'ship' | 'pickup';
+  address: Address;
+  rush: boolean;
+  coupon: string;
+}
+
+export const EMPTY_ADDRESS: Address = { line1: '', line2: '', city: '', state: '', pincode: '' };
+export const EMPTY_COMMERCE: Commerce = { fabric: 'standard', method: 'ship', address: EMPTY_ADDRESS, rush: false, coupon: '' };
+
 export interface OrderDraft {
   mode: OrderMode;
+  commerce: Commerce;
   single: { size: Size; quantity: number };
   rows: RosterRow[];
   customer: { name: string; phone: string; email: string };
@@ -47,12 +60,20 @@ export const EMPTY_BRIEF: Brief = {
 
 const EMPTY_ORDER: OrderDraft = {
   mode: 'single',
+  commerce: EMPTY_COMMERCE,
   single: { size: 'M', quantity: 1 },
   rows: [],
   customer: { name: '', phone: '', email: '' },
   idempotencyKey: null,
   keyFor: null,
 };
+
+/** Drafts saved by older versions have no commerce options yet: fill them with defaults. */
+export function mergePersisted<S extends { order: OrderDraft }>(persisted: unknown, current: S): S {
+  const p = (persisted ?? {}) as Partial<S>;
+  const order = { ...EMPTY_ORDER, ...p.order } as OrderDraft;
+  return { ...current, ...p, order: { ...order, commerce: { ...EMPTY_COMMERCE, ...order.commerce } } };
+}
 
 interface FlowState {
   brief: Brief;
@@ -260,8 +281,11 @@ export const useFlow = create<FlowState>()(
         generation: s.generation, designs: s.designs, ratings: s.ratings, designId: s.designId,
         history: s.history ? { past: [], present: s.history.present, future: [] } : null,
         // Contact details are only kept when the customer opts in (prefs.customer), never in the draft.
-        order: { ...s.order, customer: { name: '', phone: '', email: '' } }, lastOrder: s.lastOrder,
+        // The delivery address is personal too: it is re-typed (or remembered with the contact details).
+        order: { ...s.order, customer: { name: '', phone: '', email: '' }, commerce: { ...s.order.commerce, address: EMPTY_ADDRESS } },
+        lastOrder: s.lastOrder,
       }),
+      merge: mergePersisted,
     },
   ),
 );

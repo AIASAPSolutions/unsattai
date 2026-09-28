@@ -6,15 +6,19 @@ import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Switch, View } from 'react-native';
 import { ApiError } from '../api/client';
 import { api } from '../api/endpoints';
-import { SIZES, TEXT_LIMITS, type Check, type OrderFailure, type Size } from '../api/types';
+import { SIZES, TEXT_LIMITS, type Catalogue, type Check, type OrderFailure, type Quote, type Size } from '../api/types';
 import { ChecksList } from '../components/ChecksList';
-import { buildItems, orderPayload, payloadHash, validateDraft, type DraftIssue } from '../features/order/buildOrder';
+import { PriceSummary } from '../components/PriceSummary';
+import {
+  addressIssues, buildItems, orderPayload, payloadHash, quoteRequest, validateDraft, type DraftIssue,
+} from '../features/order/buildOrder';
 import { errorMessage, useT } from '../i18n';
 import { newId } from '../lib/ids';
+import { formatDay, formatMoney, percent } from '../lib/money';
 import { readAsBase64 } from '../lib/readFile';
 import { parseRoster, totalPieces, type RosterError } from '../lib/roster';
 import { cleanNumber } from '../lib/validation';
-import { currentSpec, useFlow, type RosterRow } from '../state/flow';
+import { currentSpec, useFlow, type Commerce, type RosterRow } from '../state/flow';
 import { usePrefs } from '../state/prefs';
 import { Banner } from '../ui/Banner';
 import { Button } from '../ui/Button';
@@ -89,6 +93,7 @@ export default function OrderScreen() {
   const lang = usePrefs((s) => s.language);
   const remember = usePrefs((s) => s.rememberCustomer);
   const savedCustomer = usePrefs((s) => s.customer);
+  const savedAddress = usePrefs((s) => s.address);
   const setRemember = usePrefs((s) => s.setRememberCustomer);
   const saveCustomer = usePrefs((s) => s.saveCustomer);
   const spec = useFlow(currentSpec);
@@ -106,10 +111,23 @@ export default function OrderScreen() {
   const [touched, setTouched] = useState(false);
   const [preflight, setPreflight] = useState<{ checks: Check[]; ready: boolean } | null>(null);
   const [preflightError, setPreflightError] = useState<unknown>(null);
+  // The shop: prices, fabrics and delivery options. null = this server has no shop, so the order is sent as before.
+  const [catalogue, setCatalogue] = useState<Catalogue | null>(null);
+  const [quote, setQuote] = useState<Quote | null>(null);
+  const [quoteError, setQuoteError] = useState<unknown>(null);
+  const [quoting, setQuoting] = useState(false);
+  const commerce = draft.commerce;
+  const setCommerce = (patch: Partial<Commerce>) => setOrder({ commerce: { ...commerce, ...patch } });
+  const setAddress = (patch: Partial<Commerce['address']>) => setCommerce({ address: { ...commerce.address, ...patch } });
+
+  useEffect(() => {
+    api.catalogue().then(setCatalogue).catch(() => setCatalogue(null));
+  }, []);
 
   // Contact details come from "remember me" when the customer opted in.
   useEffect(() => {
     if (savedCustomer && !draft.customer.name && !draft.customer.phone) setOrder({ customer: { ...savedCustomer } });
+    if (savedAddress && !commerce.address.line1) setOrder({ commerce: { ...commerce, address: { ...savedAddress } } });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -135,6 +153,27 @@ export default function OrderScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spec, sizeKey]);
 
+  // Live price and delivery date, recalculated shortly after the customer stops changing things.
+  const quoteBody = useMemo(() => (spec && catalogue && items.length ? quoteRequest(spec, items, commerce) : null), [spec, catalogue, items, commerce]);
+  const quoteKey = quoteBody ? JSON.stringify(quoteBody) : '';
+  useEffect(() => {
+    if (!quoteBody) return;
+    const controller = new AbortController();
+    setQuoting(true);
+    setQuoteError(null);
+    const timer = setTimeout(() => {
+      api.quote(quoteBody, controller.signal)
+        .then((q) => setQuote(q))
+        .catch((e) => !controller.signal.aborted && setQuoteError(e))
+        .finally(() => !controller.signal.aborted && setQuoting(false));
+    }, 400);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quoteKey]);
+
   if (!spec || !designId) {
     return (
       <Screen>
@@ -144,7 +183,10 @@ export default function OrderScreen() {
     );
   }
 
-  const issues = validateDraft(draft, spec);
+  const issues = [...validateDraft(draft, spec), ...(catalogue ? addressIssues(commerce) : [])];
+  const addressIssue = (f: 'line1' | 'city' | 'state' | 'pincode') => touched && issues.some((i) => i.kind === 'address' && i.field === f);
+  const fabrics = catalogue ? catalogue.fabrics.filter((f) => f.garments.includes(spec.garment)) : [];
+  const quoteProblems = quote?.problems ?? [];
   const customerIssue = (f: 'name' | 'phone' | 'email') => touched && issues.some((i) => i.kind === 'customer' && i.field === f);
   const setRows = (rows: RosterRow[]) => setOrder({ rows });
   const setCustomer = (patch: Partial<typeof draft.customer>) => setOrder({ customer: { ...draft.customer, ...patch } });
@@ -173,14 +215,14 @@ export default function OrderScreen() {
     setTouched(true);
     setError(null);
     setFailures([]);
-    if (issues.length || blocked || !preflight) return;
+    if (issues.length || blocked || !preflight || quoteProblems.length) return;
     setBusy(true);
     try {
-      const payload = orderPayload(designId, spec, items, draft.customer, lang);
+      const payload = orderPayload(designId, spec, items, draft.customer, lang, catalogue ? commerce : null);
       // A retry of the same order reuses the key, so the server returns the first order instead of a duplicate.
       const idempotency_key = keyForPayload(payloadHash(payload));
       const order = await api.createOrder({ ...payload, idempotency_key });
-      if (remember) saveCustomer(draft.customer);
+      if (remember) saveCustomer(draft.customer, catalogue && commerce.method === 'ship' ? commerce.address : null);
       setLastOrder(order);
       speak(t(`status_${order.status}`));
       router.replace({ pathname: '/orders/[id]', params: { id: order.id, duplicate: order.duplicate ? '1' : '0' } });
@@ -202,9 +244,19 @@ export default function OrderScreen() {
       testID="screen-order"
       footer={
         <View>
-          <T variant="label" style={{ marginBottom: space(2) }} testID="total-pieces">{t('totalPieces', { n: totalPieces(items) })}</T>
+          <View style={styles.footerRow}>
+            <T variant="label" testID="total-pieces">{t('totalPieces', { n: totalPieces(items) })}</T>
+            {quote && catalogue ? <T variant="label" testID="footer-total">{formatMoney(quote.total, quote.currency)}</T> : null}
+          </View>
+          {quote && catalogue ? (
+            <T variant="caption" style={{ marginBottom: space(2) }} testID="footer-eta">
+              {t(commerce.method === 'pickup' ? 'estimatedPickup' : 'estimatedDelivery', {
+                date: formatDay(commerce.method === 'pickup' ? quote.estimate.ship_date : quote.estimate.delivery_date),
+              })}
+            </T>
+          ) : <View style={{ height: space(2) }} />}
           <Button testID="place-order" label={busy ? t('placingOrder') : t('placeOrder')} onPress={place} busy={busy}
-            disabled={busy || blocked || !preflight || (touched && issues.length > 0)} />
+            disabled={busy || blocked || !preflight || quoteProblems.length > 0 || (touched && issues.length > 0)} />
         </View>
       }
     >
@@ -260,6 +312,93 @@ export default function OrderScreen() {
         </Card>
       )}
 
+      {catalogue ? (
+        <>
+          {fabrics.length > 1 ? (
+            <Card title={t('fabric')}>
+              {fabrics.map((f) => (
+                <Pressable key={f.id} testID={`fabric-${f.id}`} onPress={() => setCommerce({ fabric: f.id })} accessibilityRole="radio"
+                  accessibilityState={{ checked: commerce.fabric === f.id }}
+                  style={[styles.option, commerce.fabric === f.id && styles.optionOn]}>
+                  <T variant="label" style={{ flex: 1 }}>{f.name}</T>
+                  <T variant="caption">{f.surcharge ? `+${formatMoney(f.surcharge, catalogue.currency)} ${t('each')}` : t('included')}</T>
+                </Pressable>
+              ))}
+            </Card>
+          ) : null}
+
+          <Card title={t('delivery')}>
+            {catalogue.pickup.enabled ? (
+              <Segmented testID="delivery-method" value={commerce.method} onChange={(method) => setCommerce({ method })}
+                options={[{ value: 'ship', label: t('shipToAddress') }, { value: 'pickup', label: t('pickup') }]} />
+            ) : null}
+            {commerce.method === 'ship' ? (
+              <View style={{ marginTop: space(3) }}>
+                <Field testID="addr-line1" label={t('addressLine1')} value={commerce.address.line1} maxLength={160} autoComplete="street-address"
+                  error={addressIssue('line1') ? t('required') : null} onChangeText={(line1) => setAddress({ line1 })} />
+                <Field testID="addr-line2" label={`${t('addressLine2')} (${t('optional')})`} value={commerce.address.line2} maxLength={160}
+                  onChangeText={(line2) => setAddress({ line2 })} />
+                <View style={{ flexDirection: 'row' }}>
+                  <View style={{ flex: 2, marginRight: space(2) }}>
+                    <Field testID="addr-city" label={t('city')} value={commerce.address.city} maxLength={60}
+                      error={addressIssue('city') ? t('required') : null} onChangeText={(city) => setAddress({ city })} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Field testID="addr-state" label={t('stateCode')} value={commerce.address.state} maxLength={4} autoCapitalize="characters"
+                      error={addressIssue('state') ? t('invalid') : null} onChangeText={(v) => setAddress({ state: v.replace(/[^A-Za-z]/g, '').toUpperCase() })} />
+                  </View>
+                </View>
+                <Field testID="addr-pincode" label={t('pincode')} value={commerce.address.pincode} maxLength={6} keyboardType="number-pad"
+                  autoComplete="postal-code" error={addressIssue('pincode') ? t('pincodeInvalid') : null}
+                  onChangeText={(v) => setAddress({ pincode: cleanNumber(v).replace(/\D/g, '') })} />
+              </View>
+            ) : (
+              <T variant="caption" style={{ marginTop: space(3) }}>{catalogue.pickup.label}</T>
+            )}
+            {catalogue.rush.enabled ? (
+              <Pressable style={styles.switchRow} onPress={() => setCommerce({ rush: !commerce.rush })} accessibilityRole="switch"
+                accessibilityState={{ checked: commerce.rush }}>
+                <View style={{ flex: 1 }}>
+                  <T variant="body">{catalogue.rush.label}</T>
+                  <T variant="caption">
+                    {quote?.estimate_standard && quote.estimate_standard.delivery_date === quote.estimate.delivery_date
+                      ? t('expressSameDate', { pct: percent(catalogue.rush.fee_rate) })
+                      : quote?.estimate_standard
+                      ? t('expressFaster', { pct: percent(catalogue.rush.fee_rate), date: formatDay(quote.estimate.delivery_date),
+                        standard: formatDay(quote.estimate_standard.delivery_date) })
+                      : t('expressHint', { pct: percent(catalogue.rush.fee_rate) })}
+                  </T>
+                </View>
+                <Switch value={commerce.rush} onValueChange={(rush) => setCommerce({ rush })} testID="express" />
+              </Pressable>
+            ) : null}
+            <Field testID="coupon" label={`${t('couponCode')} (${t('optional')})`} value={commerce.coupon} maxLength={24} autoCapitalize="characters"
+              error={quote?.coupon?.error ? t('couponInvalid') : null}
+              onChangeText={(v) => setCommerce({ coupon: v.replace(/\s/g, '').toUpperCase() })} />
+            {quote?.coupon?.amount ? (
+              <T variant="caption" color={colors.pass} testID="coupon-ok">
+                {t('couponSaves', { code: quote.coupon.code, amount: formatMoney(quote.coupon.amount, quote.currency) })}
+              </T>
+            ) : null}
+          </Card>
+
+          <Card title={t('priceTitle')}>
+            {quote ? <PriceSummary pricing={quote} /> : quoteError ? null : <Loading label={t('pricing')} />}
+            {quoteError ? <Banner tone="warn" text={t('priceUnavailable')} testID="quote-error" /> : null}
+            {quote ? (
+              <T variant="label" style={{ marginTop: space(3) }} testID="quote-eta">
+                {t(commerce.method === 'pickup' ? 'estimatedPickup' : 'estimatedDelivery', {
+                  date: formatDay(commerce.method === 'pickup' ? quote.estimate.ship_date : quote.estimate.delivery_date),
+                })}
+              </T>
+            ) : null}
+            {quote ? <T variant="caption">{t('etaNote')}</T> : null}
+            {quoting && quote ? <T variant="caption" color={colors.muted}>{t('updatingPrice')}</T> : null}
+            {quoteProblems.map((p) => <Banner key={p} tone="fail" text={p} testID="quote-problem" />)}
+          </Card>
+        </>
+      ) : null}
+
       <Card title={t('customer')}>
         <Field testID="customer-name" label={t('customerName')} value={draft.customer.name} autoComplete="name" textContentType="name"
           error={customerIssue('name') ? t('required') : null} onChangeText={(name) => setCustomer({ name })} />
@@ -296,5 +435,11 @@ const styles = StyleSheet.create({
   qtyInput: { width: 90, textAlign: 'center', marginHorizontal: space(2) },
   row: { borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, padding: space(3), marginBottom: space(3) },
   rowHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: space(2) },
-  switchRow: { flexDirection: 'row', alignItems: 'center', minHeight: 48 },
+  switchRow: { flexDirection: 'row', alignItems: 'center', minHeight: 48, marginVertical: space(2) },
+  footerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: space(1) },
+  option: {
+    flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: colors.line, borderRadius: radius.md,
+    padding: space(3), marginBottom: space(2), minHeight: 48,
+  },
+  optionOn: { borderColor: colors.brand, borderWidth: 2, backgroundColor: colors.brandSoft },
 });
