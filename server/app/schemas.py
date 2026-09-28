@@ -312,6 +312,27 @@ class Customer(BaseModel):
     email: str = Field("", max_length=120, pattern=r"^$|^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
+class Address(BaseModel):
+    name: str = Field("", max_length=80)
+    phone: str = Field("", max_length=24)
+    line1: str = Field(..., min_length=3, max_length=160)
+    line2: str = Field("", max_length=160)
+    city: str = Field(..., min_length=2, max_length=60)
+    state: str = Field(..., min_length=2, max_length=4, description="state code, e.g. TN")
+    pincode: str = Field(..., pattern=r"^\d{6}$")
+
+
+class OrderDelivery(BaseModel):
+    method: Literal["ship", "pickup"] = "ship"
+    address: Address | None = None
+
+    @model_validator(mode="after")
+    def _addr(self):
+        if self.method == "ship" and self.address is None:
+            raise ValueError("a delivery address is needed")
+        return self
+
+
 class OrderRequest(BaseModel):
     design_id: str = Field("", max_length=40)
     spec: DesignSpec
@@ -319,6 +340,13 @@ class OrderRequest(BaseModel):
     customer: Customer
     language: Language = "en"
     idempotency_key: str = Field(..., min_length=8, max_length=80, pattern=r"^[A-Za-z0-9_-]+$")
+    # Commerce options. Older app versions send none of these: standard fabric, no address yet.
+    fabric: str = Field("standard", max_length=30)
+    delivery: OrderDelivery | None = None
+    rush: bool = False
+    coupon: str = Field("", max_length=24)
+    collection_id: str = Field("", max_length=40)
+    channel: Literal["app", "web", "sales"] = "app"
 
     @model_validator(mode="after")
     def _total(self):

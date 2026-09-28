@@ -149,10 +149,14 @@ def _send_to_factory(order: dict) -> dict:
             "accepted_at": str(body.get("accepted_at") or _now()), "factory_connected": True}
 
 
-def confirm_payment(store: Store, order_id: str, pay: PaymentConfirmation) -> dict:
+def confirm_payment(store: Store, order_id: str, pay: PaymentConfirmation, method: str = "demo",
+                    amount: float | None = None, recorded_by: str | None = None) -> dict:
+    """Demo payment from the apps, or a payment staff recorded (cash, UPI, bank transfer...)."""
     order = store.get_order(order_id)
     if order is None:
         raise OrderError(404, "order not found")
+    if (order.get("fulfilment") or {}).get("status") == "cancelled":
+        raise OrderError(409, "This order was cancelled.")
     if not pay.demo:
         raise OrderError(400, "Real payment confirmation is not configured on this server; only demo payments are accepted.")
     if not order["manufacturing_ready"]:
@@ -163,8 +167,13 @@ def confirm_payment(store: Store, order_id: str, pay: PaymentConfirmation) -> di
         order["factory"] = dict(existing, duplicate=True)
         return order
 
-    order["payment"] = {"demo": True, "reference": pay.reference or "DEMO-" + uuid.uuid4().hex[:8].upper(),
-                        "confirmed_at": _now(), "note": "Demo payment only. No money was taken."}
+    if method == "demo":
+        order["payment"] = {"demo": True, "method": "demo", "reference": pay.reference or "DEMO-" + uuid.uuid4().hex[:8].upper(),
+                            "confirmed_at": _now(), "note": "Demo payment only. No money was taken."}
+    else:
+        order["payment"] = {"demo": False, "method": method, "reference": pay.reference, "amount": amount,
+                            "confirmed_at": _now(), "recorded_by": recorded_by,
+                            "note": "Payment recorded by staff."}
     if settings.factory_url:
         try:
             receipt = _send_to_factory(order)
@@ -188,6 +197,9 @@ def confirm_payment(store: Store, order_id: str, pay: PaymentConfirmation) -> di
     order["factory"] = receipt
     order["status"] = "released_to_factory" if receipt["factory_connected"] else "released_to_test_queue"
     store.save_order(order)
+    if hasattr(store, "put"):   # platform store: schedule production and promise dates
+        from .platform import lifecycle
+        order = lifecycle.on_paid(store, order, recorded_by or "customer")
     return order
 
 

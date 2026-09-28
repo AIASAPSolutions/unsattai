@@ -28,7 +28,9 @@ from .schemas import (COLOR_ROLES, COVERAGES, FONTS, GARMENTS, LOGO_MIME, MAX_LO
                       SPORTS, TEXT_LIMITS, DesignSpec, FeedbackRequest, FromImageRequest, GenerateRequest, LogoSuggestRequest,
                       OrderRequest, PanelsRequest, PaymentConfirmation, PrintRequest, RefineRequest, RenderRequest,
                       UnderstandRequest)
-from .store import Store
+from .platform import api_ops, api_shop, lifecycle, security
+from .platform.config import ConfigInvalid
+from .platform.db import PlatformStore
 from .understand import understand as understand_brief
 
 logging.basicConfig(level=logging.INFO)
@@ -39,7 +41,9 @@ MAX_BODY_BYTES = 12_000_000   # four 1.5 MB logos as base64 plus the spec
 app = FastAPI(title="UrJersey API", version=VERSION)
 app.add_middleware(CORSMiddleware, allow_origins=list(settings.cors_origins), allow_methods=["*"],
                    allow_headers=["*"])
-store = Store(settings.db_path)
+store = PlatformStore(settings.db_path)
+security.bind(store)
+security.bootstrap_admin(store)
 
 
 @app.middleware("http")
@@ -229,14 +233,33 @@ def feedback(design_id: str, fb: FeedbackRequest):
 
 # ----------------------------------------------------------------- orders
 
-@app.post("/api/v1/orders", dependencies=KEY)
-def create_order(req: OrderRequest, device: str = Depends(device_of)):
+def place_order(req: OrderRequest, customer: dict | None = None, quote: dict | None = None) -> tuple[dict, bool]:
+    """Create (or return the existing) order, then price it, link the customer and promise dates."""
+    if req.collection_id and customer is None:
+        raise HTTPException(401, "Sign in to order a team collection.")
     try:
         order, created = orders.create(store, req)
     except KeyError as e:
         raise HTTPException(409, "This idempotency key was already used for a different order.") from e
+    if not order.get("pricing"):
+        d = req.delivery
+        extras = {"fabric": req.fabric, "rush": req.rush, "coupon": req.coupon, "collection_id": req.collection_id,
+                  "address": d.address.model_dump() if d and d.address else None,
+                  "delivery_choice": {"method": d.method if d else "ship",
+                                      "pincode": d.address.pincode if d and d.address else "",
+                                      "state": d.address.state if d and d.address else ""}}
+        if quote:
+            extras.update(pricing=quote["pricing"], quote_id=quote["id"])
+        order = lifecycle.on_created(store, order, extras, customer, req.channel)
+    return order, created
+
+
+@app.post("/api/v1/orders", dependencies=KEY)
+def create_order(req: OrderRequest, device: str = Depends(device_of),
+                 customer: dict | None = Depends(security.optional_customer)):
+    order, created = place_order(req, customer)
     store.link_order_device(order["id"], device)
-    return JSONResponse({**order, "duplicate": not created}, status_code=201 if created else 200)
+    return JSONResponse({**lifecycle.public_view(order), "duplicate": not created}, status_code=201 if created else 200)
 
 
 @app.get("/api/v1/orders/{order_id}", dependencies=KEY)
@@ -244,12 +267,27 @@ def get_order(order_id: str):
     order = store.get_order(order_id)
     if not order:
         raise HTTPException(404, "order not found")
-    return order
+    return lifecycle.public_view(order)
 
 
 @app.post("/api/v1/orders/{order_id}/payment-confirmed", dependencies=KEY)
 def payment_confirmed(order_id: str, pay: PaymentConfirmation):
-    return orders.confirm_payment(store, order_id, pay)
+    return lifecycle.public_view(orders.confirm_payment(store, order_id, pay))
+
+
+@app.exception_handler(ConfigInvalid)
+async def config_invalid(_: Request, exc: ConfigInvalid):
+    return JSONResponse({"detail": [{"loc": ["body", *e["path"].split(".")], "msg": e["message"], "type": "value_error"}
+                                    for e in exc.errors]}, status_code=422)
+
+
+def _order_from_dict(body: dict, quote: dict | None = None) -> dict:
+    order, _ = place_order(OrderRequest.model_validate(body), None, quote)
+    return order
+
+
+app.include_router(api_shop.router(store, KEY, _order_from_dict))
+app.include_router(api_ops.router(store, KEY))
 
 
 @app.post("/api/v1/orders/{order_id}/files/{name}", dependencies=KEY)
