@@ -1,0 +1,264 @@
+"""UrJersey API: the design engine behind the UrJersey mobile app.
+
+JSON over HTTP under /api/v1, optionally protected by X-API-Key. The mobile app
+is the only client; there is no web UI here.
+"""
+from __future__ import annotations
+
+import json
+import logging
+
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, PlainTextResponse, Response
+from pydantic import BaseModel, Field
+
+from . import logos, orders, service
+from .background import remove_background
+from .config import settings
+from .engine.garments import GARMENT_PANELS
+from .engine.i18n import LANGUAGE_NAMES
+from .engine.renderer import render_print_sheet
+from .engine.vocab import NAMED_COLORS, PALETTES
+from .providers import PROVIDERS
+from .providers.base import SLM_SYSTEM_PROMPT, build_user_message, creative_part
+from .refine import refine as refine_spec
+from .schemas import (COLOR_ROLES, COVERAGES, FONTS, GARMENTS, LOGO_MIME, MAX_LOGO_BYTES, MAX_LOGOS, PATTERNS, SIZES,
+                      SPORTS, TEXT_LIMITS, DesignSpec, FeedbackRequest, GenerateRequest, LogoSuggestRequest,
+                      OrderRequest, PanelsRequest, PaymentConfirmation, PrintRequest, RefineRequest, RenderRequest,
+                      UnderstandRequest)
+from .store import Store
+from .understand import understand as understand_brief
+
+logging.basicConfig(level=logging.INFO)
+
+VERSION = "1.0.0"
+MAX_BODY_BYTES = 12_000_000   # four 1.5 MB logos as base64 plus the spec
+
+app = FastAPI(title="UrJersey API", version=VERSION)
+app.add_middleware(CORSMiddleware, allow_origins=list(settings.cors_origins), allow_methods=["*"],
+                   allow_headers=["*"])
+store = Store(settings.db_path)
+
+
+@app.middleware("http")
+async def limit_body(request: Request, call_next):
+    length = request.headers.get("content-length")
+    if length and length.isdigit() and int(length) > MAX_BODY_BYTES:
+        return JSONResponse({"detail": f"Request is larger than {MAX_BODY_BYTES // 1_000_000} MB."}, status_code=413)
+    return await call_next(request)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error(_: Request, exc: RequestValidationError):
+    # Same shape as FastAPI's default, minus echoed input (it can hold multi-MB logo data URLs).
+    errors = [{k: v for k, v in e.items() if k in ("loc", "msg", "type")} for e in exc.errors()]
+    return JSONResponse({"detail": errors}, status_code=422)
+
+
+@app.exception_handler(orders.OrderError)
+async def order_error(_: Request, exc: orders.OrderError):
+    return JSONResponse({"detail": {"message": exc.message, **exc.extra}}, status_code=exc.status)
+
+
+def require_key(x_api_key: str | None = Header(default=None)) -> None:
+    if settings.api_keys and x_api_key not in settings.api_keys:
+        raise HTTPException(401, "invalid or missing X-API-Key")
+
+
+def _design_or_404(design_id: str) -> dict:
+    row = store.get_design(design_id)
+    if not row:
+        raise HTTPException(404, "design not found")
+    return row
+
+
+SVG = "image/svg+xml"
+KEY = [Depends(require_key)]
+
+
+@app.get("/api/v1/health")
+def health():
+    return {"status": "ok", "app": "UrJersey API", "version": VERSION, "default_provider": settings.provider,
+            "providers": {name: p.available() for name, p in PROVIDERS.items()},
+            "factory_connected": bool(settings.factory_url), "auth_required": bool(settings.api_keys)}
+
+
+@app.get("/api/v1/meta")
+def meta():
+    return {
+        "patterns": PATTERNS, "coverages": COVERAGES, "garments": GARMENTS, "fonts": FONTS, "sizes": SIZES,
+        "sports": SPORTS, "color_roles": COLOR_ROLES,
+        "colors": [{"name": n, "hex": h} for n, h in NAMED_COLORS.items()],
+        "palettes": [{"name": p[0], "palette": dict(zip(COLOR_ROLES, p[1:6])), "tags": sorted(p[6])} for p in PALETTES],
+        "languages": [{"code": c, "name": n, "native": nat} for c, (n, nat) in LANGUAGE_NAMES.items()],
+        "limits": {"prompt": 600, "variants": [1, 8], "locked_colors": 4, "text": TEXT_LIMITS, "logos": MAX_LOGOS,
+                   "logo_bytes": MAX_LOGO_BYTES, "logo_types": LOGO_MIME, "quantity": [1, 500], "order_rows": 200,
+                   "undo": 60},
+        "panels": {g: [p.name for p in ps] for g, ps in GARMENT_PANELS.items()},
+    }
+
+
+@app.post("/api/v1/brief/understand", dependencies=KEY)
+def understand(req: UnderstandRequest):
+    return understand_brief(req)
+
+
+@app.post("/api/v1/designs/generate", dependencies=KEY)
+def generate(req: GenerateRequest):
+    return service.generate(store, req)
+
+
+@app.post("/api/v1/render", dependencies=KEY)
+def render(req: RenderRequest):
+    """Stateless re-render for live editing."""
+    return service.render_preview(req.spec, sizes=req.sizes)
+
+
+@app.post("/api/v1/render/panels", dependencies=KEY)
+def render_panels(req: PanelsRequest):
+    """Flat art per pattern piece (mm units) plus safe zones, for the 2D editor and 3D textures."""
+    return service.render_panels(req.spec, include_elements=req.include_elements, sizes=req.sizes)
+
+
+@app.post("/api/v1/designs/refine", dependencies=KEY)
+def refine(req: RefineRequest):
+    out = refine_spec(req)
+    spec = DesignSpec.model_validate(out["spec"])
+    return {**out, **service.render_preview(spec)}
+
+
+@app.post("/api/v1/logos/suggest", dependencies=KEY)
+def suggest_logos(req: LogoSuggestRequest):
+    return logos.suggest(req)
+
+
+class BackgroundRequest(BaseModel):
+    data_url: str = Field(..., max_length=2_100_000)
+    tolerance: int = Field(24, ge=0, le=80)
+
+
+@app.post("/api/v1/logos/remove-background", dependencies=KEY)
+def logo_remove_background(req: BackgroundRequest):
+    """Optional plain-background removal for raster logo uploads; the original is never discarded."""
+    try:
+        return remove_background(req.data_url, req.tolerance)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+
+
+@app.get("/api/v1/designs/{design_id}", dependencies=KEY)
+def get_design(design_id: str):
+    row = _design_or_404(design_id)
+    spec = DesignSpec.model_validate_json(row["spec_json"])
+    return {"id": row["id"], "generation_id": row["generation_id"], "provider": row["provider"],
+            "rating": row["rating"], "selected": bool(row["selected"]), "edited": bool(row["edited"]),
+            "spec": spec.model_dump(), **service.render_preview(spec, design_id)}
+
+
+@app.get("/api/v1/designs/{design_id}/mockup.svg", dependencies=KEY)
+def mockup_svg(design_id: str):
+    spec = DesignSpec.model_validate_json(_design_or_404(design_id)["spec_json"])
+    return Response(service.render_preview(spec, design_id)["mockup_svg"], media_type=SVG)
+
+
+@app.get("/api/v1/designs/{design_id}/print.svg", dependencies=KEY)
+def print_svg(design_id: str, size: str = Query("M", pattern="^(XS|S|M|L|XL|XXL)$"), mirror: bool = False,
+              roll_width: float = Query(1600, ge=600, le=3200), download: bool = False):
+    spec = DesignSpec.model_validate_json(_design_or_404(design_id)["spec_json"])
+    try:
+        svg, _ = render_print_sheet(spec, size=size, mirror=mirror, roll_width=roll_width, design_id=design_id)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    headers = {"Content-Disposition": f'attachment; filename="{design_id}_{size}{"_mirrored" if mirror else ""}.svg"'} \
+        if download else {}
+    return Response(svg, media_type=SVG, headers=headers)
+
+
+@app.post("/api/v1/print", dependencies=KEY)
+def print_from_spec(req: PrintRequest):
+    """Stateless print sheet from a spec, so exports never depend on server storage."""
+    try:
+        svg, _ = render_print_sheet(req.spec, size=req.size, mirror=req.mirror, roll_width=req.roll_width,
+                                    design_id=req.design_id)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    return Response(svg, media_type=SVG)
+
+
+@app.post("/api/v1/designs/{design_id}/feedback", dependencies=KEY)
+def feedback(design_id: str, fb: FeedbackRequest):
+    if not store.get_design(design_id):
+        if fb.spec is None:
+            raise HTTPException(404, "design not found")
+        store.restore_design(design_id, fb.spec)
+    store.update_feedback(design_id, fb.rating, fb.selected, fb.edited_spec, fb.comment)
+    return {"ok": True}
+
+
+# ----------------------------------------------------------------- orders
+
+@app.post("/api/v1/orders", dependencies=KEY)
+def create_order(req: OrderRequest):
+    try:
+        order, created = orders.create(store, req)
+    except KeyError as e:
+        raise HTTPException(409, "This idempotency key was already used for a different order.") from e
+    return JSONResponse({**order, "duplicate": not created}, status_code=201 if created else 200)
+
+
+@app.get("/api/v1/orders/{order_id}", dependencies=KEY)
+def get_order(order_id: str):
+    order = store.get_order(order_id)
+    if not order:
+        raise HTTPException(404, "order not found")
+    return order
+
+
+@app.post("/api/v1/orders/{order_id}/payment-confirmed", dependencies=KEY)
+def payment_confirmed(order_id: str, pay: PaymentConfirmation):
+    return orders.confirm_payment(store, order_id, pay)
+
+
+@app.post("/api/v1/orders/{order_id}/files/{name}", dependencies=KEY)
+def order_file(order_id: str, name: str):
+    order = store.get_order(order_id)
+    if not order:
+        raise HTTPException(404, "order not found")
+    svg = orders.production_file(order, name)
+    return Response(svg, media_type=SVG, headers={"Content-Disposition": f'attachment; filename="{order_id}_{name}"'})
+
+
+# ----------------------------------------------------------------- staff
+
+@app.get("/api/v1/factory/queue", dependencies=KEY)
+def factory_queue(limit: int = Query(100, ge=1, le=500)):
+    return {"factory_connected": bool(settings.factory_url), "jobs": store.factory_jobs(limit)}
+
+
+@app.get("/api/v1/dataset/export", dependencies=KEY, response_class=PlainTextResponse)
+def export_dataset(min_rating: int = Query(4, ge=1, le=5)):
+    """Chat-format JSONL of human-endorsed designs, the SLM fine-tuning set."""
+    lines = []
+    for row in store.training_rows(min_rating):
+        req = GenerateRequest.model_validate_json(row["request_json"])
+        spec = DesignSpec.model_validate_json(row["spec_json"])
+        lines.append(json.dumps({
+            "messages": [
+                {"role": "system", "content": SLM_SYSTEM_PROMPT},
+                {"role": "user", "content": build_user_message(req, n=req.variants, variant_index=row["variant_index"])},
+                {"role": "assistant", "content": json.dumps(creative_part(spec))},
+            ],
+            "meta": {"design_id": row["id"], "teacher": row["provider"], "rating": row["rating"],
+                     "selected": bool(row["selected"]), "edited": bool(row["edited"])},
+        }))
+    return PlainTextResponse("\n".join(lines) + ("\n" if lines else ""), media_type="application/jsonl",
+                             headers={"Content-Disposition": 'attachment; filename="sportswear_spec_sft.jsonl"'})
+
+
+@app.get("/api/v1/stats", dependencies=KEY)
+def stats():
+    return store.stats()
+
+

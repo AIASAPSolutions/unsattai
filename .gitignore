@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+data/
+*.db
+
+# Node / Expo (see app/.gitignore for the rest)
+node_modules/
+app/e2e/shots/
+
+.DS_Store
+.env
+.env.*
