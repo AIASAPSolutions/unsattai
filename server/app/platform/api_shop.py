@@ -6,6 +6,8 @@ order history, saved designs, team collections and support tickets.
 """
 from __future__ import annotations
 
+import re
+
 import secrets
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
@@ -94,6 +96,8 @@ def router(store: PlatformStore, key_dep, create_order) -> APIRouter:
         q["estimate"] = planning.promise(store, q["pieces"], req.rush, transit)
         if req.rush:
             q["estimate_standard"] = planning.promise(store, q["pieces"], False, transit)
+        else:
+            q["estimate_express"] = planning.promise(store, q["pieces"], True, transit)
         return q
 
     @r.get("/shop/delivery-estimate")
@@ -193,16 +197,18 @@ def router(store: PlatformStore, key_dep, create_order) -> APIRouter:
                 "delivery": (o.get("delivery") or {})}
 
     @r.get("/orders/{order_id}/invoice", response_class=HTMLResponse)
-    def invoice(order_id: str):
-        order = store.get_order(order_id)
-        if not order:
-            raise HTTPException(404, "order not found")
+    def invoice(order_id: str, phone: str | None = Query(None, max_length=24), who: dict = Depends(security.order_viewer)):
+        order = security.check_order_access(store.get_order(order_id), who, phone)
         return HTMLResponse(lifecycle.invoice_html(store, order))
 
     @r.get("/orders/{order_id}/track")
     def track(order_id: str, phone: str = Query(..., min_length=6, max_length=24)):
-        """Guest tracking: order id plus the phone number used for it."""
+        """Guest tracking: the order reference or order number, plus the phone number used for it."""
         order = store.get_order(order_id)
+        if not order and re.fullmatch(r"[A-Za-z]{1,8}-\d{1,9}", order_id):
+            hits, _ = store.find("order_index", q=order_id, limit=20)
+            match = next((h for h in hits if (h.get("number") or "").upper() == order_id.upper()), None)
+            order = store.get_order(match["id"]) if match else None
         if not order or security.normalize_phone(order["customer"]["phone"]) != security.normalize_phone(phone):
             raise HTTPException(404, "No order matches this number and phone.")
         return lifecycle.public_view(order)
@@ -264,7 +270,7 @@ def router(store: PlatformStore, key_dep, create_order) -> APIRouter:
     @r.get("/me/collections/{cid}")
     def my_collection(cid: str, customer: dict = Depends(security.require_customer)):
         c = _my_collection(cid, customer)
-        return {**c, "entries": _entries(cid)}
+        return {**c, "entries": [{k: v for k, v in e.items() if k != "edit_key"} for e in _entries(cid)]}
 
     @r.post("/me/collections/{cid}/status")
     def collection_status(cid: str, status: str = Query(..., pattern="^(open|locked|cancelled)$"),
@@ -332,7 +338,7 @@ def router(store: PlatformStore, key_dep, create_order) -> APIRouter:
         return crm.public_quote(store, token)
 
     @r.post("/quotes/{token}/accept")
-    def accept_quote(token: str, body: AcceptQuote):
+    def accept_quote(token: str, body: AcceptQuote, who: dict = Depends(security.order_viewer)):
         q = crm.public_quote(store, token)
         if q["expired"] or q["status"] not in ("sent",):
             raise HTTPException(409, "This quote can no longer be accepted. Ask us for a new one.")
@@ -348,6 +354,7 @@ def router(store: PlatformStore, key_dep, create_order) -> APIRouter:
             "delivery": {"method": full["delivery"]["method"],
                          "address": body.address.model_dump() if body.address else None},
         }, quote=full)
+        store.link_order_device(order["id"], who["device"])   # so the same browser or phone can pay and track it
         full["status"], full["order_id"] = "converted", order["id"]
         crm._put_quote(store, full)
         return {"order_id": order["id"], "order": lifecycle.public_view(order)}
@@ -366,6 +373,13 @@ def router(store: PlatformStore, key_dep, create_order) -> APIRouter:
             if not o or o.get("customer_id") != customer["id"]:
                 raise HTTPException(404, "order not found")
         return crm.public_ticket(crm.open_ticket(store, customer, body, "web"))
+
+    @r.get("/me/tickets/{tid}")
+    def my_ticket(tid: str, customer: dict = Depends(security.require_customer)):
+        t = store.get("ticket", tid)
+        if not t or t["customer_id"] != customer["id"]:
+            raise HTTPException(404, "ticket not found")
+        return crm.public_ticket(t)
 
     @r.post("/me/tickets/{tid}/reply")
     def reply_ticket(tid: str, body: Reply, customer: dict = Depends(security.require_customer)):

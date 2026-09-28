@@ -168,6 +168,10 @@ class PlatformStore(Store):
             row = c.execute("SELECT * FROM sessions WHERE token_hash = ? AND expires_at > ?", (token_hash, now())).fetchone()
         return dict(row) if row else None
 
+    def drop_sessions_for(self, kind: str, subject: str) -> int:
+        with self._conn() as c:
+            return c.execute("DELETE FROM sessions WHERE subject_kind = ? AND subject_id = ?", (kind, subject)).rowcount
+
     def drop_session(self, token_hash: str) -> None:
         with self._conn() as c:
             c.execute("DELETE FROM sessions WHERE token_hash = ?", (token_hash,))

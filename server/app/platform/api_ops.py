@@ -176,6 +176,9 @@ def router(store: PlatformStore, key_dep) -> APIRouter:
                                  data={"name": body.name} if body.name else None)
         if not out:
             raise HTTPException(404, "staff not found")
+        if pw or body.active is False or body.role:
+            # A reset password, a lock-out or a new role takes effect now, not when the old session expires.
+            store.drop_sessions_for("staff", sid)
         store.audit(actor(s), "staff.update", f"staff:{sid}", body.model_dump(exclude={"password"}, exclude_none=True))
         return out
 
@@ -236,7 +239,11 @@ def router(store: PlatformStore, key_dep) -> APIRouter:
             return round(sum(o.get("total") or 0 for o in paid if o["created_at"][:10] >= since), 2)
 
         plan = planning.plan(store)
-        late = [p for p in plan["plans"].values() if p["late"]]
+        by_id = {o["id"]: o for o in rows}
+        late = [{**p, "number": by_id.get(p["order_id"], {}).get("number"),
+                 "customer_name": by_id.get(p["order_id"], {}).get("customer_name"),
+                 "status": by_id.get(p["order_id"], {}).get("fulfilment_status")}
+                for p in plan["plans"].values() if p["late"]]
         util = planning.utilisation(store, 7)
         status_counts = Counter(o["fulfilment_status"] for o in rows)
         pipe = crm.pipeline(store)
@@ -556,7 +563,8 @@ h2{{margin:0 0 4mm}}.big{{font-size:18pt;font-weight:700}}.m{{color:#555;font-si
             raise HTTPException(404, "lead not found")
         return {"lead": ld, "activities": store.find("activity", parent=f"lead:{lid}", limit=100)[0],
                 "customer": store.get("customer", ld["customer_id"]) if ld.get("customer_id") else None,
-                "quotes": [q for q in store.find("quote", limit=500)[0] if q.get("lead_id") == lid]}
+                "quotes": [q for q in store.find("quote", parent=ld.get("customer_id") or "-", limit=500)[0]
+                           if q.get("lead_id") == lid]}
 
     @r.put("/leads/{lid}")
     def edit_lead(lid: str, body: crm.LeadIn, s: dict = Depends(need("crm"))):
@@ -588,8 +596,14 @@ h2{{margin:0 0 4mm}}.big{{font-size:18pt;font-weight:700}}.m{{color:#555;font-si
     # ------------------------------------------------------------- CRM: quotes
 
     @r.get("/quotes")
-    def quotes(status: str | None = None, q: str | None = None, s: dict = Depends(need("read"))):
-        rows, total = store.find("quote", status=status, q=q, limit=200)
+    def quotes(status: str | None = None, q: str | None = None, lead_id: str | None = None,
+               customer_id: str | None = None, s: dict = Depends(need("read"))):
+        if lead_id and not customer_id:
+            customer_id = (store.get("lead", lead_id) or {}).get("customer_id") or "-"
+        rows, total = store.find("quote", status=status, q=q, parent=customer_id, limit=200)
+        if lead_id:
+            rows = [r for r in rows if r.get("lead_id") == lead_id]
+            total = len(rows)
         return {"items": rows, "total": total}
 
     @r.post("/quotes", status_code=201)

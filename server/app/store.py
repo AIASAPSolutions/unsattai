@@ -220,6 +220,11 @@ class Store:
         with self._conn() as c:
             c.execute("INSERT OR IGNORE INTO device_orders VALUES (?, ?, ?)", (order_id, device, _now()))
 
+    def order_device(self, order_id: str) -> str | None:
+        with self._conn() as c:
+            row = c.execute("SELECT device FROM device_orders WHERE order_id = ?", (order_id,)).fetchone()
+            return row["device"] if row else None
+
     def device_paid_orders(self, device: str) -> int:
         with self._conn() as c:
             # Only paid orders earn extra AI edits, so creating unpaid orders gains nothing.

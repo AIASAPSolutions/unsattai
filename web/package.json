@@ -1,0 +1,32 @@
+{
+  "name": "urjersey-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "UrJersey customer web store (Next.js App Router).",
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p ${PORT:-3000}",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "e2e": "NODE_PATH=$(npm root -g) node e2e/store-flow.mjs"
+  },
+  "dependencies": {
+    "next": "16.3.6",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "server-only": "^0.0.1",
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/three": "^0.186.0",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.6",
+    "typescript": "^5.9",
+    "vitest": "^4"
+  }
+}

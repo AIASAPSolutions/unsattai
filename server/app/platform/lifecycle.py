@@ -31,6 +31,7 @@ EVENT_TEXT = {
     "dispatched": "Dispatched with {carrier}",
     "delivered": "Delivered",
     "cancelled": "Order cancelled",
+    "returned": "Shipment returned to us; we'll contact you",
     "note": "{text}",
 }
 
@@ -263,9 +264,16 @@ def create_shipment(store: PlatformStore, order_id: str, carrier: str, tracking_
     store.put("shipment", sid, shp, status="planned", parent=order_id, ref=tracking_no.strip(),
               search=" ".join(filter(None, [order_id, order.get("number"), tracking_no, order["customer"]["name"]])))
     order.setdefault("shipments", []).append(sid)
+    f["shipment"] = _shipment_public(shp)
     store.save_order(order)
     store.audit(actor, "shipment.create", f"order:{order_id}", {"shipment": sid})
     return shp
+
+
+def _shipment_public(shp: dict) -> dict:
+    """What the customer sees of a shipment: carrier, tracking number and dates."""
+    return {k: shp.get(k) for k in ("id", "carrier_name", "tracking_no", "tracking_url", "status", "planned_date",
+                                    "dispatched_at", "delivered_at")}
 
 
 def update_shipment(store: PlatformStore, shipment_id: str, status: str, actor: str, tracking_no: str | None = None) -> dict:
@@ -291,6 +299,15 @@ def update_shipment(store: PlatformStore, shipment_id: str, status: str, actor: 
         f["status"] = "delivered"
         f["delivered_at"] = now()
         event(order, "delivered", actor)
+    elif status in ("returned", "cancelled") and f.get("status") in ("dispatched", "delivered"):
+        # The goods are back with us (or never left): the order is ready to ship again.
+        f["status"] = "ready"
+        event(order, "returned" if status == "returned" else "note", actor,
+              public=status == "returned", **({} if status == "returned" else {"text": f"Shipment {shipment_id} cancelled"}))
+    if status not in ("returned", "cancelled"):
+        f["shipment"] = _shipment_public(shp)
+    elif (f.get("shipment") or {}).get("id") == shipment_id:
+        f["shipment"] = None
     store.put("shipment", shipment_id, shp, status=status, parent=shp["order_id"], ref=shp["tracking_no"],
               search=" ".join(filter(None, [shp["order_id"], shp.get("order_number"), shp["tracking_no"], shp["customer_name"]])))
     store.save_order(order)
@@ -304,7 +321,10 @@ def update_shipment(store: PlatformStore, shipment_id: str, status: str, actor: 
 def public_view(order: dict) -> dict:
     """The order as its customer sees it: no internal notes or staff names."""
     out = {k: v for k, v in order.items() if k not in ("events",)}
-    out["timeline"] = [{"at": e["at"], "code": e["code"], "text": e["text"]} for e in order.get("events", []) if e.get("public")]
+    # params let apps show each event in the customer's language (stage names, carrier, tracking number).
+    out["timeline"] = [{"at": e["at"], "code": e["code"], "text": e["text"],
+                        "params": {k: v for k, v in e.items() if k not in ("at", "code", "text", "actor", "public")}}
+                       for e in order.get("events", []) if e.get("public")]
     f = order.get("fulfilment") or {}
     out["fulfilment"] = {k: v for k, v in f.items() if k not in ("hold_reason",)}
     for s in out["fulfilment"].get("stages", []):

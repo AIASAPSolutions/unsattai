@@ -13,3 +13,4 @@ app/e2e/shots/
 .DS_Store
 .env
 .env.*
+!.env.example

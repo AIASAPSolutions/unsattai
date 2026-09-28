@@ -263,15 +263,13 @@ def create_order(req: OrderRequest, device: str = Depends(device_of),
 
 
 @app.get("/api/v1/orders/{order_id}", dependencies=KEY)
-def get_order(order_id: str):
-    order = store.get_order(order_id)
-    if not order:
-        raise HTTPException(404, "order not found")
-    return lifecycle.public_view(order)
+def get_order(order_id: str, who: dict = Depends(security.order_viewer)):
+    return lifecycle.public_view(security.check_order_access(store.get_order(order_id), who))
 
 
 @app.post("/api/v1/orders/{order_id}/payment-confirmed", dependencies=KEY)
-def payment_confirmed(order_id: str, pay: PaymentConfirmation):
+def payment_confirmed(order_id: str, pay: PaymentConfirmation, who: dict = Depends(security.order_viewer)):
+    security.check_order_access(store.get_order(order_id), who)
     return lifecycle.public_view(orders.confirm_payment(store, order_id, pay))
 
 
@@ -291,10 +289,8 @@ app.include_router(api_ops.router(store, KEY))
 
 
 @app.post("/api/v1/orders/{order_id}/files/{name}", dependencies=KEY)
-def order_file(order_id: str, name: str):
-    order = store.get_order(order_id)
-    if not order:
-        raise HTTPException(404, "order not found")
+def order_file(order_id: str, name: str, who: dict = Depends(security.order_viewer)):
+    order = security.check_order_access(store.get_order(order_id), who)
     svg = orders.production_file(order, name)
     return Response(svg, media_type=SVG, headers={"Content-Disposition": f'attachment; filename="{order_id}_{name}"'})
 

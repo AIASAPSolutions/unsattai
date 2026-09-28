@@ -94,7 +94,7 @@ def test_paid_order_unlocks_more_edits_but_unpaid_does_not(api):
             "items": [{"player_name": "Arul", "number": "7", "size": "M", "quantity": 1}]}
     o = api.client.post("/api/v1/orders", json=body, headers=DEVICE).json()
     assert api.client.get("/api/v1/ai/allowance", headers=DEVICE).json()["limit"] == 3
-    api.client.post(f"/api/v1/orders/{o['id']}/payment-confirmed", json={"demo": True})
+    api.client.post(f"/api/v1/orders/{o['id']}/payment-confirmed", json={"demo": True}, headers=DEVICE)
     assert api.client.get("/api/v1/ai/allowance", headers=DEVICE).json()["limit"] == 8
 
 

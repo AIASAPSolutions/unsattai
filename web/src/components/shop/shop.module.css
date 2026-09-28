@@ -1,0 +1,126 @@
+.price {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: opacity 0.15s ease;
+}
+.updating {
+  opacity: 0.6;
+}
+.lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+}
+.lines li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.lineWho {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.linkBtn {
+  align-self: flex-start;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--blue);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.rows {
+  margin: 0;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.rowLine {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 15px;
+}
+.rowLine dt {
+  color: var(--ink-2);
+}
+.rowLine dd {
+  margin: 0;
+  white-space: nowrap;
+}
+.totalLine {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  margin-top: 4px;
+  font-size: 20px;
+  font-weight: 700;
+}
+.totalLine dt {
+  color: var(--ink);
+}
+.perPiece {
+  margin: -4px 0 0;
+  text-align: right;
+  color: var(--muted);
+  font-size: 14px;
+}
+.free {
+  color: var(--pass);
+  font-weight: 600;
+}
+.note {
+  margin: 0;
+  font-size: 14px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--ink-2);
+}
+.good {
+  background: var(--pass-soft);
+  color: var(--pass);
+}
+.nudge {
+  background: var(--accent-soft);
+  color: var(--warn);
+  font-weight: 600;
+}
+.problems {
+  background: var(--fail-soft);
+  color: var(--fail);
+  padding-left: 28px;
+}
+.dates {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.grid3 {
+  display: grid;
+  grid-template-columns: 1.2fr 1.4fr 0.9fr;
+  gap: 12px;
+}
+@media (max-width: 640px) {
+  .grid2,
+  .grid3 {
+    grid-template-columns: 1fr;
+  }
+}

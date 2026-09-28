@@ -1,0 +1,144 @@
+.top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.layout {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: sticky;
+  top: 84px;
+}
+.navLink {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  color: var(--ink-2);
+  text-decoration: none;
+  font-weight: 600;
+}
+.navLink:hover {
+  background: var(--surface);
+}
+.navLink:focus-visible {
+  outline: none;
+  box-shadow: var(--focus);
+}
+.navOn {
+  background: var(--surface);
+  color: var(--brand);
+  box-shadow: inset 3px 0 0 var(--brand);
+}
+.main {
+  min-width: 0;
+}
+@media (max-width: 800px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+  .nav {
+    position: static;
+    flex-direction: row;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+  .navLink {
+    white-space: nowrap;
+  }
+  .navOn {
+    box-shadow: inset 0 -3px 0 var(--brand);
+  }
+}
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: inherit;
+  text-decoration: none;
+}
+a.item:hover {
+  border-color: var(--brand);
+}
+a.item:focus-visible {
+  outline: none;
+  box-shadow: var(--focus);
+}
+.itemTitle {
+  font-weight: 700;
+}
+.itemMeta {
+  color: var(--muted);
+  font-size: 14px;
+}
+.itemRight {
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+}
+.designCard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.designThumb {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: contain;
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+}
+.bubbles {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.bubble {
+  max-width: 80%;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: var(--bg);
+  white-space: pre-wrap;
+}
+.mine {
+  align-self: flex-end;
+  background: #e8eeff;
+}
+.pager {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 16px;
+}

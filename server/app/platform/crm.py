@@ -84,6 +84,7 @@ class QuoteIn(BaseModel):
     coupon: str = Field("", max_length=24)
     extra_discount: float = Field(0, ge=0, description="sales discount on top of the price book")
     message: str = Field("", max_length=2000)
+    valid_until: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$", description="default: company quote_valid_days from today")
 
 
 class TicketIn(BaseModel):
@@ -217,7 +218,7 @@ def save_quote(store: PlatformStore, qid: str | None, body: QuoteIn, actor: str)
             "number": (cur or {}).get("number") or f"Q-{store.next_number('quote'):05d}",
             "pricing": _quote_pricing(store, body), "status": (cur or {}).get("status", "draft"),
             "token": (cur or {}).get("token") or secrets.token_urlsafe(18),
-            "valid_until": (date.today() + timedelta(days=days)).isoformat(), "created_by": (cur or {}).get("created_by", actor),
+            "valid_until": body.valid_until or (cur or {}).get("valid_until") or (date.today() + timedelta(days=days)).isoformat(), "created_by": (cur or {}).get("created_by", actor),
             "customer": {"name": cust["name"], "phone": cust["phone"], "email": cust.get("email", "")}}
     store.audit(actor, "quote.save", f"quote:{qid}", {"total": data["pricing"]["total"]})
     return _put_quote(store, data)

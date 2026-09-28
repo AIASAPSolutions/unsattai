@@ -1,0 +1,57 @@
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+@media (max-width: 860px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+}
+.demoBox {
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--warn-soft);
+  color: var(--warn);
+  margin-bottom: 12px;
+}
+.hero {
+  text-align: center;
+  padding: 28px 16px 8px;
+}
+.tick {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  background: var(--pass-soft);
+  color: var(--pass);
+  font-size: 34px;
+  margin-bottom: 8px;
+}
+.number {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+.date {
+  font-size: 20px;
+  font-weight: 700;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  margin: 16px 0 8px;
+}
+.thumb {
+  width: 100%;
+  max-width: 280px;
+  aspect-ratio: 1;
+  object-fit: contain;
+  background: var(--bg);
+  border-radius: var(--radius);
+}

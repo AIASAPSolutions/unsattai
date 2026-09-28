@@ -15,7 +15,7 @@ import re
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, Header, HTTPException, Request
 
 from .db import PlatformStore, now
 
@@ -201,3 +201,38 @@ def bootstrap_admin(store: PlatformStore) -> None:
         return
     store.add_staff(email, "admin", hash_password(password), {"name": "Administrator"})
     log.info("created admin %s", email)
+
+
+# ----------------------------------------------------------------- who may see an order
+
+def order_viewer(request: Request, authorization: str | None = Header(default=None),
+                 x_device_id: str | None = Header(default=None)) -> dict:
+    """Everything that can prove a link to an order: a customer or staff session, and the device."""
+    from ..ai_edit import device_key
+    token = _bearer(authorization)
+    s = _store.get_session(_sha(token)) if token else None
+    who = {"customer_id": None, "staff": False,
+           "device": device_key(x_device_id, request.client.host if request.client else None)}
+    if s and s["subject_kind"] == "customer":
+        who["customer_id"] = s["subject_id"]
+    elif s and s["subject_kind"] == "staff":
+        st = _store.get_staff(s["subject_id"])
+        who["staff"] = bool(st and st["active"])
+    return who
+
+
+def check_order_access(order: dict | None, who: dict, phone: str | None = None) -> dict:
+    """The order's customer, the device that placed it, staff, or someone who knows its phone number.
+
+    Anything else gets the same 404 as a missing order, so order references can't be probed.
+    """
+    if order:
+        if who.get("staff"):
+            return order
+        if who.get("customer_id") and order.get("customer_id") == who["customer_id"]:
+            return order
+        if who.get("device") and _store.order_device(order["id"]) == who["device"]:
+            return order
+        if phone and normalize_phone(order["customer"]["phone"]) == normalize_phone(phone):
+            return order
+    raise HTTPException(404, "order not found")

@@ -1,0 +1,142 @@
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: saturate(1.4) blur(10px);
+  border-bottom: 1px solid var(--line);
+}
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  min-height: 64px;
+}
+.logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 800;
+  font-size: 1.2rem;
+  color: var(--brand);
+  text-decoration: none;
+  letter-spacing: -0.02em;
+}
+.logoMark {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, var(--brand) 0 55%, var(--accent) 55% 100%);
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 900;
+}
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+}
+.navLink {
+  padding: 8px 12px;
+  border-radius: 8px;
+  text-decoration: none;
+  color: var(--ink-2);
+  font-weight: 600;
+  font-size: 0.95rem;
+  white-space: nowrap;
+}
+.navLink:hover,
+.navLinkOn {
+  background: rgba(19, 34, 90, 0.07);
+  color: var(--brand);
+}
+.right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.lang {
+  min-height: 36px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  padding: 0 8px;
+  background: var(--surface);
+  font-size: 0.9rem;
+}
+button.menuBtn {
+  display: none;
+}
+@media (max-width: 900px) {
+  button.menuBtn {
+    display: inline-flex;
+    margin-left: auto;
+  }
+  .nav {
+    display: none;
+    position: absolute;
+    top: 64px;
+    left: 0;
+    right: 0;
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+    flex-direction: column;
+    align-items: stretch;
+    padding: 8px 16px 16px;
+    box-shadow: var(--shadow);
+  }
+  .navOpen {
+    display: flex;
+  }
+  .right {
+    gap: 6px;
+  }
+  .hideSm {
+    display: none;
+  }
+}
+
+.footer {
+  background: var(--brand);
+  color: #d7ddf0;
+  margin-top: 48px;
+  padding: 40px 0 28px;
+  font-size: 0.92rem;
+}
+.footer a {
+  color: #fff;
+}
+.footGrid {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 28px;
+}
+.footer h2 {
+  color: #fff;
+  font-size: 0.95rem;
+  margin-bottom: 10px;
+}
+.footer ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 6px;
+}
+.footBottom {
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  margin-top: 28px;
+  padding-top: 16px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 0.82rem;
+}
+@media (max-width: 700px) {
+  .footGrid {
+    grid-template-columns: 1fr;
+  }
+}

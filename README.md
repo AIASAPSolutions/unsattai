@@ -1,13 +1,23 @@
 # UrJersey
 
-Design your own jersey, V-neck or shorts on your phone, check it is print-ready, and order it for one player or a whole team.
+Design your own jersey, V-neck or shorts, check it is print-ready, and order it for one player or a whole team. The business runs production, delivery and customers from one operations app.
 
-This repository has two parts:
+This repository has four parts that share one API:
 
-| Folder | What it is |
-| --- | --- |
-| `app/` | The UrJersey mobile app: Expo SDK 57, React Native 0.86 (New Architecture: Fabric, TurboModules, Hermes), TypeScript, Expo Router. Runs on iOS and Android; the same code also runs in a browser for quick testing. |
-| `server/` | The UrJersey API (FastAPI). It owns the design engine (brief understanding in English, Hindi, Telugu and Tamil, design generation, panel rendering, manufacturing checks, logo ideas, background removal, orders and print files). It is a fork of the Sportswear AI Design Studio engine and does not depend on that web app. |
+| Folder | Who uses it | What it is |
+| --- | --- | --- |
+| `app/` | Customers on a phone | The UrJersey mobile app: Expo SDK 57, React Native 0.86 (New Architecture), TypeScript, Expo Router. iOS and Android; the same code also runs in a browser for testing. |
+| `web/` | Customers on a computer or phone browser | The web store: Next.js 16 (App Router), React 19, TypeScript. Everything the app does, plus accounts, saved designs, team links where each player adds their own name and size, bulk enquiries, sales quotes, guest tracking and support tickets. |
+| `ops/` | The business | The operations app: React 19, Vite, TypeScript. Dashboard, orders, production planning, dispatch, CRM (customers, leads, quotes, tickets, tasks, reorders), reports, staff and all settings (prices, production, delivery, company, CRM). |
+| `server/` | All three | The UrJersey API (FastAPI, SQLite). The design engine, pricing, order lifecycle, production and delivery planning, customer and staff accounts, and the CRM. |
+
+How prices, planning, order states and roles work is explained in [docs/platform.md](docs/platform.md). The full API is in `docs/openapi.json`.
+
+```
+ mobile app ──┐
+              ├──> API (server/) <── operations app (staff sign-in)
+ web store ───┘     (the web store's own server calls the API, so the API key never reaches the browser)
+```
 
 ## Run it
 
@@ -38,8 +48,19 @@ Optional environment variables:
 | `AI_BONUS_EDITS_PER_ORDER` | `20` | Extra daily AI edits for each paid order from that phone (up to 3 orders). |
 | `AI_EDITS_PER_MINUTE` | `4` | Per-phone burst limit. |
 | `AI_DAILY_BUDGET` | `2000` | Most AI edits per day across all phones together; `0` means no cap. |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | empty | Creates the first operations admin at start-up when there is none. Use a strong password and change it after the first sign-in. |
+| `OTP_DEV_ECHO` | `1` | Returns customers' sign-in codes in the API response for testing. **Set to `0` in production** once an SMS provider is connected. |
 
-### 2. Start the app
+### 2. Start the web store and the operations app
+
+```bash
+cd web && cp .env.example .env.local && npm install && npm run dev      # http://localhost:3000
+cd ops && cp .env.example .env.local && npm install && npm run dev      # http://localhost:5173
+```
+
+Sign in to the operations app with `ADMIN_EMAIL` / `ADMIN_PASSWORD`, then set your prices, production capacity, delivery zones and company details under **Settings** before taking orders. Each folder's README covers production builds and deployment.
+
+### 3. Start the mobile app
 
 ```bash
 cd app
@@ -52,7 +73,7 @@ Speech input (`expo-speech-recognition`), the 3D preview (`expo-gl`) and image c
 
 Browser: `npx expo start --web` (or `npm run export:web` for a static build).
 
-### 3. Point the app at the API
+### 4. Point the mobile app at the API
 
 The app tries, in order: the address saved in **Settings → Server address**, `EXPO_PUBLIC_API_URL`, `expo.extra.apiUrl` in `app.json`, then a development default.
 
@@ -127,7 +148,12 @@ npm run export:web && APP_URL=http://127.0.0.1:8081 node e2e/web-flow.mjs
                         # With E2E_AI=1 it also checks an AI edit (the API needs AI_EDITS on).
 
 cd ../server && pytest -q
+
+cd ../web && npm test && npm run lint && npm run build && npm run e2e   # see web/README.md
+cd ../ops && npm test && npm run build && npm run e2e:full               # starts its own API
 ```
+
+Last full run: 119 server tests; mobile app 59 unit tests plus a 13-step browser run; web store 47 unit tests plus a 25-step browser run; operations app 62 unit tests plus an 18-step browser run. All three browser runs used the same API code.
 
 ## Platform notes and limits
 
@@ -136,4 +162,15 @@ cd ../server && pytest -q
 - Speech input depends on the phone's recognisers: Hindi, Telugu and Tamil may need the language downloaded (Android: Google app / speech services; iOS: Siri languages). The app says when a language is missing.
 - The 3D preview is an approximation built from the flat pattern pieces, for checking placement, not a fitted garment simulation.
 - Print files are prototype-grade: simplified pattern pieces with uniform grading, 10 mm bleed and magenta CutContour lines. Proof colours with the printer's ICC profile. Sublimation has no white ink, so white areas are the white polyester fabric.
-- Payment is demo only. A real payment provider and a real factory connection need to be configured before taking orders.
+- **Payment is demo only.** Customers can use a demo payment that takes no money, and staff can record cash, UPI or bank payments by hand. Connect a payment gateway before selling online.
+- **No SMS provider.** Sign-in codes are only logged (and returned while `OTP_DEV_ECHO=1`). Connect SMS or WhatsApp at the hook in `server/app/platform/security.py`.
+- **No factory or carrier connection.** Without `FACTORY_URL` paid orders go to a TEST queue. Tracking numbers are typed in by staff.
+- **SQLite** suits a single server. Move to a managed database before running more than one.
+- **The shipped prices, capacities and delivery zones are examples.** Set your own in the operations app.
+
+## Security notes
+
+- The API key is never in a link, and it is never in the mobile app's bundle: it is typed in once on the phone. The web store keeps it on its own server and the browser never sees it. The operations app is a staff tool: if you set `VITE_API_KEY`, give it a key issued only for that app, because it ends up in its browser bundle.
+- An order is only shown to its customer (signed in), the phone or browser that placed it, staff, or someone who knows the order's phone number (guest tracking). Anyone else gets "not found".
+- Customers sign in with a one-time code (10 minutes, 5 attempts). Staff passwords are hashed with PBKDF2. Staff sessions last one day and end at once when an admin resets the password, changes the role or deactivates the account.
+- Every settings change, payment, stage, shipment and staff change is written to the audit log.

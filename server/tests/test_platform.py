@@ -339,3 +339,67 @@ def test_dashboard_reports_exports_and_crm_views(env):
     pipe = c.get("/api/v1/ops/leads/pipeline", headers=h).json()
     assert pipe["win_rate"] == 1.0
     assert c.get("/api/v1/ops/audit", headers=h).json()["items"]
+
+
+
+def test_returned_shipment_lockout_quote_expiry_and_filters(env):
+    c, store, spec = env
+    h = staff(c)
+    o = c.post("/api/v1/orders", json=order_body(spec, key="key_ret_1")).json()
+    c.post(f"/api/v1/orders/{o['id']}/payment-confirmed", json={"demo": True})
+    for st in ["prepress", "print", "press", "cut", "stitch", "qc", "pack"]:
+        c.post(f"/api/v1/ops/orders/{o['id']}/stages/{st}", headers=h)
+    ship = c.post(f"/api/v1/ops/orders/{o['id']}/shipments", headers=h, json={"carrier": "air", "tracking_no": "AX9"}).json()
+    c.patch(f"/api/v1/ops/shipments/{ship['id']}", headers=h, json={"status": "dispatched"})
+    c.patch(f"/api/v1/ops/shipments/{ship['id']}", headers=h, json={"status": "returned"})
+    back = c.get(f"/api/v1/orders/{o['id']}").json()
+    assert back["fulfilment"]["status"] == "ready"
+    assert back["timeline"][-1]["code"] == "returned"
+
+    # A new role or password signs the person out at once.
+    new = c.post("/api/v1/ops/staff", headers=h, json={"email": "p@urjersey.test", "name": "P", "role": "production",
+                                                        "password": "Pr0ductionPass"}).json()
+    hp = staff(c, "p@urjersey.test", "Pr0ductionPass")
+    assert c.get("/api/v1/ops/me", headers=hp).status_code == 200
+    c.patch(f"/api/v1/ops/staff/{new['id']}", headers=h, json={"password": "N3wProductionPass"})
+    assert c.get("/api/v1/ops/me", headers=hp).status_code == 401
+
+    # Quote expiry is kept on edit unless changed; quotes filter by customer and lead.
+    cust = c.post("/api/v1/ops/customers", headers=h, json={"name": "Club", "phone": "+91 90000 00001"}).json()
+    body = {"customer_id": cust["id"], "lead_id": "led_x", "spec": spec, "lines": [{"size": "M", "quantity": 2}],
+            "valid_until": "2031-01-31"}
+    q = c.post("/api/v1/ops/quotes", headers=h, json=body).json()
+    assert q["valid_until"] == "2031-01-31"
+    body.pop("valid_until")
+    assert c.put(f"/api/v1/ops/quotes/{q['id']}", headers=h, json={**body, "title": "edited"}).json()["valid_until"] == "2031-01-31"
+    assert [x["id"] for x in c.get(f"/api/v1/ops/quotes?customer_id={cust['id']}", headers=h).json()["items"]] == [q["id"]]
+    assert c.get("/api/v1/ops/quotes?lead_id=led_other", headers=h).json()["items"] == []
+
+
+def test_orders_are_only_shown_to_their_owner(env):
+    c, store, spec = env
+    mine = {"X-Device-Id": "uj-phone-a"}
+    o = c.post("/api/v1/orders", json=order_body(spec, key="key_own_1"), headers=mine).json()
+    assert c.get(f"/api/v1/orders/{o['id']}", headers=mine).status_code == 200
+    stranger = {"X-Device-Id": "uj-phone-b"}
+    assert c.get(f"/api/v1/orders/{o['id']}", headers=stranger).status_code == 404
+    assert c.post(f"/api/v1/orders/{o['id']}/payment-confirmed", json={"demo": True}, headers=stranger).status_code == 404
+    assert c.get(f"/api/v1/orders/{o['id']}/invoice", headers=stranger).status_code == 404
+    assert c.get(f"/api/v1/orders/{o['id']}/invoice?phone=9876543210", headers=stranger).status_code == 200
+    assert c.get(f"/api/v1/orders/{o['id']}", headers={**stranger, **staff(c)}).status_code == 200
+    # Guests track with the order number (or reference) and their phone.
+    assert c.get(f"/api/v1/orders/{o['number']}/track?phone=%2B919876543210").json()["id"] == o["id"]
+    assert c.get(f"/api/v1/orders/{o['number']}/track?phone=9000000000").status_code == 404
+
+    # Shipment details and translatable timeline parameters reach the customer.
+    h = staff(c)
+    c.post(f"/api/v1/orders/{o['id']}/payment-confirmed", json={"demo": True}, headers=mine)
+    for st in ["prepress", "print", "press", "cut", "stitch", "qc", "pack"]:
+        c.post(f"/api/v1/ops/orders/{o['id']}/stages/{st}", headers=h)
+    ship = c.post(f"/api/v1/ops/orders/{o['id']}/shipments", headers=h, json={"carrier": "air", "tracking_no": "AX5"}).json()
+    c.patch(f"/api/v1/ops/shipments/{ship['id']}", headers=h, json={"status": "dispatched"})
+    v = c.get(f"/api/v1/orders/{o['id']}", headers=mine).json()
+    assert v["fulfilment"]["shipment"]["tracking_no"] == "AX5" and v["fulfilment"]["shipment"]["status"] == "dispatched"
+    assert v["timeline"][-1]["params"]["tracking"] == "AX5"
+    q = c.post("/api/v1/shop/quote", json={"lines": [{"size": "M", "quantity": 2}]}).json()
+    assert "estimate_express" in q
