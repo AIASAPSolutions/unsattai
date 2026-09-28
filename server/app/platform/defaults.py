@@ -27,8 +27,11 @@ PRICE_BOOK = {
     "tax": {"name": "GST", "rate": 0.05, "rate_above": 0.12, "threshold_per_piece": 1000, "inclusive": False},
     "coupons": [
         {"code": "WELCOME10", "kind": "percent", "value": 10, "max_discount": 500, "min_subtotal": 1000,
-         "active": True, "expires": None, "note": "First order"},
+         "active": True, "expires": None, "note": "First order", "public": True,
+         "title": "10% off orders above 1000 (up to 500)"},
     ],
+    # Cash on delivery. A seller's service area must also allow it for the PIN code.
+    "cod": {"enabled": True, "fee": 49, "max_order_value": 20000},
 }
 
 PRODUCTION = {
@@ -88,6 +91,9 @@ CRM = {
     "organisation_kinds": ["team", "club", "school", "college", "academy", "company", "event", "other"],
     "ticket_categories": ["order_status", "sizing", "quality", "delivery", "payment", "design", "other"],
     "reorder_reminder_days": 300,
+    # Custom printed goods: returnable only for these reasons, within this many days of delivery.
+    "return_window_days": 7,
+    "returnable_reasons": ["damaged", "wrong_item", "print_quality"],
 }
 
 ALL = {"price_book": PRICE_BOOK, "production": PRODUCTION, "delivery": DELIVERY, "company": COMPANY, "crm": CRM}

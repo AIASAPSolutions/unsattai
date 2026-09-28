@@ -62,12 +62,22 @@ class Coupon(_M):
     active: bool = True
     expires: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     note: str = Field("", max_length=120)
+    public: bool = Field(False, description="listed under GET /shop/offers")
+    title: str = Field("", max_length=80, description="what customers see in the offers list")
 
     @model_validator(mode="after")
     def _pct(self):
+        if self.public and not self.title.strip():
+            raise ValueError(f"coupon {self.code}: a public coupon needs a title")
         if self.kind == "percent" and self.value > 90:
             raise ValueError("a percent coupon can be at most 90")
         return self
+
+
+class Cod(_M):
+    enabled: bool = True
+    fee: float = Field(0, ge=0, le=10_000)
+    max_order_value: float | None = Field(None, gt=0, description="orders above this total can't use cash on delivery")
 
 
 class PriceBook(_M):
@@ -82,6 +92,7 @@ class PriceBook(_M):
     rush: Rush
     tax: Tax
     coupons: list[Coupon] = Field(default_factory=list)
+    cod: Cod = Field(default_factory=lambda: Cod(enabled=False))
 
     @model_validator(mode="after")
     def _check(self):
@@ -186,11 +197,18 @@ class CRMConfig(_M):
     organisation_kinds: list[str] = Field(..., min_length=1)
     ticket_categories: list[str] = Field(..., min_length=1)
     reorder_reminder_days: int = Field(300, ge=0, le=2000)
+    return_window_days: int = Field(7, ge=0, le=60, description="0 turns returns off")
+    returnable_reasons: list[str] = Field(default_factory=lambda: ["damaged", "wrong_item", "print_quality"],
+                                          max_length=20)
 
     @model_validator(mode="after")
     def _won_lost(self):
         if "won" not in self.lead_stages or "lost" not in self.lead_stages:
             raise ValueError('lead stages must include "won" and "lost"')
+        import re
+        bad = [r for r in self.returnable_reasons if not re.fullmatch(r"[a-z0-9_]{2,30}", r)]
+        if bad:
+            raise ValueError(f"return reasons are short ids like print_quality: {bad[0]!r}")
         return self
 
 
@@ -203,15 +221,21 @@ class ConfigInvalid(Exception):
         self.errors = errors
 
 
+def _fill(section: str, value: dict) -> dict:
+    """Settings saved before a newer server added keys get those keys' defaults."""
+    base = copy.deepcopy(defaults.ALL[section])
+    return {**base, **value}
+
+
 def get(store: PlatformStore, section: str) -> dict:
     row = store.get_setting(section)
-    return row["value"] if row else copy.deepcopy(defaults.ALL[section])
+    return _fill(section, row["value"]) if row else copy.deepcopy(defaults.ALL[section])
 
 
 def get_with_version(store: PlatformStore, section: str) -> dict:
     row = store.get_setting(section)
     if row:
-        return row
+        return {**row, "value": _fill(section, row["value"])}
     return {"value": copy.deepcopy(defaults.ALL[section]), "version": 0, "updated_at": None, "updated_by": None}
 
 
@@ -248,4 +272,7 @@ def public_catalogue(store: PlatformStore) -> dict:
         "zones": [{"id": z["id"], "name": z["name"], "transit_days": z["transit_days"], "free_above": z["free_above"]}
                   for z in dl["zones"]],
         "company": {k: co[k] for k in ("name", "email", "phone", "support_hours")},
+        "cod": pb.get("cod") or {"enabled": False, "fee": 0, "max_order_value": None},
+        "returns": {"window_days": get(store, "crm")["return_window_days"],
+                    "reasons": get(store, "crm")["returnable_reasons"]},
     }

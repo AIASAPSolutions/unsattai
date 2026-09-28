@@ -61,7 +61,19 @@ CREATE INDEX IF NOT EXISTS idx_audit_subject ON audit(subject);
 #   entry         status=active|removed    parent=collection id
 #   job           status=planned|in_progress|done|cancelled parent=order id
 #   shipment      status=planned|packed|dispatched|delivered|returned|cancelled parent=order id ref=tracking no
-#   order_index   status=<order status>  parent=customer id  ref=phone   (a searchable copy of orders)
+#                 owner=seller id
+#   order_index   status=<order status>  parent=customer id  ref=phone  owner=seller id  (a searchable copy of orders)
+#   seller        status=active|inactive
+#   product       status=draft|published  ref=slug
+#   review        status=visible|hidden   parent=product id (or "")  owner=seller id  ref=order id
+#   return        status=requested|approved|picked_up|resolved|rejected  parent=order id  owner=seller id
+#   checkout      status=open|paid  parent=customer id  ref=idempotency key
+#   cart, wishlist  one per customer, id = customer id
+#   notification  status=unread|read  parent=customer id
+#   message       status=logged|sent|failed  (the SMS and email outbox)  parent=customer id  ref=order id
+#   email_index   id = verified email, data {customer_id}
+#   login_guard   id = sign-in identifier, failed password attempts and lock time
+#   customer_secret  id = customer id, the password hash (kept out of the customer record)
 
 
 def now() -> str:
@@ -72,11 +84,35 @@ def new_id(prefix: str) -> str:
     return f"{prefix}_{secrets.token_hex(6)}"
 
 
+def sortable_id(prefix: str) -> str:
+    """An id that sorts in creation order (for feeds where several rows share a second)."""
+    import time
+    return f"{prefix}_{time.time_ns():x}{secrets.token_hex(2)}"
+
+
+# Columns added to `sessions` after the first release. Old databases get them with
+# ALTER TABLE on start; existing sessions keep working and get an id.
+SESSION_COLUMNS = {"id": "TEXT", "created_at": "TEXT", "last_seen_at": "TEXT", "device_label": "TEXT NOT NULL DEFAULT ''",
+                   "auth_method": "TEXT NOT NULL DEFAULT ''"}
+LAST_SEEN_EVERY_SECONDS = 60
+
+
 class PlatformStore(Store):
     def __init__(self, path: Path):
         super().__init__(path)
         with self._conn() as c:
             c.executescript(PLATFORM_SCHEMA)
+            self._migrate_sessions(c)
+
+    @staticmethod
+    def _migrate_sessions(c) -> None:
+        have = {r["name"] for r in c.execute("PRAGMA table_info(sessions)").fetchall()}
+        for col, decl in SESSION_COLUMNS.items():
+            if col not in have:
+                c.execute(f"ALTER TABLE sessions ADD COLUMN {col} {decl}")
+        c.execute("UPDATE sessions SET id = 'ses_' || lower(hex(randomblob(6))) WHERE id IS NULL")
+        c.execute("UPDATE sessions SET created_at = ? WHERE created_at IS NULL", (now(),))
+        c.execute("CREATE INDEX IF NOT EXISTS idx_sessions_subject ON sessions(subject_kind, subject_id)")
 
     # ------------------------------------------------------------- settings
 
@@ -158,15 +194,40 @@ class PlatformStore(Store):
         with self._conn() as c:
             return c.execute("SELECT COUNT(*) n FROM staff").fetchone()["n"]
 
-    def add_session(self, token_hash: str, kind: str, subject: str, expires_at: str) -> None:
+    def add_session(self, token_hash: str, kind: str, subject: str, expires_at: str, device_label: str = "",
+                    auth_method: str = "") -> str:
+        sid, at = new_id("ses"), now()
         with self._conn() as c:
-            c.execute("INSERT INTO sessions VALUES (?,?,?,?)", (token_hash, kind, subject, expires_at))
-            c.execute("DELETE FROM sessions WHERE expires_at < ?", (now(),))
+            c.execute("INSERT INTO sessions (token_hash, subject_kind, subject_id, expires_at, id, created_at, "
+                      "last_seen_at, device_label, auth_method) VALUES (?,?,?,?,?,?,?,?,?)",
+                      (token_hash, kind, subject, expires_at, sid, at, at, device_label[:80], auth_method))
+            c.execute("DELETE FROM sessions WHERE expires_at < ?", (at,))
+        return sid
 
     def get_session(self, token_hash: str) -> dict | None:
+        at = now()
         with self._conn() as c:
-            row = c.execute("SELECT * FROM sessions WHERE token_hash = ? AND expires_at > ?", (token_hash, now())).fetchone()
+            row = c.execute("SELECT * FROM sessions WHERE token_hash = ? AND expires_at > ?", (token_hash, at)).fetchone()
+            if row and (not row["last_seen_at"] or (datetime.fromisoformat(at) - datetime.fromisoformat(row["last_seen_at"])
+                                                    ).total_seconds() > LAST_SEEN_EVERY_SECONDS):
+                c.execute("UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?", (at, token_hash))
         return dict(row) if row else None
+
+    def sessions_for(self, kind: str, subject: str) -> list[dict]:
+        with self._conn() as c:
+            rows = c.execute("SELECT * FROM sessions WHERE subject_kind = ? AND subject_id = ? AND expires_at > ? "
+                             "ORDER BY COALESCE(last_seen_at, created_at) DESC", (kind, subject, now())).fetchall()
+        return [dict(r) for r in rows]
+
+    def drop_session_id(self, kind: str, subject: str, session_id: str) -> int:
+        with self._conn() as c:
+            return c.execute("DELETE FROM sessions WHERE subject_kind = ? AND subject_id = ? AND id = ?",
+                             (kind, subject, session_id)).rowcount
+
+    def drop_other_sessions(self, kind: str, subject: str, keep_token_hash: str) -> int:
+        with self._conn() as c:
+            return c.execute("DELETE FROM sessions WHERE subject_kind = ? AND subject_id = ? AND token_hash != ?",
+                             (kind, subject, keep_token_hash)).rowcount
 
     def drop_sessions_for(self, kind: str, subject: str) -> int:
         with self._conn() as c:
@@ -229,7 +290,7 @@ class PlatformStore(Store):
         if q:
             where.append("search LIKE ?")
             args.append(f"%{q.lower()}%")
-        if order not in ("updated_at DESC", "created_at DESC", "created_at ASC", "updated_at ASC"):
+        if order not in ("updated_at DESC", "created_at DESC", "created_at ASC", "updated_at ASC", "created_at DESC, id DESC"):
             order = "updated_at DESC"
         sql = " AND ".join(where)
         with self._conn() as c:

@@ -109,6 +109,11 @@ def update_customer(store: PlatformStore, cid: str, body: CustomerIn, actor: str
     from .security import normalize_phone
     data = body.model_dump()
     data["phone"] = normalize_phone(data["phone"])
+    # Staff can correct contact details, but only a code sent to it makes a phone or email a sign-in.
+    if data["phone"] != cust.get("phone"):
+        data["phone_verified"] = False
+    if (data["email"] or "").lower() != (cust.get("email") or "").lower():
+        data["email_verified"] = False
     if data["phone"] != cust["phone"]:
         other, _ = store.find("customer", ref=data["phone"], limit=1)
         if other and other[0]["id"] != cid:

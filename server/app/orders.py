@@ -65,11 +65,19 @@ def _checks_for(spec: DesignSpec, size: str) -> list[dict]:
 
 def request_hash(req: OrderRequest) -> str:
     body = req.model_dump(exclude={"idempotency_key"})
+    # Fields added later are left out at their defaults, so retries of older requests still match.
+    for k, default in (("seller_id", ""), ("payment_method", "online")):
+        if body.get(k) == default:
+            body.pop(k, None)
     return hashlib.sha256(json.dumps(body, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
-def create(store: Store, req: OrderRequest) -> tuple[dict, bool]:
-    lines = merge_items(req)
+def check_lines(req: OrderRequest) -> list[dict]:
+    """Manufacturing-check failures per merged line, without creating anything."""
+    return _check(req, merge_items(req))[0]
+
+
+def _check(req: OrderRequest, lines: list[dict]) -> tuple[list[dict], dict]:
     failures, checks_by_size = [], {}
     for ln in lines:
         spec = personalise(req.spec, ln["player_name"], ln["number"])
@@ -79,6 +87,12 @@ def create(store: Store, req: OrderRequest) -> tuple[dict, bool]:
         if bad:
             failures.append({"line": ln["line"], "player_name": ln["player_name"], "number": ln["number"],
                              "size": ln["size"], "checks": bad})
+    return failures, checks_by_size
+
+
+def create(store: Store, req: OrderRequest) -> tuple[dict, bool]:
+    lines = merge_items(req)
+    failures, checks_by_size = _check(req, lines)
     if failures:
         raise OrderError(422, "Some order lines fail manufacturing checks, so the order cannot be placed.",
                          failures=failures)
@@ -167,7 +181,11 @@ def confirm_payment(store: Store, order_id: str, pay: PaymentConfirmation, metho
         order["factory"] = dict(existing, duplicate=True)
         return order
 
-    if method == "demo":
+    if method == "cod":
+        order["payment"] = {"demo": False, "method": "cod", "collected": False, "collected_at": None,
+                            "amount": (order.get("pricing") or {}).get("total"), "reference": "",
+                            "confirmed_at": _now(), "note": "Cash on delivery: collected when the order is delivered."}
+    elif method == "demo":
         order["payment"] = {"demo": True, "method": "demo", "reference": pay.reference or "DEMO-" + uuid.uuid4().hex[:8].upper(),
                             "confirmed_at": _now(), "note": "Demo payment only. No money was taken."}
     else:

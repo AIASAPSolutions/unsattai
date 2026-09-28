@@ -12,20 +12,27 @@ import secrets
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.responses import HTMLResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from ..schemas import SIZES, Address, DesignSpec
-from . import config, crm, lifecycle, planning, security
+from . import accounts, config, crm, lifecycle, planning, security, sellers
 from .db import PlatformStore, new_id, now
 from .pricing import QuoteRequest, find_zone, quote
 
 
 class OtpRequest(BaseModel):
-    phone: str = Field(..., min_length=6, max_length=24)
+    """A mobile number or an email address (one of them)."""
+    phone: str | None = Field(None, min_length=6, max_length=24)
+    email: str | None = Field(None, min_length=3, max_length=120)
+
+    @model_validator(mode="after")
+    def _one(self):
+        if bool(self.phone) == bool(self.email):
+            raise ValueError("give a phone or an email")
+        return self
 
 
-class OtpVerify(BaseModel):
-    phone: str = Field(..., min_length=6, max_length=24)
+class OtpVerify(OtpRequest):
     code: str = Field(..., min_length=4, max_length=8)
     name: str = Field("", max_length=80)
 
@@ -93,18 +100,24 @@ def router(store: PlatformStore, key_dep, create_order) -> APIRouter:
     def shop_quote(req: QuoteRequest):
         q = quote(store, req)
         transit = q["shipping"].get("transit_days", 0)
-        q["estimate"] = planning.promise(store, q["pieces"], req.rush, transit)
+        seller = store.get("seller", q["seller"]["id"]) if q.get("seller") else None
+        q["estimate"] = planning.promise(store, q["pieces"], req.rush, transit, seller=seller)
         if req.rush:
-            q["estimate_standard"] = planning.promise(store, q["pieces"], False, transit)
+            q["estimate_standard"] = planning.promise(store, q["pieces"], False, transit, seller=seller)
         else:
-            q["estimate_express"] = planning.promise(store, q["pieces"], True, transit)
+            q["estimate_express"] = planning.promise(store, q["pieces"], True, transit, seller=seller)
         return q
 
     @r.get("/shop/delivery-estimate")
     def delivery_estimate(pieces: int = Query(1, ge=1, le=5000), pincode: str = Query("", pattern=r"^$|^\d{6}$"),
                           rush: bool = False):
         zone = find_zone(config.get(store, "delivery"), pincode, "")
-        return {"zone": zone["name"], **planning.promise(store, pieces, rush, zone["transit_days"])}
+        seller, area, why = sellers.choose(store, "", pincode, "", "jersey", None, pieces, rush)
+        if why:
+            return {"zone": zone["name"], "serviceable": False, "reason": why, "ship_date": None,
+                    "delivery_date": None, "ready_date": None, "production_days": None}
+        return {"zone": zone["name"], "serviceable": True, "seller": {"id": seller["id"], "name": seller["name"]},
+                **planning.promise(store, pieces, rush, area["transit_days"], seller=seller)}
 
     @r.post("/shop/enquiries", status_code=201)
     def enquiry(body: EnquiryIn):
@@ -127,16 +140,28 @@ def router(store: PlatformStore, key_dep, create_order) -> APIRouter:
 
     @r.post("/auth/otp/request")
     def otp_request(body: OtpRequest):
-        return security.request_otp(store, body.phone)
+        """Sends a code. The answer is the same whether or not an account exists."""
+        return security.request_code(store, phone=body.phone, email=body.email)
 
     @r.post("/auth/otp/verify")
-    def otp_verify(body: OtpVerify):
-        phone = security.verify_otp(store, body.phone, body.code)
-        cust = lifecycle.upsert_customer(store, body.name, phone, "", "web")
+    def otp_verify(body: OtpVerify, user_agent: str | None = Header(default=None)):
+        if body.email:
+            email = security.verify_code(store, body.code, email=body.email)
+            cust = lifecycle.customer_by_email(store, email)
+            if cust is None:
+                cust = lifecycle.new_customer(body.name, "", email, "web")
+            cust["email"], cust["email_verified"] = email, True
+            if body.name and not cust.get("name"):
+                cust["name"] = body.name
+        else:
+            phone = security.verify_otp(store, body.phone, body.code)
+            cust = lifecycle.upsert_customer(store, body.name, phone, "", "web")
+            cust["phone_verified"] = True
         if cust.get("status") == "blocked":
             raise HTTPException(403, "This account is blocked. Contact support.")
+        cust = lifecycle.save_customer(store, cust)
         _link_guest_orders(cust)
-        return {**security.issue_token(store, "customer", cust["id"]), "customer": _me(cust)}
+        return {**security.issue_token(store, "customer", cust["id"], user_agent, "otp"), "customer": _me(cust)}
 
     @r.post("/auth/logout")
     def logout(authorization: str | None = Header(default=None)):
@@ -146,18 +171,10 @@ def router(store: PlatformStore, key_dep, create_order) -> APIRouter:
         return {"ok": True}
 
     def _me(c: dict) -> dict:
-        return {k: c.get(k) for k in ("id", "name", "phone", "email", "addresses", "marketing_opt_in", "orders_count")}
+        return accounts.me_view(c)
 
     def _link_guest_orders(cust: dict) -> None:
-        rows, _ = store.find("order_index", ref=cust["phone"], limit=500)
-        for row in rows:
-            if row.get("customer_id") != cust["id"]:
-                order = store.get_order(row["id"])
-                if order:
-                    order["customer_id"] = cust["id"]
-                    store.save_order(order)
-                    lifecycle.index_order(store, order)
-        lifecycle.refresh_customer_stats(store, cust["id"])
+        accounts.link_guest_orders(store, cust)
 
     @r.get("/me")
     def me(customer: dict = Depends(security.require_customer)):
@@ -166,6 +183,9 @@ def router(store: PlatformStore, key_dep, create_order) -> APIRouter:
     @r.patch("/me")
     def update_me(body: ProfileIn, customer: dict = Depends(security.require_customer)):
         for k, v in body.model_dump(exclude_none=True).items():
+            if k == "email" and v.lower() != (customer.get("email") or "").lower():
+                # A typed-in email is only contact detail; POST /me/identifiers verifies one for sign-in.
+                customer["email_verified"] = False
             customer[k] = v
         return _me(lifecycle.save_customer(store, customer))
 

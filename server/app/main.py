@@ -28,7 +28,7 @@ from .schemas import (COLOR_ROLES, COVERAGES, FONTS, GARMENTS, LOGO_MIME, MAX_LO
                       SPORTS, TEXT_LIMITS, DesignSpec, FeedbackRequest, FromImageRequest, GenerateRequest, LogoSuggestRequest,
                       OrderRequest, PanelsRequest, PaymentConfirmation, PrintRequest, RefineRequest, RenderRequest,
                       UnderstandRequest)
-from .platform import api_ops, api_shop, lifecycle, security
+from .platform import api_market, api_ops, api_ops_market, api_shop, catalog, lifecycle, pricing, security, sellers
 from .platform.config import ConfigInvalid
 from .platform.db import PlatformStore
 from .understand import understand as understand_brief
@@ -44,6 +44,8 @@ app.add_middleware(CORSMiddleware, allow_origins=list(settings.cors_origins), al
 store = PlatformStore(settings.db_path)
 security.bind(store)
 security.bootstrap_admin(store)
+sellers.ensure_house(store)
+catalog.seed_products(store)
 
 
 @app.middleware("http")
@@ -233,10 +235,47 @@ def feedback(design_id: str, fb: FeedbackRequest):
 
 # ----------------------------------------------------------------- orders
 
-def place_order(req: OrderRequest, customer: dict | None = None, quote: dict | None = None) -> tuple[dict, bool]:
-    """Create (or return the existing) order, then price it, link the customer and promise dates."""
+def order_seller(req: OrderRequest, quote: dict | None = None) -> tuple[dict, dict]:
+    """The seller and service area for an order; 422 when nobody (or the chosen seller) can serve it."""
+    d = req.delivery
+    pincode = d.address.pincode if d and d.address else ""
+    state = d.address.state if d and d.address else ""
+    wanted = req.seller_id or (((quote or {}).get("pricing") or {}).get("seller") or {}).get("id") or ""
+    seller, area, why = sellers.choose(store, wanted, pincode, state, req.spec.garment, req.fabric,
+                                       sum(i.quantity for i in req.items), req.rush, pickup=bool(d and d.method == "pickup"))
+    if why:
+        raise HTTPException(422, {"message": sellers.problem_text(why), "code": why})
+    return seller, area
+
+
+def _cod_problem(req: OrderRequest, seller: dict) -> str | None:
+    d = req.delivery
+    q = pricing.quote(store, pricing.QuoteRequest(
+        garment=req.spec.garment, fabric=req.fabric, rush=req.rush, coupon=req.coupon, seller_id=seller["id"],
+        payment_method="cod", logos=min(4, sum(1 for e in req.spec.elements if e.type == "logo")),
+        lines=[pricing.PriceLine(size=i.size, quantity=i.quantity, player_name=i.player_name, number=i.number)
+               for i in req.items],
+        delivery=pricing.DeliveryChoice(method=d.method if d else "ship",
+                                        pincode=d.address.pincode if d and d.address else "",
+                                        state=d.address.state if d and d.address else "")))
+    return None if q["cod"]["available"] else next((p for p in q["problems"] if "ash on delivery" in p),
+                                                    "Cash on delivery is not available.")
+
+
+def place_order(req: OrderRequest, customer: dict | None = None, quote: dict | None = None,
+                extra: dict | None = None) -> tuple[dict, bool]:
+    """Create (or return the existing) order, then price it, link the customer and promise dates.
+
+    extra: checkout details (checkout id, product id, this item's share of a cart coupon)."""
     if req.collection_id and customer is None:
         raise HTTPException(401, "Sign in to order a team collection.")
+    existing = store.order_by_key(req.idempotency_key)
+    if existing is None or not existing.get("pricing"):
+        seller, area = order_seller(req, quote)
+        if req.payment_method == "cod":
+            problem = _cod_problem(req, seller)
+            if problem:
+                raise HTTPException(422, {"message": problem, "code": "cod_unavailable"})
     try:
         order, created = orders.create(store, req)
     except KeyError as e:
@@ -247,10 +286,14 @@ def place_order(req: OrderRequest, customer: dict | None = None, quote: dict | N
                   "address": d.address.model_dump() if d and d.address else None,
                   "delivery_choice": {"method": d.method if d else "ship",
                                       "pincode": d.address.pincode if d and d.address else "",
-                                      "state": d.address.state if d and d.address else ""}}
+                                      "state": d.address.state if d and d.address else ""},
+                  "seller": seller, "area": area, "payment_method": req.payment_method, **(extra or {})}
         if quote:
             extras.update(pricing=quote["pricing"], quote_id=quote["id"])
         order = lifecycle.on_created(store, order, extras, customer, req.channel)
+        if req.payment_method == "cod":
+            order = orders.confirm_payment(store, order["id"], PaymentConfirmation(demo=True), method="cod",
+                                           recorded_by="customer")
     return order, created
 
 
@@ -285,7 +328,9 @@ def _order_from_dict(body: dict, quote: dict | None = None) -> dict:
 
 
 app.include_router(api_shop.router(store, KEY, _order_from_dict))
+app.include_router(api_market.router(store, KEY, place_order))
 app.include_router(api_ops.router(store, KEY))
+app.include_router(api_ops_market.router(store))
 
 
 @app.post("/api/v1/orders/{order_id}/files/{name}", dependencies=KEY)

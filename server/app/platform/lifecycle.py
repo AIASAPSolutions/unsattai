@@ -14,8 +14,9 @@ from datetime import datetime, timezone
 
 from fastapi import HTTPException
 
-from . import config, planning
+from . import config, notify, planning
 from .db import PlatformStore, new_id, now
+from .security import HOUSE_SELLER, seller_id_of
 from .pricing import DeliveryChoice, PriceLine, QuoteRequest, find_zone, quote
 
 FULFILMENT = ("awaiting_payment", "queued", "in_production", "ready", "dispatched", "delivered", "cancelled")
@@ -23,6 +24,15 @@ FULFILMENT = ("awaiting_payment", "queued", "in_production", "ready", "dispatche
 EVENT_TEXT = {
     "placed": "Order placed",
     "paid": "Payment received",
+    "cod_confirmed": "Order confirmed: pay on delivery",
+    "cod_collected": "Cash on delivery payment received",
+    "refund": "Refund of {amount} recorded",
+    "return_requested": "Return requested",
+    "return_approved": "Return approved",
+    "return_picked_up": "Return picked up",
+    "return_resolved": "Return resolved: {resolution}",
+    "return_rejected": "Return not accepted",
+    "reviewed": "You reviewed this order",
     "planned": "Scheduled for production",
     "stage": "{stage} done",
     "hold": "Order on hold",
@@ -56,8 +66,12 @@ def index_order(store: PlatformStore, order: dict) -> None:
         "currency": (order.get("pricing") or {}).get("currency"), "rush": f.get("rush", False),
         "promised_delivery_date": f.get("promised_delivery_date"), "channel": order.get("channel", "app"),
         "hold": f.get("hold", False), "style_name": (order.get("spec") or {}).get("style_name"),
+        "seller_id": seller_id_of(order), "seller_name": (order.get("seller") or {}).get("name"),
+        "payment_method": order.get("payment_method", "online"), "checkout_id": order.get("checkout_id"),
+        "email": (c.get("email") or "").lower(), "product_id": order.get("product_id"),
+        "cod_collected": ((order.get("payment") or {}).get("collected") if order.get("payment_method") == "cod" else None),
     }
-    store.put("order_index", order["id"], summary, status=summary["fulfilment_status"],
+    store.put("order_index", order["id"], summary, status=summary["fulfilment_status"], owner=summary["seller_id"],
               parent=order.get("customer_id") or "", ref=c.get("phone") or "",
               search=" ".join(filter(None, [order["id"], str(order.get("number") or ""), c.get("name"), c.get("phone"),
                                             c.get("email"), team, names])))
@@ -77,16 +91,31 @@ def upsert_customer(store: PlatformStore, name: str, phone: str, email: str = ""
         if changed:
             cust = save_customer(store, cust)
         return cust
-    cust = {"id": new_id("cus"), "name": name, "phone": phone, "email": email, "status": "active", "source": source,
+    return save_customer(store, new_customer(name, phone, email, source))
+
+
+def new_customer(name: str, phone: str, email: str, source: str) -> dict:
+    return {"id": new_id("cus"), "name": name, "phone": phone, "email": email, "status": "active", "source": source,
             "organisation_id": "", "owner": "", "tags": [], "addresses": [], "orders_count": 0, "lifetime_value": 0,
-            "last_order_at": None, "marketing_opt_in": False, "notes": ""}
-    return save_customer(store, cust)
+            "last_order_at": None, "marketing_opt_in": False, "notes": "", "phone_verified": False,
+            "email_verified": False, "has_password": False}
 
 
 def save_customer(store: PlatformStore, cust: dict) -> dict:
+    if cust.get("email_verified") and cust.get("email"):
+        store.put("email_index", cust["email"].lower(), {"customer_id": cust["id"]})
     return store.put("customer", cust["id"], cust, status=cust.get("status", "active"), owner=cust.get("owner", ""),
-                     parent=cust.get("organisation_id", ""), ref=cust["phone"],
-                     search=" ".join(filter(None, [cust.get("name"), cust["phone"], cust.get("email"), *cust.get("tags", [])])))
+                     parent=cust.get("organisation_id", ""), ref=cust.get("phone") or "",
+                     search=" ".join(filter(None, [cust.get("name"), cust.get("phone"), cust.get("email"), *cust.get("tags", [])])))
+
+
+def customer_by_email(store: PlatformStore, email: str) -> dict | None:
+    """The customer whose verified email this is (an index entry left by an old email is ignored)."""
+    ix = store.get("email_index", email.lower())
+    cust = store.get("customer", ix["customer_id"]) if ix else None
+    if cust and cust.get("email_verified") and (cust.get("email") or "").lower() == email.lower():
+        return cust
+    return None
 
 
 def refresh_customer_stats(store: PlatformStore, customer_id: str) -> None:
@@ -109,8 +138,9 @@ def price_order(store: PlatformStore, order: dict, extras: dict) -> dict:
         lines=[PriceLine(size=ln["size"], quantity=ln["quantity"], player_name=ln["player_name"], number=ln["number"])
                for ln in order["lines"]],
         delivery=DeliveryChoice(**(extras.get("delivery_choice") or {})), rush=bool(extras.get("rush")),
-        coupon=extras.get("coupon") or "")
-    return quote(store, req)
+        coupon=extras.get("coupon") or "", seller_id=(order.get("seller") or {}).get("id") or "",
+        payment_method=extras.get("payment_method") or "online")
+    return quote(store, req, forced_coupon=extras.get("forced_coupon"), forced_charges=extras.get("forced_charges"))
 
 
 def on_created(store: PlatformStore, order: dict, extras: dict, customer: dict | None, channel: str) -> dict:
@@ -123,13 +153,21 @@ def on_created(store: PlatformStore, order: dict, extras: dict, customer: dict |
     order["channel"] = channel
     order["number"] = f"{config.get(store, 'company')['invoice_prefix']}-{store.next_number('order'):05d}"
     # An accepted sales quote keeps its agreed prices; everything else is priced now.
+    seller, area = extras.get("seller"), extras.get("area")
+    if seller is None:
+        seller = store.get("seller", HOUSE_SELLER)
+    order["seller"] = {"id": (seller or {}).get("id") or HOUSE_SELLER, "name": (seller or {}).get("name") or ""}
+    order["payment_method"] = extras.get("payment_method") or "online"
+    order["checkout_id"] = extras.get("checkout_id")
+    order["product_id"] = extras.get("product_id")
     order["pricing"] = extras.get("pricing") or price_order(store, order, extras)
     choice = extras.get("delivery_choice") or {"method": "ship"}
     dl = config.get(store, "delivery")
     zone = None if choice.get("method") == "pickup" else find_zone(dl, choice.get("pincode", ""), choice.get("state", ""))
+    transit = (area or {}).get("transit_days", zone["transit_days"]) if zone else 0
     order["delivery"] = {"method": choice.get("method", "ship"), "address": extras.get("address"),
-                         "zone": zone["id"] if zone else None, "transit_days": zone["transit_days"] if zone else 0}
-    est = planning.promise(store, order["total_pieces"], bool(extras.get("rush")), order["delivery"]["transit_days"])
+                         "zone": zone["id"] if zone else None, "transit_days": transit}
+    est = planning.promise(store, order["total_pieces"], bool(extras.get("rush")), transit, seller=seller)
     order["fulfilment"] = {"status": "awaiting_payment", "rush": bool(extras.get("rush")), "paid_at": None,
                            "estimate": est, "promised_ship_date": None, "promised_delivery_date": None,
                            "stages": [], "hold": False}
@@ -145,6 +183,7 @@ def on_created(store: PlatformStore, order: dict, extras: dict, customer: dict |
     store.save_order(order)
     index_order(store, order)
     store.audit(f"customer:{cust['id']}", "order.create", f"order:{order['id']}", {"total": order["pricing"]["total"]})
+    notify.order_event(store, order, "placed")
     return order
 
 
@@ -154,16 +193,21 @@ def on_paid(store: PlatformStore, order: dict, actor: str = "system") -> dict:
         return order
     f["status"] = "queued"
     f["paid_at"] = now()
-    est = planning.promise(store, order["total_pieces"], bool(f.get("rush")), (order.get("delivery") or {}).get("transit_days", 0))
+    est = planning.promise(store, order["total_pieces"], bool(f.get("rush")), (order.get("delivery") or {}).get("transit_days", 0),
+                           seller=store.get("seller", seller_id_of(order)))
     f["promised_ship_date"], f["promised_delivery_date"] = est["ship_date"], est["delivery_date"]
     stages = config.get(store, "production")["stages"]
     f["stages"] = [{"id": s["id"], "name": s["name"], "done_at": None, "done_by": None} for s in stages]
-    event(order, "paid", actor)
+    event(order, "paid" if order.get("payment_method") != "cod" else "cod_confirmed", actor)
     event(order, "planned", actor)
     store.save_order(order)
     index_order(store, order)
     if order.get("customer_id"):
         refresh_customer_stats(store, order["customer_id"])
+    if order.get("product_id"):
+        from . import catalog
+        catalog.count_order(store, order["product_id"])
+    notify.order_event(store, order, "confirmed")
     return order
 
 
@@ -219,14 +263,69 @@ def cancel(store: PlatformStore, order_id: str, reason: str, actor: str) -> dict
     f = order.setdefault("fulfilment", {"stages": []})
     if f.get("status") in ("dispatched", "delivered"):
         raise HTTPException(409, "A dispatched order can't be cancelled; create a return instead.")
+    if f.get("status") == "cancelled":
+        raise HTTPException(409, "This order is already cancelled.")
     f["status"], f["cancel_reason"] = "cancelled", reason
+    f["cancelled_by"] = "customer" if actor.startswith("customer:") else "staff"
     event(order, "cancelled", actor)
+    refund = _record_refund(order, (order.get("pricing") or {}).get("total"), actor, "Order cancelled")
     store.save_order(order)
     index_order(store, order)
     if order.get("customer_id"):
         refresh_customer_stats(store, order["customer_id"])
     store.audit(actor, "order.cancel", f"order:{order_id}", {"reason": reason})
+    notify.order_event(store, order, "cancelled",
+                       refund=f"A refund of {refund['amount']:g} is recorded." if refund else "")
     return order
+
+
+def _money_taken(order: dict) -> bool:
+    p = order.get("payment") or {}
+    if not p:
+        return False
+    return bool(p.get("collected")) if p.get("method") == "cod" else True
+
+
+def _record_refund(order: dict, amount: float | None, actor: str, reason: str) -> dict | None:
+    """Refunds are recorded, not sent: demo payments took no money, and money taken by hand
+    (cash, UPI, bank transfer, collected COD) is refunded by hand."""
+    if not _money_taken(order) or not amount:
+        return None
+    p = order["payment"]
+    refund = {"id": new_id("rfd"), "amount": round(float(amount), 2), "reason": reason, "at": now(), "by": actor,
+              "method": "demo" if p.get("demo") else "manual",
+              "note": "Demo payment: no money was taken, so nothing is sent back." if p.get("demo")
+              else "Refund this amount by hand and keep the reference."}
+    order.setdefault("refunds", []).append(refund)
+    event(order, "refund", actor, amount=refund["amount"])
+    return refund
+
+
+def can_cancel(order: dict) -> bool:
+    """Customers may cancel while unpaid, or paid with no production stage done."""
+    f = order.get("fulfilment") or {}
+    st = f.get("status", "awaiting_payment")
+    if st == "awaiting_payment":
+        return True
+    return st == "queued" and not any(s.get("done_at") for s in f.get("stages", []))
+
+
+def return_until(order: dict) -> str | None:
+    f = order.get("fulfilment") or {}
+    if f.get("status") != "delivered":
+        return None
+    if f.get("return_until"):
+        return f["return_until"]
+    from datetime import date, timedelta
+    from . import defaults
+    delivered = (f.get("delivered_at") or order["created_at"])[:10]
+    return (date.fromisoformat(delivered) + timedelta(days=defaults.CRM["return_window_days"])).isoformat()
+
+
+def can_return(order: dict) -> bool:
+    until = return_until(order)
+    open_return = any(r["status"] not in ("resolved", "rejected") for r in order.get("returns", []))
+    return bool(until) and today_iso() <= until and not open_return and not order.get("returns_disabled")
 
 
 def reprioritise(store: PlatformStore, order_id: str, rush: bool, promised_delivery_date: str | None, actor: str) -> dict:
@@ -261,13 +360,20 @@ def create_shipment(store: PlatformStore, order_id: str, carrier: str, tracking_
            "address": order["delivery"].get("address"), "method": order["delivery"]["method"],
            "pieces": order["total_pieces"], "customer_name": order["customer"]["name"],
            "tracking_url": (c["tracking_url"].replace("{tracking}", tracking_no.strip()) if c and c["tracking_url"] and tracking_no else "")}
-    store.put("shipment", sid, shp, status="planned", parent=order_id, ref=tracking_no.strip(),
-              search=" ".join(filter(None, [order_id, order.get("number"), tracking_no, order["customer"]["name"]])))
+    shp["seller_id"] = seller_id_of(order)
+    put_shipment(store, shp)
     order.setdefault("shipments", []).append(sid)
     f["shipment"] = _shipment_public(shp)
     store.save_order(order)
     store.audit(actor, "shipment.create", f"order:{order_id}", {"shipment": sid})
     return shp
+
+
+def put_shipment(store: PlatformStore, shp: dict) -> dict:
+    return store.put("shipment", shp["id"], shp, status=shp["status"], parent=shp["order_id"], ref=shp["tracking_no"],
+                     owner=shp.get("seller_id") or HOUSE_SELLER,
+                     search=" ".join(filter(None, [shp["order_id"], shp.get("order_number"), shp["tracking_no"],
+                                                   shp["customer_name"]])))
 
 
 def _shipment_public(shp: dict) -> dict:
@@ -298,7 +404,13 @@ def update_shipment(store: PlatformStore, shipment_id: str, status: str, actor: 
     elif status == "delivered":
         f["status"] = "delivered"
         f["delivered_at"] = now()
+        from datetime import date, timedelta
+        days = config.get(store, "crm")["return_window_days"]
+        f["return_until"] = (date.fromisoformat(f["delivered_at"][:10]) + timedelta(days=days)).isoformat() if days else None
+        order["returns_disabled"] = not days
         event(order, "delivered", actor)
+        if order.get("payment_method") == "cod":
+            collect_cod(store, order, actor, save=False)
     elif status in ("returned", "cancelled") and f.get("status") in ("dispatched", "delivered"):
         # The goods are back with us (or never left): the order is ready to ship again.
         f["status"] = "ready"
@@ -308,12 +420,36 @@ def update_shipment(store: PlatformStore, shipment_id: str, status: str, actor: 
         f["shipment"] = _shipment_public(shp)
     elif (f.get("shipment") or {}).get("id") == shipment_id:
         f["shipment"] = None
-    store.put("shipment", shipment_id, shp, status=status, parent=shp["order_id"], ref=shp["tracking_no"],
-              search=" ".join(filter(None, [shp["order_id"], shp.get("order_number"), shp["tracking_no"], shp["customer_name"]])))
+    shp.setdefault("seller_id", seller_id_of(order))
+    put_shipment(store, shp)
     store.save_order(order)
     index_order(store, order)
     store.audit(actor, f"shipment.{status}", f"order:{shp['order_id']}", {"shipment": shipment_id})
+    if status == "dispatched":
+        notify.order_event(store, order, "dispatched", carrier=shp["carrier_name"],
+                           tracking=shp["tracking_no"] or "not available yet")
+    elif status == "delivered":
+        notify.order_event(store, order, "delivered")
     return shp
+
+
+def collect_cod(store: PlatformStore, order: dict, actor: str, reference: str = "", save: bool = True) -> dict:
+    """Mark a cash on delivery amount as collected (automatically on delivery, or by hand)."""
+    p = order.get("payment") or {}
+    if order.get("payment_method") != "cod" or p.get("method") != "cod":
+        raise HTTPException(409, "This order is not cash on delivery.")
+    if (order.get("fulfilment") or {}).get("status") == "cancelled":
+        raise HTTPException(409, "This order was cancelled.")
+    if p.get("collected"):
+        return order
+    p.update(collected=True, collected_at=now(), collected_by=actor, reference=reference or p.get("reference", ""))
+    order["payment"] = p
+    event(order, "cod_collected", actor)
+    if save:
+        store.save_order(order)
+        index_order(store, order)
+    store.audit(actor, "order.cod_collected", f"order:{order['id']}", {"amount": p.get("amount")})
+    return order
 
 
 # ----------------------------------------------------------------- customer-facing view and invoice
@@ -321,6 +457,15 @@ def update_shipment(store: PlatformStore, shipment_id: str, status: str, actor: 
 def public_view(order: dict) -> dict:
     """The order as its customer sees it: no internal notes or staff names."""
     out = {k: v for k, v in order.items() if k not in ("events",)}
+    out["seller"] = order.get("seller") or {"id": HOUSE_SELLER, "name": ""}
+    out["checkout_id"] = order.get("checkout_id")
+    out["payment_method"] = order.get("payment_method", "online")
+    out["can_cancel"] = can_cancel(order)
+    out["return_until"] = return_until(order) if not order.get("returns_disabled") else None
+    out["can_return"] = can_return(order)
+    out["review"] = order.get("review")
+    out["returns"] = order.get("returns", [])
+    out["refunds"] = [{k: r[k] for k in ("id", "amount", "at", "method", "note")} for r in order.get("refunds", [])]
     # params let apps show each event in the customer's language (stage names, carrier, tracking number).
     out["timeline"] = [{"at": e["at"], "code": e["code"], "text": e["text"],
                         "params": {k: v for k, v in e.items() if k not in ("at", "code", "text", "actor", "public")}}
@@ -357,8 +502,14 @@ def invoice_html(store: PlatformStore, order: dict) -> str:
     tx = p.get("tax") or {}
     extra.append((f"{tx.get('name', 'Tax')} {round(100 * tx.get('rate', 0), 1):g}%" + (" (included)" if tx.get("inclusive") else ""),
                   tx.get("amount", 0)))
+    if (p.get("cod") or {}).get("fee"):
+        extra.insert(-1, ("Cash on delivery fee", p["cod"]["fee"]))
     totals = "".join(f"<tr><td colspan=6 class=r>{e(k)}</td><td class=r>{money(v)}</td></tr>" for k, v in extra)
     paid = order.get("payment")
+    cod_due = bool(paid) and paid.get("method") == "cod" and not paid.get("collected")
+    if cod_due:
+        paid = None
+    seller = order.get("seller") or {}
     c = order["customer"]
     addr = (order.get("delivery") or {}).get("address") or {}
     addr_txt = ", ".join(filter(None, [addr.get(k) for k in ("line1", "line2", "city", "state", "pincode")]))
@@ -368,6 +519,7 @@ td,th{{border-bottom:1px solid #ddd;padding:6px;text-align:left;font-size:14px}}
 .muted{{color:#666;font-size:13px}}.demo{{background:#fff4d6;padding:8px;border-radius:6px;margin-top:12px}}</style></head><body>
 <h1>{e(co['name'])}</h1><div class=muted>{e(co['legal_name'])} {e(co['address'])} {('Tax ID ' + e(co['tax_id'])) if co['tax_id'] else ''}</div>
 <h2>{'Tax invoice' if paid else 'Proforma invoice'} {e(order.get('number') or order['id'])}</h2>
+<div>Sold by: {e(seller.get('name') or co['name'])}</div>
 <div>Date: {order['created_at'][:10]}<br>Customer: {e(c['name'])}, {e(c['phone'])} {e(c.get('email') or '')}<br>
 {('Deliver to: ' + e(addr_txt)) if addr_txt else ''}</div>
 <table><tr><th>#</th><th>Name</th><th>No.</th><th>Size</th><th class=r>Qty</th><th class=r>Unit</th><th class=r>Amount</th></tr>
@@ -375,6 +527,7 @@ td,th{{border-bottom:1px solid #ddd;padding:6px;text-align:left;font-size:14px}}
 <tr><th colspan=6 class=r>Total</th><th class=r>{money(p.get('total', 0))}</th></tr></table>
 <p class=muted>{e(p.get('fabric', {}).get('name', ''))} · {e(order.get('garment', ''))} · {order.get('total_pieces')} pieces</p>
 {('<div class=demo>Demo payment: no money was taken.</div>' if paid and paid.get('demo') else '')}
+{('<div class=demo>Cash on delivery: pay ' + money(p.get('total', 0)) + ' when it arrives.</div>' if cod_due else '')}
 </body></html>"""
 
 

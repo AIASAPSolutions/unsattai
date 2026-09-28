@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 
 from .. import orders as order_mod
 from ..schemas import PaymentConfirmation
-from . import config, crm, lifecycle, planning, security
+from . import config, crm, lifecycle, planning, security, sellers
 from .db import ConflictError, PlatformStore
 from .pricing import QuoteRequest, quote
 
@@ -39,6 +39,7 @@ class StaffIn(BaseModel):
     name: str = Field(..., min_length=1, max_length=80)
     role: str = Field(..., pattern="^(" + "|".join(security.ROLES) + ")$")
     password: str = Field(..., max_length=200)
+    seller_id: str = Field("", max_length=40, description="required for (and only for) the seller role")
 
 
 class StaffPatch(BaseModel):
@@ -46,6 +47,7 @@ class StaffPatch(BaseModel):
     role: str | None = Field(None, pattern="^(" + "|".join(security.ROLES) + ")$")
     active: bool | None = None
     password: str | None = Field(None, max_length=200)
+    seller_id: str | None = Field(None, max_length=40)
 
 
 class SettingsPut(BaseModel):
@@ -114,13 +116,17 @@ def router(store: PlatformStore, key_dep) -> APIRouter:
     # ------------------------------------------------------------- sign-in and staff
 
     @r.post("/auth/login")
-    def login(body: Login):
-        found = store.staff_by_email(body.email.strip())
+    def login(body: Login, user_agent: str | None = Header(default=None)):
+        email = body.email.strip()
+        security.check_lock(store, "staff", email)
+        found = store.staff_by_email(email)
         if not found or not found[0]["active"] or not security.check_password(body.password, found[1]):
+            security.login_failed(store, "staff", email)
             raise HTTPException(401, "Email or password is not right.")
+        security.login_ok(store, "staff", email)
         staff = found[0]
         store.audit(actor(staff), "staff.login", f"staff:{staff['id']}")
-        return {**security.issue_token(store, "staff", staff["id"]), "staff": staff,
+        return {**security.issue_token(store, "staff", staff["id"], user_agent, "password"), "staff": staff,
                 "permissions": sorted(security.PERMISSIONS[staff["role"]])}
 
     @r.post("/auth/logout")
@@ -155,8 +161,10 @@ def router(store: PlatformStore, key_dep) -> APIRouter:
         problem = security.password_problem(body.password)
         if problem:
             raise HTTPException(422, problem)
+        _check_seller_link(body.role, body.seller_id)
+        data = {"name": body.name, **({"seller_id": body.seller_id} if body.role == "seller" else {})}
         try:
-            new = store.add_staff(body.email, body.role, security.hash_password(body.password), {"name": body.name})
+            new = store.add_staff(body.email, body.role, security.hash_password(body.password), data)
         except ConflictError as e:
             raise HTTPException(409, str(e)) from e
         store.audit(actor(s), "staff.create", f"staff:{new['id']}", {"role": body.role})
@@ -166,21 +174,34 @@ def router(store: PlatformStore, key_dep) -> APIRouter:
     def edit_staff(sid: str, body: StaffPatch, s: dict = Depends(need("staff"))):
         if sid == s["id"] and (body.active is False or (body.role and body.role != "admin")):
             raise HTTPException(409, "You can't remove your own admin access.")
+        cur = store.get_staff(sid)
+        if not cur:
+            raise HTTPException(404, "staff not found")
+        role = body.role or cur["role"]
+        seller_id = body.seller_id if body.seller_id is not None else cur.get("seller_id", "")
+        _check_seller_link(role, seller_id)
         pw = None
         if body.password:
             problem = security.password_problem(body.password)
             if problem:
                 raise HTTPException(422, problem)
             pw = security.hash_password(body.password)
-        out = store.update_staff(sid, role=body.role, active=body.active, password_hash=pw,
-                                 data={"name": body.name} if body.name else None)
+        data = {k: v for k, v in (("name", body.name), ("seller_id", seller_id if role == "seller" else "")) if v is not None}
+        out = store.update_staff(sid, role=body.role, active=body.active, password_hash=pw, data=data or None)
         if not out:
             raise HTTPException(404, "staff not found")
-        if pw or body.active is False or body.role:
+        if pw or body.active is False or body.role or body.seller_id is not None:
             # A reset password, a lock-out or a new role takes effect now, not when the old session expires.
             store.drop_sessions_for("staff", sid)
         store.audit(actor(s), "staff.update", f"staff:{sid}", body.model_dump(exclude={"password"}, exclude_none=True))
         return out
+
+    def _check_seller_link(role: str, seller_id: str | None) -> None:
+        if role == "seller":
+            if not seller_id or not store.get("seller", seller_id):
+                raise HTTPException(422, "A seller login needs the id of an existing seller (seller_id).")
+        elif seller_id:
+            raise HTTPException(422, "Only the seller role is linked to a seller.")
 
     # ------------------------------------------------------------- settings
 
@@ -317,26 +338,42 @@ def router(store: PlatformStore, key_dep) -> APIRouter:
 
     @r.get("/orders")
     def list_orders(status: str | None = None, q: str | None = None, customer_id: str | None = None,
-                    page: int = Query(1, ge=1), size: int = Query(25, ge=1, le=200), s: dict = Depends(need("read"))):
+                    seller_id: str | None = None, checkout_id: str | None = None,
+                    page: int = Query(1, ge=1), size: int = Query(25, ge=1, le=200),
+                    s: dict = Depends(need("read", seller=True))):
         statuses = status.split(",") if status else None
-        rows, total = store.find("order_index", status=statuses, parent=customer_id, q=q, order="created_at DESC",
-                                 limit=size, offset=(page - 1) * size)
+        scope = security.seller_scope(s, seller_id)
+        if checkout_id:
+            ck = store.get("checkout", checkout_id) or {"order_ids": []}
+            rows = [x for x in (store.get("order_index", oid) for oid in ck["order_ids"])
+                    if x and (not scope or x.get("seller_id") == scope)]
+            return _page(rows, len(rows), 1, max(1, len(rows)))
+        rows, total = store.find("order_index", status=statuses, parent=customer_id, owner=scope, q=q,
+                                 order="created_at DESC", limit=size, offset=(page - 1) * size)
         return _page(rows, total, page, size)
 
-    def _order(order_id: str) -> dict:
+    def _order(order_id: str, s: dict | None = None) -> dict:
         o = store.get_order(order_id)
         if not o:
             raise HTTPException(404, "order not found")
-        return o
+        return security.check_seller_order(s, o) if s else o
 
     @r.get("/orders/{order_id}")
-    def get_order(order_id: str, s: dict = Depends(need("read"))):
-        o = _order(order_id)
-        plan = planning.plan(store)["plans"].get(order_id)
+    def get_order(order_id: str, s: dict = Depends(need("read", seller=True))):
+        o = _order(order_id, s)
+        plan = planning.plan(store, seller_id=security.seller_id_of(o))["plans"].get(order_id)
         ships, _ = store.find("shipment", parent=order_id, limit=20)
-        acts, _ = store.find("activity", parent=f"order:{order_id}", limit=100)
+        seller_login = s["role"] == "seller"
+        acts = [] if seller_login else store.find("activity", parent=f"order:{order_id}", limit=100)[0]
+        ck = store.get("checkout", o["checkout_id"]) if o.get("checkout_id") else None
+        rets, _ = store.find("return", parent=order_id, limit=20)
+        if seller_login:   # a partner sees what it needs to make and ship the order, not the CRM trail
+            o = {k: v for k, v in o.items() if k not in ("customer_id", "quote_id", "events")}
         return {"order": o, "plan": plan, "shipments": ships, "activities": acts,
-                "audit": store.audit_for(f"order:{order_id}", 100)}
+                "audit": [] if seller_login else store.audit_for(f"order:{order_id}", 100),
+                "checkout": {"id": ck["id"], "number": ck["number"], "order_ids": ck["order_ids"],
+                             "payment_method": ck["payment_method"], "status": ck["status"]} if ck else None,
+                "returns": rets, "seller": store.get("seller", security.seller_id_of(o))}
 
     @r.post("/orders/{order_id}/hold")
     def hold(order_id: str, body: HoldIn, s: dict = Depends(need("orders"))):
@@ -369,48 +406,58 @@ def router(store: PlatformStore, key_dep) -> APIRouter:
         return o
 
     @r.get("/orders/{order_id}/invoice", response_class=HTMLResponse)
-    def invoice(order_id: str, s: dict = Depends(need("read"))):
-        return HTMLResponse(lifecycle.invoice_html(store, _order(order_id)))
+    def invoice(order_id: str, s: dict = Depends(need("read", seller=True))):
+        return HTMLResponse(lifecycle.invoice_html(store, _order(order_id, s)))
 
     # ------------------------------------------------------------- production
 
     @r.get("/production/plan")
-    def production_plan(s: dict = Depends(need("read"))):
-        result = planning.plan(store)
-        idx = {o["id"]: o for o in store.find("order_index", status=list(planning.ACTIVE), limit=5000)[0]}
-        return {"today": result["today"], "stages": config.get(store, "production")["stages"],
+    def production_plan(seller_id: str | None = None, s: dict = Depends(need("read", seller=True))):
+        scope = security.seller_scope(s, seller_id)
+        result = planning.plan(store, seller_id=scope)
+        idx = {o["id"]: o for o in store.find("order_index", status=list(planning.ACTIVE), owner=scope, limit=5000)[0]}
+        stages = config.get(store, "production")["stages"]
+        if scope:
+            stages = sellers.production_for(config.get(store, "production"), store.get("seller", scope))["stages"]
+        return {"today": result["today"], "stages": stages, "seller_id": scope,
                 "orders": [{**p, "summary": idx.get(oid)} for oid, p in
                            sorted(result["plans"].items(), key=lambda kv: kv[1]["ship_date"])]}
 
     @r.get("/production/utilisation")
-    def utilisation(days: int = Query(14, ge=1, le=60), s: dict = Depends(need("read"))):
-        return planning.utilisation(store, days)
+    def utilisation(days: int = Query(14, ge=1, le=60), seller_id: str | None = None,
+                    s: dict = Depends(need("read", seller=True))):
+        return planning.utilisation(store, days, seller_id=security.seller_scope(s, seller_id))
 
     @r.get("/production/board")
-    def board(s: dict = Depends(need("read"))):
+    def board(seller_id: str | None = None, s: dict = Depends(need("read", seller=True))):
         """Kanban: each paid order sits in the first stage it hasn't finished."""
+        scope = security.seller_scope(s, seller_id)
         stages = config.get(store, "production")["stages"]
         cols = {st["id"]: {"stage": st["id"], "name": st["name"], "orders": []} for st in stages}
         cols["ready"] = {"stage": "ready", "name": "Ready to ship", "orders": []}
-        plan = planning.plan(store)["plans"]
+        plan = planning.plan(store, seller_id=scope)["plans"]
         for o in store.all_orders():
             f = o.get("fulfilment") or {}
             if f.get("status") not in ("queued", "in_production", "ready"):
+                continue
+            if scope and security.seller_id_of(o) != scope:
                 continue
             nxt = next((st["id"] for st in f.get("stages", []) if not st["done_at"]), "ready")
             cols.setdefault(nxt, {"stage": nxt, "name": nxt, "orders": []})["orders"].append({
                 "id": o["id"], "number": o.get("number"), "customer": o["customer"]["name"], "pieces": o["total_pieces"],
                 "garment": o["garment"], "rush": f.get("rush"), "hold": f.get("hold"),
                 "promised_delivery_date": f.get("promised_delivery_date"),
-                "plan": plan.get(o["id"]), "style_name": o["spec"].get("style_name")})
+                "plan": plan.get(o["id"]), "style_name": o["spec"].get("style_name"),
+                "seller_id": security.seller_id_of(o)})
         for c in cols.values():
             c["orders"].sort(key=lambda x: (not x["rush"], x["promised_delivery_date"] or "9999"))
         return {"columns": list(cols.values())}
 
     @r.get("/production/worklist")
-    def worklist(stage: str, day: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"), s: dict = Depends(need("read"))):
+    def worklist(stage: str, day: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"), seller_id: str | None = None,
+                 s: dict = Depends(need("read", seller=True))):
         """What a stage should work on today (or on a given day), with print files for the print stage."""
-        result = planning.plan(store)
+        result = planning.plan(store, seller_id=security.seller_scope(s, seller_id))
         day = day or result["today"]
         items = []
         for oid, p in result["plans"].items():
@@ -418,24 +465,30 @@ def router(store: PlatformStore, key_dep) -> APIRouter:
             if st and st["start"] <= day <= st["end"]:
                 o = store.get_order(oid)
                 items.append({"order_id": oid, "number": o.get("number"), "customer": o["customer"]["name"],
+                              "seller_id": p.get("seller_id"),
                               "pieces": o["total_pieces"], "rush": p["rush"], "start": st["start"], "end": st["end"],
                               "lines": o["lines"], "files": [f["name"] for f in o["files"]] if stage in ("prepress", "print") else []})
         return {"stage": stage, "day": day, "items": sorted(items, key=lambda i: (not i["rush"], i["end"]))}
 
     @r.post("/orders/{order_id}/stages/{stage_id}")
-    def stage_done(order_id: str, stage_id: str, undo: bool = False, s: dict = Depends(need("production"))):
+    def stage_done(order_id: str, stage_id: str, undo: bool = False, s: dict = Depends(need("production", seller=True))):
+        _order(order_id, s)
         return lifecycle.complete_stage(store, order_id, stage_id, actor(s), undo)
 
     # ------------------------------------------------------------- delivery
 
     @r.get("/delivery/plan")
-    def delivery_plan(days: int = Query(7, ge=1, le=30), s: dict = Depends(need("read"))):
+    def delivery_plan(days: int = Query(7, ge=1, le=30), seller_id: str | None = None,
+                      s: dict = Depends(need("read", seller=True))):
         """Planned dispatches by day and zone, from the production plan and ready orders."""
-        result = planning.plan(store)
+        scope = security.seller_scope(s, seller_id)
+        result = planning.plan(store, seller_id=scope)
         horizon = (date.fromisoformat(result["today"]) + timedelta(days=days)).isoformat()
         by_day: dict[str, dict] = defaultdict(lambda: {"orders": [], "pieces": 0, "zones": Counter()})
         for o in store.all_orders():
             f = o.get("fulfilment") or {}
+            if scope and security.seller_id_of(o) != scope:
+                continue
             if f.get("status") == "ready":
                 ship = result["today"]
             elif o["id"] in result["plans"]:
@@ -450,7 +503,8 @@ def router(store: PlatformStore, key_dep) -> APIRouter:
                                 "pieces": o["total_pieces"], "zone": zone, "method": (o.get("delivery") or {}).get("method"),
                                 "ready": f.get("status") == "ready", "rush": f.get("rush"),
                                 "promised_delivery_date": f.get("promised_delivery_date"),
-                                "city": (((o.get("delivery") or {}).get("address")) or {}).get("city")})
+                                "city": (((o.get("delivery") or {}).get("address")) or {}).get("city"),
+                                "seller_id": security.seller_id_of(o), "payment_method": o.get("payment_method", "online")})
             d["pieces"] += o["total_pieces"]
             d["zones"][zone] += 1
         return {"today": result["today"],
@@ -458,26 +512,35 @@ def router(store: PlatformStore, key_dep) -> APIRouter:
                          for k, v in sorted(by_day.items())]}
 
     @r.get("/shipments")
-    def shipments(status: str | None = None, q: str | None = None, page: int = Query(1, ge=1),
-                  s: dict = Depends(need("read"))):
-        rows, total = store.find("shipment", status=status.split(",") if status else None, q=q, limit=50,
-                                 offset=(page - 1) * 50)
+    def shipments(status: str | None = None, q: str | None = None, seller_id: str | None = None,
+                  page: int = Query(1, ge=1), s: dict = Depends(need("read", seller=True))):
+        rows, total = store.find("shipment", status=status.split(",") if status else None, q=q,
+                                 owner=security.seller_scope(s, seller_id), limit=50, offset=(page - 1) * 50)
         return _page(rows, total, page, 50)
 
     @r.post("/orders/{order_id}/shipments", status_code=201)
-    def add_shipment(order_id: str, body: ShipmentIn, s: dict = Depends(need("delivery"))):
+    def add_shipment(order_id: str, body: ShipmentIn, s: dict = Depends(need("delivery", seller=True))):
+        _order(order_id, s)
         return lifecycle.create_shipment(store, order_id, body.carrier, body.tracking_no, body.planned_date, actor(s))
 
+    def _shipment(sid: str, s: dict) -> dict:
+        shp = store.get("shipment", sid)
+        if not shp or (s["role"] == "seller" and shp.get("seller_id", security.HOUSE_SELLER) != s["seller_id"]):
+            raise HTTPException(404, "shipment not found")
+        return shp
+
     @r.patch("/shipments/{sid}")
-    def patch_shipment(sid: str, body: ShipmentPatch, s: dict = Depends(need("delivery"))):
+    def patch_shipment(sid: str, body: ShipmentPatch, s: dict = Depends(need("delivery", seller=True))):
+        _shipment(sid, s)
         return lifecycle.update_shipment(store, sid, body.status, actor(s), body.tracking_no)
 
     @r.get("/shipments/{sid}/label", response_class=HTMLResponse)
-    def label(sid: str, s: dict = Depends(need("read"))):
-        shp = store.get("shipment", sid)
-        if not shp:
-            raise HTTPException(404, "shipment not found")
+    def label(sid: str, s: dict = Depends(need("read", seller=True))):
+        shp = _shipment(sid, s)
         co = config.get(store, "company")
+        sender = store.get("seller", shp.get("seller_id") or security.HOUSE_SELLER) or {}
+        if sender and not sender.get("house"):
+            co = {**co, "name": sender["name"], "phone": sender.get("phone", "")}
         a = shp.get("address") or {}
         e = html.escape
         return HTMLResponse(f"""<!doctype html><html><head><meta charset=utf-8><title>Label {e(shp.get('order_number') or '')}</title>

@@ -147,6 +147,11 @@ class Store:
                 return json.loads(row["order_json"]), False
         return order, True
 
+    def order_by_key(self, key: str) -> dict | None:
+        with self._conn() as c:
+            row = c.execute("SELECT order_json FROM orders WHERE idempotency_key = ?", (key,)).fetchone()
+        return json.loads(row["order_json"]) if row else None
+
     def get_order(self, order_id: str) -> dict | None:
         with self._conn() as c:
             row = c.execute("SELECT order_json FROM orders WHERE id = ?", (order_id,)).fetchone()
@@ -228,5 +233,9 @@ class Store:
     def device_paid_orders(self, device: str) -> int:
         with self._conn() as c:
             # Only paid orders earn extra AI edits, so creating unpaid orders gains nothing.
+            # Cash on delivery counts once the cash is collected.
             return c.execute("SELECT COUNT(*) AS n FROM device_orders d JOIN orders o ON o.id = d.order_id "
-                             "WHERE d.device = ? AND o.status != 'awaiting_payment'", (device,)).fetchone()["n"]
+                             "WHERE d.device = ? AND o.status != 'awaiting_payment' AND NOT ("
+                             "COALESCE(json_extract(o.order_json, '$.payment.method'), '') = 'cod' AND "
+                             "COALESCE(json_extract(o.order_json, '$.payment.collected'), 0) = 0)",
+                             (device,)).fetchone()["n"]

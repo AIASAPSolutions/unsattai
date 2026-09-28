@@ -347,6 +347,9 @@ class OrderRequest(BaseModel):
     coupon: str = Field("", max_length=24)
     collection_id: str = Field("", max_length=40)
     channel: Literal["app", "web", "sales"] = "app"
+    # Marketplace options: the seller (empty = the recommended one for the PIN code) and how to pay.
+    seller_id: str = Field("", max_length=40)
+    payment_method: Literal["online", "cod"] = "online"
 
     @model_validator(mode="after")
     def _total(self):
