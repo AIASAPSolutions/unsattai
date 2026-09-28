@@ -233,6 +233,40 @@ export interface RefineChange {
   message: string;
 }
 
+export interface FromImageRequest {
+  /** data:image/jpeg|png;base64,... up to 6 MB */
+  image: string;
+  garment: Garment;
+  sport?: string | null;
+  team_name: string;
+  player_name: string;
+  number: string;
+  language: Language;
+}
+
+/** What the server could read from the picture. Warnings are codes the app translates. */
+export type PictureWarning =
+  | 'busy_background' | 'small_picture' | 'not_garment' | 'text_not_copied' | 'garment_differs'
+  | 'ai_limit' | 'ai_unavailable';
+
+export interface FromImageResponse {
+  generation_id: string;
+  provider: string;
+  source: 'ai' | 'pixels';
+  colors: { hex: string; share: number }[];
+  recognised: {
+    garment_seen: string | null;
+    text_seen: string[];
+    notes: string;
+    pattern: string;
+    coverage: string;
+    base: string;
+  };
+  warnings: PictureWarning[];
+  ai: AiAllowance;
+  designs: Design[];
+}
+
 /** Free AI edits for this phone today. Simple edits handled by the rules don't count. */
 export interface AiAllowance {
   enabled: boolean;

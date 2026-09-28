@@ -1,6 +1,6 @@
 import { request, withRetry } from './client';
 import type {
-  AiAllowance, BackgroundRemoval, Design, DesignSpec, GenerateRequest, GenerateResponse, Health, Language, LogoSuggestResponse,
+  AiAllowance, BackgroundRemoval, Design, FromImageRequest, FromImageResponse, DesignSpec, GenerateRequest, GenerateResponse, Health, Language, LogoSuggestResponse,
   Meta, Order, OrderRequest, Palette, PanelsResponse, Preview, RefineResponse, Size, UnderstandRequest, Understanding,
 } from './types';
 
@@ -8,6 +8,8 @@ const LONG = 90_000; // generation with an LLM provider can take a while
 
 export const api = {
   health: () => request<Health>('GET', '/api/v1/health', { timeoutMs: 8_000 }),
+  fromImage: (body: FromImageRequest) =>
+    request<FromImageResponse>('POST', '/api/v1/designs/from-image', { body, timeoutMs: LONG }),
   aiAllowance: () => request<AiAllowance>('GET', '/api/v1/ai/allowance', { timeoutMs: 8_000 }),
   meta: () => withRetry(() => request<Meta>('GET', '/api/v1/meta')),
 

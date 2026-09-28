@@ -55,7 +55,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "UrJersey needs your photos to add your team logo to a design.",
+          "photosPermission": "UrJersey needs your photos to add your team logo or a design picture.",
           "cameraPermission": false,
           "microphonePermission": "UrJersey uses the microphone so you can describe designs by voice."
         }

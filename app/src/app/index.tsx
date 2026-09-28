@@ -118,7 +118,12 @@ export default function DescribeScreen() {
         ))}
       </View>
 
-      <Card title={t('garmentLabel')} style={{ marginTop: space(4) }}>
+      <Card title={t('pictureEntryTitle')} style={{ marginTop: space(4) }}>
+        <T variant="caption" style={{ marginBottom: space(3) }}>{t('pictureEntryHint')}</T>
+        <Button testID="use-picture" compact kind="secondary" label={t('pictureEntryCta')} onPress={() => router.push('/from-picture')} />
+      </Card>
+
+      <Card title={t('garmentLabel')}>
         <View style={styles.wrap} accessibilityRole="radiogroup">
           {GARMENTS.map((g) => (
             <Chip key={g} testID={`garment-${g}`} label={t(`garment_${g}`)} selected={brief.garment === g} onPress={() => setBrief({ garment: g })} />

@@ -78,6 +78,7 @@ export default function RootLayout() {
             <Stack.Screen name="index" options={{ title: t('appName') }} />
             <Stack.Screen name="confirm" options={{ title: t('confirmTitle') }} />
             <Stack.Screen name="designs" options={{ title: t('designsTitle') }} />
+            <Stack.Screen name="from-picture" options={{ title: t('pictureTitle') }} />
             <Stack.Screen name="studio" options={{ title: t('studioTitle'), gestureEnabled: false }} />
             <Stack.Screen name="order" options={{ title: t('orderTitle') }} />
             <Stack.Screen name="orders/[id]" options={{ title: t('orderTitle') }} />

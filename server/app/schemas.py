@@ -258,6 +258,21 @@ class RefineRequest(BaseModel):
     language: Language = "en"
 
 
+class FromImageRequest(BaseModel):
+    image: str = Field(..., max_length=8_200_000, description="data:image/png|jpeg;base64,... up to 6 MB")
+    garment: Garment = "jersey"
+    sport: str | None = None
+    team_name: str = Field("", max_length=24)
+    player_name: str = Field("", max_length=16)
+    number: str = Field("", pattern=r"^\d{0,3}$")
+    language: Language = "en"
+
+    @field_validator("sport")
+    @classmethod
+    def _sport(cls, v: str | None) -> str | None:
+        return v if v in SPORTS else None
+
+
 class LogoSuggestRequest(BaseModel):
     team_name: str = Field("", max_length=24)
     sport: str | None = None

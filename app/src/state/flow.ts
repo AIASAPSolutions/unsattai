@@ -78,6 +78,8 @@ interface FlowState {
   // designs
   generate: (language: Language, more?: boolean) => Promise<Design[]>;
   rate: (designId: string, rating: number) => Promise<void>;
+  /** Designs rebuilt from an uploaded picture replace the current list. */
+  showDesigns: (res: GenerateResponse) => void;
   // studio
   openDesign: (design: Design) => void;
   edit: (spec: DesignSpec) => void;
@@ -175,6 +177,11 @@ export const useFlow = create<FlowState>()(
         const { designs, ...meta } = res;
         set({ generation: meta, designs: more ? [...get().designs, ...designs] : designs });
         return designs;
+      },
+
+      showDesigns: (res) => {
+        const { designs, ...meta } = res;
+        set({ generation: meta, designs });
       },
 
       rate: async (designId, rating) => {

@@ -78,6 +78,17 @@ What keeps the cost down:
 
 The phone is identified by a random install id (`X-Device-Id`), not by anything personal. Reinstalling the app gets a new id, which is why the daily cap for the whole service exists. For stricter limits, require sign-in and count per account.
 
+## Design from a picture
+
+For customers who prefer another AI tool, the first screen has **Use a picture**:
+
+1. **Get the prompt.** UrJersey writes a prompt from the customer's idea, garment and colours, ready to copy or share into any AI image tool. It asks for one flat front view on a plain background, bold shapes and no lettering, which is what recognises best.
+2. **Upload the picture** (PNG or JPEG; the app shrinks it to 1600 px before sending).
+3. **Recognise.** The server finds the garment, measures its real colours from the pixels, and works out the pattern, its direction and where it sits (full, chest band, top, bottom). When AI is on (`AI_EDITS=claude`), the small vision model also looks at the picture; its colour choices are snapped to the measured colours, and it counts as one AI edit. The same picture is recognised again for free. With `AI_EDITS=slm` or `off`, or when the phone has no AI edits left, the pixel analysis is used alone.
+4. **Pick the closest of three** rebuilt designs and edit it like any other: in the editor, by typing, or by voice.
+
+The picture itself is never printed. Pictures from AI tools are small (about 1024-1536 px, far below 150 DPI across a jersey) and contain made-up lettering, so UrJersey rebuilds the design as vector pattern pieces at full print resolution. Lettering seen in the picture is reported but never copied: names and numbers always come from what the customer typed. The rebuilt design goes through the same manufacturing checks and print files as every other design, so what reaches production is checked, not guessed. A rebuild is the closest match from UrJersey's 12 pattern families, not a pixel copy: very detailed artwork (illustrations, photos) comes out simplified. Upload a crest or illustration as a logo instead.
+
 ## App links
 
 `urjersey://design?prompt=…&garment=jersey|vneck|shorts&team=…&lang=en|hi|te|ta&autostart=1` prefills the brief and, with `autostart=1`, goes straight to "Here is what we understood". Out-of-range values are dropped, and nothing else in a link is read (no server address, no key).
@@ -86,7 +97,7 @@ The phone is identified by a random install id (`X-Device-Id`), not by anything 
 
 ## What the app does
 
-1. **Describe**: brief in English, हिन्दी, తెలుగు or தமிழ், typed or spoken; garment; up to 4 locked colours; team, player and number. Optional voice guide reads prompts aloud (it says so when the device has no voice for the language).
+1. **Describe**: brief in English, हिन्दी, తెలుగు or தமிழ், typed or spoken; garment; up to 4 locked colours; team, player and number. Optional voice guide reads prompts aloud (it says so when the device has no voice for the language). Or start from a picture designed elsewhere (see below).
 2. **Confirm**: shows what the server understood (sport, garment, colours, themes, names with where they came from). Conflicts between the brief and the form, and a missing sport (12 choices), must be answered before designing. Names and numbers print exactly as typed.
 3. **Designs**: 4 variants per round, "More designs" for another 4, 1 to 5 star rating.
 4. **Studio**: front, back and sleeve panels. Tap to select a name, number or logo, drag to move, pull the corner handle or pinch to resize, twist or use the top handle to rotate. The dashed line is the seam-safe area; layers crossing it fail the checks. Undo and redo keep 60 steps; one drag is one step. 3D preview built from the same print panels (falls back to 2D with a notice when GL is not available). Tools:

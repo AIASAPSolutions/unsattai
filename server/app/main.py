@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from pydantic import BaseModel, Field
 
-from . import ai_edit, logos, orders, service
+from . import ai_edit, from_image, logos, orders, service
 from .background import remove_background
 from .config import settings
 from .engine.garments import GARMENT_PANELS
@@ -25,7 +25,7 @@ from .providers import PROVIDERS
 from .providers.base import SLM_SYSTEM_PROMPT, build_user_message, creative_part
 from .refine import refine as refine_spec
 from .schemas import (COLOR_ROLES, COVERAGES, FONTS, GARMENTS, LOGO_MIME, MAX_LOGO_BYTES, MAX_LOGOS, PATTERNS, SIZES,
-                      SPORTS, TEXT_LIMITS, DesignSpec, FeedbackRequest, GenerateRequest, LogoSuggestRequest,
+                      SPORTS, TEXT_LIMITS, DesignSpec, FeedbackRequest, FromImageRequest, GenerateRequest, LogoSuggestRequest,
                       OrderRequest, PanelsRequest, PaymentConfirmation, PrintRequest, RefineRequest, RenderRequest,
                       UnderstandRequest)
 from .store import Store
@@ -148,6 +148,15 @@ def refine(req: RefineRequest, device: str = Depends(device_of)):
         out = ai_edit.refine_with_ai(store, req, out, device)
     spec = DesignSpec.model_validate(out["spec"])
     return {**out, **service.render_preview(spec)}
+
+
+@app.post("/api/v1/designs/from-image", dependencies=KEY)
+def design_from_image(req: FromImageRequest, device: str = Depends(device_of)):
+    """Recognise a picture designed elsewhere and rebuild it as editable, printable designs."""
+    try:
+        return from_image.from_image(store, req, device)
+    except from_image.ImageRejected as e:
+        raise HTTPException(422, str(e)) from e
 
 
 @app.post("/api/v1/logos/suggest", dependencies=KEY)

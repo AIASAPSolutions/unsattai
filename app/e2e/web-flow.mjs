@@ -152,6 +152,26 @@ try {
     await shot('13-receipt');
   });
 
+  await step('design from a picture', async () => {
+    await page.goto(APP);
+    await id('use-picture').click();
+    await id('screen-picture').waitFor({ timeout: 15000 });
+    const prompt = await id('outside-prompt').innerText();
+    if (!/No text, no letters/.test(prompt)) throw new Error(`unexpected prompt: ${prompt.slice(0, 80)}`);
+    const chooser = page.waitForEvent('filechooser');
+    await id('choose-picture').click();
+    await (await chooser).setFiles(new URL('./fixtures/hoops-jersey.png', import.meta.url).pathname);
+    await id('picked-picture').waitFor({ timeout: 15000 });
+    await id('recognise').click();
+    await id('picture-result').waitFor({ timeout: 30000 });
+    await page.waitForTimeout(600);
+    await id('open-2').waitFor({ state: 'attached', timeout: 10000 });   // three interpretations
+    await id('picture-result').screenshot({ path: `${OUT}/13b-picture.png` });
+    await id('open-0').click();
+    await id('panel-editor').waitFor({ timeout: 20000 });
+    await shot('13c-picture-studio');
+  });
+
   await step('app link prefill', async () => {
     await page.goto(`${APP}/design?prompt=${encodeURIComponent('Teal volleyball jersey with ocean waves')}&garment=vneck&team=Waves&lang=hi&autostart=1`);
     await id('screen-confirm').waitFor({ timeout: 20000 });
