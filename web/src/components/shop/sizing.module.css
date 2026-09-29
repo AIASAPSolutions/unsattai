@@ -1,0 +1,291 @@
+/* Garment options, fit and size pickers, colourways and the size guide. */
+
+.group {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.legend {
+  font-weight: 600;
+  padding: 0;
+  margin-bottom: 6px;
+  font-size: 0.95rem;
+}
+.legendRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.legendRow .legend {
+  margin-bottom: 0;
+}
+
+/* Choice cards (sleeves, collar): a native radio in each, so arrow keys move between them. */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 8px;
+}
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px 10px 36px;
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: pointer;
+  min-height: 48px;
+  justify-content: center;
+}
+.card input {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--brand);
+}
+.card:focus-within {
+  box-shadow: var(--focus);
+}
+.cardOn {
+  border-color: var(--brand);
+  background: #f3f6ff;
+}
+.cardName {
+  font-weight: 600;
+  font-size: 0.92rem;
+  line-height: 1.25;
+}
+.delta {
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.deltaMinus {
+  color: var(--pass);
+}
+
+/* Pills (fit, size): native radios drawn as chips. */
+.pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.pill {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  min-width: 44px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  background: var(--surface);
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--ink);
+  user-select: none;
+}
+.pill input {
+  position: absolute;
+  opacity: 0;
+  inset: 0;
+  margin: 0;
+  cursor: pointer;
+}
+.pill:hover {
+  border-color: var(--ink-2);
+}
+.pill:focus-within {
+  box-shadow: var(--focus);
+}
+.pillOn {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+
+.fitSize {
+  display: grid;
+  gap: 12px;
+}
+.selects {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  align-items: end;
+}
+@media (max-width: 480px) {
+  .selects {
+    grid-template-columns: 1fr;
+  }
+}
+
+.link {
+  background: none;
+  border: 0;
+  padding: 4px 0;
+  color: var(--blue);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  justify-self: start;
+}
+.link:focus-visible {
+  outline: none;
+  box-shadow: var(--focus);
+  border-radius: 4px;
+}
+
+/* Colourways */
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.swatchOpt {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  max-width: 88px;
+  text-align: center;
+  font-size: 0.78rem;
+  line-height: 1.2;
+  color: var(--ink-2);
+}
+.swatchOpt input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+.swatchBig {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid var(--surface);
+  box-shadow: 0 0 0 1.5px var(--line-2);
+  overflow: hidden;
+  display: block;
+}
+.swatchOn .swatchBig {
+  box-shadow: 0 0 0 2.5px var(--brand);
+}
+.swatchOn {
+  color: var(--ink);
+  font-weight: 700;
+}
+.swatchOpt:focus-within .swatchBig {
+  box-shadow: 0 0 0 2.5px var(--brand), var(--focus);
+}
+.dots {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+.dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+  display: inline-block;
+}
+
+/* Size guide */
+.guide {
+  display: grid;
+  gap: 14px;
+}
+.tableWrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+.table caption {
+  text-align: left;
+  padding: 8px 10px;
+  font-size: 0.82rem;
+  color: var(--muted);
+  caption-side: top;
+}
+.table th,
+.table td {
+  padding: 8px 10px;
+  text-align: right;
+  border-top: 1px solid var(--line);
+  white-space: nowrap;
+}
+.table th:first-child,
+.table td:first-child {
+  text-align: left;
+}
+.table thead th {
+  background: var(--bg);
+  font-size: 0.8rem;
+  color: var(--ink-2);
+  border-top: 0;
+}
+.table tbody tr:nth-child(even) {
+  background: #fafbfd;
+}
+.rowOn {
+  background: #f3f6ff !important;
+  font-weight: 700;
+}
+.howTo {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+  font-size: 0.88rem;
+}
+.howTo strong {
+  margin-right: 4px;
+}
+.note {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.panelNote {
+  margin: 6px 0 0;
+  font-size: 0.85rem;
+  color: var(--ink-2);
+  background: var(--info-soft);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+}
+.optionsLine {
+  font-size: 0.85rem;
+  color: var(--ink-2);
+}
+.parts {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--muted);
+}

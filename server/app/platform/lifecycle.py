@@ -161,6 +161,8 @@ def on_created(store: PlatformStore, order: dict, extras: dict, customer: dict |
     order["payment_method"] = extras.get("payment_method") or "online"
     order["checkout_id"] = extras.get("checkout_id")
     order["product_id"] = extras.get("product_id")
+    if extras.get("colourway"):
+        order["options"] = {**(order.get("options") or {}), "colourway": extras["colourway"]}
     order["pricing"] = extras.get("pricing") or price_order(store, order, extras)
     choice = extras.get("delivery_choice") or {"method": "ship"}
     dl = config.get(store, "delivery")

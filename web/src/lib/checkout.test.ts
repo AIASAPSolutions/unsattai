@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { CartQuote, DesignSpec } from './api/types';
 import { addToCart, designEntry, productEntry, type CartEntry } from './cart';
-import { cartQuoteRequest, checkoutHash, checkoutIssues, checkoutItemErrors, checkoutPayload, codBlock, groupBySeller } from './checkout';
+import { ApiError } from './api/client';
+import {
+  cartQuoteRequest, checkoutHash, checkoutIssues, checkoutItemErrors, checkoutPayload, codBlock, groupBySeller, isDemoPaymentsOff, onlineMode,
+} from './checkout';
 import { EMPTY_ADDRESS } from './flow';
 
 const spec = { garment: 'jersey' } as unknown as DesignSpec;
@@ -72,5 +75,19 @@ describe('seller groups and errors', () => {
     expect(codBlock(base, { enabled: true, max_order_value: 20000 })).toBe('limit');
     expect(codBlock({ ...base, totals: { ...base.totals, total: 100 } }, { enabled: true, max_order_value: 20000 })).toBe('area');
     expect(codBlock({ ...base, cod_available: true }, { enabled: true, max_order_value: 20000 })).toBeNull();
+  });
+});
+
+describe('payment availability', () => {
+  it('uses demo payments when they are on, else cash on delivery, else pay later', () => {
+    expect(onlineMode(true, null)).toBe('demo');
+    expect(onlineMode(false, null)).toBe('off');
+    expect(onlineMode(false, 'area')).toBe('later');
+    expect(onlineMode(false, 'disabled')).toBe('later');
+  });
+  it('recognises a refused demo payment', () => {
+    expect(isDemoPaymentsOff(new ApiError('auth', 'Online payment is not available yet.', 403, [], { code: 'demo_payments_off' }))).toBe(true);
+    expect(isDemoPaymentsOff(new ApiError('auth', 'Sign in', 403, [], { code: 'other' }))).toBe(false);
+    expect(isDemoPaymentsOff(new Error('x'))).toBe(false);
   });
 });

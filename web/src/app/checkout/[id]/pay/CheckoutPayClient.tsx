@@ -1,10 +1,12 @@
 'use client';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { useDemoPayments } from '@/components/providers/data';
 import { Banner, Button, Card, ErrorState, Loading } from '@/components/ui';
 import { errorMessage } from '@/i18n';
 import { useI18n } from '@/i18n/provider';
 import { api } from '@/lib/api/endpoints';
+import { isDemoPaymentsOff } from '@/lib/checkout';
 import { formatDate, formatMoney } from '@/lib/price';
 import s from '@/components/market/market.module.css';
 import { orderTitle, ordersBySeller, useCheckout } from '../useCheckout';
@@ -16,6 +18,10 @@ export function CheckoutPayClient({ id }: { id: string }) {
   const { data, error, loading, retry } = useCheckout(id);
   const [paying, setPaying] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
+  const { demo } = useDemoPayments();
+  const [refused, setRefused] = useState(false);
+  // Online payment is not available yet (production): no "Pay (demo)", our team arranges payment.
+  const payOff = !demo || refused;
   const paid = data?.status === 'paid' || data?.payment_method === 'cod';
 
   useEffect(() => {
@@ -34,7 +40,8 @@ export function CheckoutPayClient({ id }: { id: string }) {
       await api.payCheckout(data.id);
       router.replace(`/checkout/${encodeURIComponent(data.id)}?paid=1`);
     } catch (e) {
-      setPayError(errorMessage(t, e));
+      if (isDemoPaymentsOff(e)) setRefused(true);
+      else setPayError(errorMessage(t, e));
       setPaying(false);
     }
   };
@@ -45,15 +52,26 @@ export function CheckoutPayClient({ id }: { id: string }) {
       <p className="muted">{t('checkoutRef', { ref: data.number, n: data.order_ids.length })}</p>
       <div className={s.cartLayout}>
         <Card title={t('payment')}>
-          <div className={s.demoBox} data-testid="demo-box">
-            <strong>{t('demoNoMoney')}</strong>
-            <p style={{ margin: '6px 0 0' }}>{t('demoPayNote')}</p>
-          </div>
+          {payOff ? (
+            <div className={s.demoBox} data-testid="pay-coming-soon" role="status">
+              <strong>{t('payComingSoonTitle')}</strong>
+              <p style={{ margin: '6px 0 0' }}>{t('payTeamWillContact')}</p>
+            </div>
+          ) : (
+            <div className={s.demoBox} data-testid="demo-box">
+              <strong>{t('demoNoMoney')}</strong>
+              <p style={{ margin: '6px 0 0' }}>{t('demoPayNote')}</p>
+            </div>
+          )}
           {payError ? <div style={{ marginTop: 12 }}><Banner tone="fail" live>{payError}</Banner></div> : null}
           <div style={{ marginTop: 14 }}>
-            <Button size="lg" block kind="accent" busy={paying} onClick={pay} testId="demo-pay">
-              {t('payDemoAmount', { amount: money(data.totals.total) })}
-            </Button>
+            {payOff ? (
+              <Button size="lg" block kind="secondary" href={`/checkout/${encodeURIComponent(data.id)}`} testId="view-order">{t('viewOrder')}</Button>
+            ) : (
+              <Button size="lg" block kind="accent" busy={paying} onClick={pay} testId="demo-pay">
+                {t('payDemoAmount', { amount: money(data.totals.total) })}
+              </Button>
+            )}
           </div>
         </Card>
         <Card title={t('orderSummary')}>

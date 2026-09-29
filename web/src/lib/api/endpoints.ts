@@ -1,10 +1,10 @@
 import { ApiError, parseErrorBody, request, withRetry } from './client';
 import type {
-  Address, AiAllowance, ApiCartItem, CartQuote, CartQuoteRequest, Checkout, CheckoutRequest, NotificationPage, ProductDetail,
+  Address, AiAllowance, Health, SizeGuide, ApiCartItem, CartQuote, CartQuoteRequest, Checkout, CheckoutRequest, NotificationPage, ProductDetail,
   ProductList, ProductQuery, PublicOffer, Review, ReturnRecord, Serviceability, Session, Wishlist, OrderReview, BackgroundRemoval, Catalogue, Collection, CollectionEntry, Design, DesignSpec, Estimate,
   FromImageRequest, FromImageResponse, GenerateRequest, GenerateResponse, Language, LogoSuggestResponse, Me, Meta,
   Order, OrderRequest, OrderSummary, OtpRequestResponse, Palette, PanelsResponse, Preview, PublicCollection,
-  PublicQuote, Quote, QuoteRequest, RefineResponse, Reorder, SavedDesign, Size, Ticket, UnderstandRequest,
+  PublicQuote, Quote, QuoteRequest, RefineResponse, Reorder, SavedDesign, Ticket, UnderstandRequest,
   Understanding,
 } from './types';
 
@@ -16,9 +16,11 @@ export const api = {
   meta: () => withRetry(() => request<Meta>('GET', 'meta')),
   understand: (body: UnderstandRequest, signal?: AbortSignal) => request<Understanding>('POST', 'brief/understand', { body, signal }),
   generate: (body: GenerateRequest) => request<GenerateResponse>('POST', 'designs/generate', { body, timeoutMs: LONG }),
-  render: (spec: DesignSpec, sizes: Size[] = [], signal?: AbortSignal) =>
+  health: () => request<Health>('GET', 'health', { timeoutMs: 10_000 }),
+  /** sizes: "M" for men / unisex, "fit:size" for the others ("kids:8Y"), see lib/sizing checkSize. */
+  render: (spec: DesignSpec, sizes: string[] = [], signal?: AbortSignal) =>
     request<Preview>('POST', 'render', { body: { spec, sizes }, signal }),
-  panels: (spec: DesignSpec, includeElements: boolean, sizes: Size[] = [], signal?: AbortSignal) =>
+  panels: (spec: DesignSpec, includeElements: boolean, sizes: string[] = [], signal?: AbortSignal) =>
     request<PanelsResponse>('POST', 'render/panels', { body: { spec, include_elements: includeElements, sizes }, signal }),
   refine: (spec: DesignSpec, instruction: string, language: Language) =>
     request<RefineResponse>('POST', 'designs/refine', { body: { spec, instruction, language } }),
@@ -41,6 +43,7 @@ export const api = {
 
   // shop
   catalogue: () => withRetry(() => request<Catalogue>('GET', 'shop/catalogue')),
+  sizeGuide: () => withRetry(() => request<SizeGuide>('GET', 'shop/size-guide')),
   quote: (body: QuoteRequest, signal?: AbortSignal) => request<Quote>('POST', 'shop/quote', { body, signal }),
   deliveryEstimate: (pieces: number, pincode: string, rush: boolean, signal?: AbortSignal) =>
     request<Estimate & { zone: string }>('GET', 'shop/delivery-estimate', { query: { pieces, pincode, rush }, signal }),

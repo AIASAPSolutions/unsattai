@@ -2,11 +2,12 @@
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { SignInForm } from '@/components/account/OtpSignIn';
-import { CartTotals, entryTitle, ItemThumb, Offers } from '@/components/market/CartBits';
-import { useCatalogue } from '@/components/providers/data';
+import { CartTotals, entryOptions, entryTitle, ItemThumb, Offers } from '@/components/market/CartBits';
+import { useCatalogue, useDemoPayments } from '@/components/providers/data';
 import { usePincode, useProductIndex } from '@/components/providers/shop';
 import { useSession } from '@/components/providers/session';
 import { AddressFields } from '@/components/shop/AddressFields';
+import { OptionsLine, fitLabel } from '@/components/shop/Sizing';
 import { Banner, Button, Card, Checkbox, Empty, Loading, Skeleton, Spinner, Tabs, TextField, cx } from '@/components/ui';
 import { errorMessage, type StringKey } from '@/i18n';
 import { useI18n } from '@/i18n/provider';
@@ -15,7 +16,8 @@ import { api } from '@/lib/api/endpoints';
 import type { Address, CheckoutItemError, Me } from '@/lib/api/types';
 import { cartPieces, linesSummary, type CartEntry } from '@/lib/cart';
 import {
-  cartQuoteRequest, checkoutHash, checkoutIssues, checkoutItemErrors, checkoutPayload, codBlock, groupBySeller, type CheckoutDraft,
+  cartQuoteRequest, checkoutHash, checkoutIssues, checkoutItemErrors, checkoutPayload, codBlock, groupBySeller, onlineMode,
+  type CheckoutDraft,
 } from '@/lib/checkout';
 import { flow, EMPTY_ADDRESS } from '@/lib/flow';
 import { orderPayload, payloadHash } from '@/lib/order';
@@ -80,11 +82,15 @@ export function CheckoutClient() {
   const groups = quote ? groupBySeller(items, quote) : [];
   const cod = catalogue?.cod ?? null;
   const codWhy = codBlock(quote, cod);
+  const { demo } = useDemoPayments();
+  const online = onlineMode(demo, codWhy);
 
   // Cash on delivery chosen but not possible any more (another PIN code or a bigger order): switch back to online.
+  // While online payment is not available, cash on delivery is chosen for the customer whenever it can be used.
   useEffect(() => {
     if (draft.payment === 'cod' && codWhy && quote) checkoutDraft.set({ payment: 'online' });
-  }, [draft.payment, codWhy, quote]);
+    else if (draft.payment === 'online' && online === 'off' && quote) checkoutDraft.set({ payment: 'cod' });
+  }, [draft.payment, codWhy, quote, online]);
 
   if (leaving) return <Loading label={t('openingPayment')} testId="opening-payment" />;
   if (!cartReady || meLoading) return <Loading label={t('loading')} />;
@@ -147,7 +153,8 @@ export function CheckoutClient() {
         await afterPlaced();
         buyNow.clear();
         flow.setCheckout({ collectionId: '', collectionTitle: '' });
-        router.push(draft.payment === 'online' && !order.payment ? `/order/${encodeURIComponent(order.id)}/pay` : `/order/${encodeURIComponent(order.id)}`);
+        router.push(draft.payment === 'online' && !order.payment && demo
+          ? `/order/${encodeURIComponent(order.id)}/pay` : `/order/${encodeURIComponent(order.id)}`);
         return;
       }
       const payload = checkoutPayload({ items, draft: effective, language: lang });
@@ -156,7 +163,7 @@ export function CheckoutClient() {
       await afterPlaced();
       if (isBuyNow) buyNow.clear();
       else cart.removeMany(items.map((e) => e.key));
-      router.push(ck.payment_method === 'online' && ck.status !== 'paid'
+      router.push(ck.payment_method === 'online' && ck.status !== 'paid' && demo
         ? `/checkout/${encodeURIComponent(ck.id)}/pay` : `/checkout/${encodeURIComponent(ck.id)}`);
     } catch (e) {
       const errs = e instanceof ApiError ? checkoutItemErrors(e.data) : [];
@@ -305,7 +312,8 @@ export function CheckoutClient() {
                         <ItemThumb entry={entry} product={entry.product_id ? index?.get(entry.product_id) : null} alt="" />
                         <div style={{ minWidth: 0 }}>
                           <div className={s.itemTitle}>{titleOf(entry, qi.title)}</div>
-                          <div className="small muted">{linesSummary(entry.lines)}</div>
+                          <OptionsLine text={entryOptions(t, entry, entry.product_id ? index?.get(entry.product_id) : null, qi)} testId={`ck-item-${i}-options`} />
+                          <div className="small muted" data-testid={`ck-item-${i}-sizes`}>{linesSummary(entry.lines, (f) => fitLabel(t, f))}</div>
                           {reason ? <div className="small" style={{ color: 'var(--fail)' }}>{t(reason, { pincode: address.pincode || pin.pincode })}</div> : null}
                           {qi.problems.length && !reason ? <div className="small" style={{ color: 'var(--fail)' }}>{qi.problems.join(' ')}</div> : null}
                           {err ? (
@@ -353,11 +361,14 @@ export function CheckoutClient() {
           {/* ---------------------------------------------------- 5. payment */}
           <Card title={t('ckStepPayment')} testId="payment">
             <div className={s.radioCards} role="radiogroup" aria-label={t('ckStepPayment')}>
-              <label className={cx(s.radioCard, draft.payment === 'online' && s.radioOn)} data-testid="pay-online">
-                <input type="radio" name="payment" checked={draft.payment === 'online'} onChange={() => set({ payment: 'online' })} />
+              <label className={cx(s.radioCard, draft.payment === 'online' && s.radioOn, online === 'off' && s.radioOff)} data-testid="pay-online">
+                <input type="radio" name="payment" checked={draft.payment === 'online'} disabled={online === 'off'}
+                  onChange={() => set({ payment: 'online' })} />
                 <span>
-                  <strong>{t('payOnline')}</strong><br />
-                  <span className="small muted">{t('payOnlineHint')}</span>
+                  <strong>{online === 'later' ? t('payLater') : t('payOnline')}</strong><br />
+                  <span className="small muted" data-testid="pay-online-note">
+                    {online === 'demo' ? t('payOnlineHint') : online === 'later' ? t('payLaterHint') : t('payComingSoon')}
+                  </span>
                 </span>
               </label>
               <label className={cx(s.radioCard, draft.payment === 'cod' && s.radioOn, codWhy && s.radioOff)} data-testid="pay-cod">
@@ -400,7 +411,7 @@ export function CheckoutClient() {
                     : t('placeOrder')}
               </Button>
               <p className="small" style={{ textAlign: 'center', color: 'var(--warn)', fontWeight: 600, margin: '8px 0 0' }} data-testid="demo-label">
-                {draft.payment === 'cod' ? t('codDemoNote') : t('demoNoMoney')}
+                {draft.payment === 'cod' ? t('codDemoNote') : online === 'demo' ? t('demoNoMoney') : t('payTeamWillContact')}
               </p>
             </div>
           </Card>

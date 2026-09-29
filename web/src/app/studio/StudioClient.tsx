@@ -1,6 +1,7 @@
 'use client';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { PanelNote } from '@/components/shop/Sizing';
 import { AskTab } from '@/components/studio/AskTab';
 import { ChecksTab } from '@/components/studio/ChecksTab';
 import { Garment3D } from '@/components/studio/Garment3D';
@@ -155,6 +156,7 @@ export function StudioClient() {
                   onBegin={flow.beginGesture} onLive={flow.live} onCommit={flow.endGesture} labels={labels}
                   onDelete={(id) => { flow.edit(removeElement(spec, id)); setSelectedId(null); }} />
               </div>
+              <PanelNote note={panel.note} testId="panel-note" />
               <p className={s.hint}>{panel.editable ? (selectedId ? t('safeArea') : t('selectLayerHint')) : t('sleevesFollow')}</p>
               <p className={s.hint} style={{ fontSize: '0.78rem' }}>{t('keyboardHelp')}</p>
             </>

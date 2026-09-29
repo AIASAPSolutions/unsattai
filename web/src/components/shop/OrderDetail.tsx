@@ -9,6 +9,8 @@ import type { Order } from '@/lib/api/types';
 import { formatDate, formatDateTime, formatMoney } from '@/lib/price';
 import { tMaybe } from '@/i18n';
 import { stateName } from '@/lib/states';
+import { normaliseFit } from '@/lib/sizing';
+import { fitLabel, optionsText } from './Sizing';
 import s from './orderDetail.module.css';
 
 /** Mock-up of an order's own spec (the design may not be stored on the server under its id). */
@@ -90,6 +92,11 @@ export function OrderDetail({ order, extraActions }: { order: Order; extraAction
             <div className="small muted">{t('pieces')}</div>
             <div className={s.fact}>{order.total_pieces}</div>
             <div className="small">{t(`garment_${order.garment}` as 'garment_jersey')}{order.pricing ? ` · ${order.pricing.fabric.name}` : ''}</div>
+            {order.garment !== 'shorts' ? (
+              <div className="small" data-testid="order-options">
+                {optionsText(t, { garment: order.garment, sleeves: order.options?.sleeves ?? order.spec?.sleeves, collar: order.options?.collar ?? order.spec?.collar })}
+              </div>
+            ) : null}
           </div>
           {order.seller?.name ? (
             <div>
@@ -202,7 +209,9 @@ export function OrderDetail({ order, extraActions }: { order: Order; extraAction
       <Card title={t('orderLines')}>
         {order.pricing ? <PriceSummary quote={order.pricing} showNudges={false} showDates={false} testId="order-price" /> : (
           <ul>
-            {order.lines.map((l) => <li key={l.line}>{l.size} × {l.quantity} {[l.player_name, l.number].filter(Boolean).join(' ')}</li>)}
+            {order.lines.map((l) => (
+              <li key={l.line}>{t('fitSize', { fit: fitLabel(t, normaliseFit(l.fit)), size: l.size })} × {l.quantity} {[l.player_name, l.number].filter(Boolean).join(' ')}</li>
+            ))}
           </ul>
         )}
       </Card>

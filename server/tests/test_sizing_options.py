@@ -242,3 +242,17 @@ def test_products_offer_colourways_and_options(c):
                  json={"colourways": [{"id": "red", "name": "Red", "palette": dict(cw["palette"], primary="#d62828")}]})
     assert ok.status_code == 200, ok.text
     assert [x["id"] for x in c.get(f"/api/v1/shop/products/{p['slug']}").json()["colourways"]] == ["original", "red"]
+
+
+def test_checkout_keeps_the_colourway_on_the_order(c):
+    p = c.get("/api/v1/shop/products", params={"garment": "jersey"}).json()["items"][0]
+    cw = p["colourways"][1]
+    r = c.post("/api/v1/checkout", json={
+        "items": [{"product_id": p["id"], "colourway": cw["id"], "lines": [{"fit": "women", "size": "S", "quantity": 1}]}],
+        "customer": {"name": "Asha", "phone": "+91 98765 43210"},
+        "delivery": {"method": "ship", "address": {"name": "Asha", "phone": "+91 98765 43210", "line1": "12 Stadium Road",
+                                                   "city": "Chennai", "state": "TN", "pincode": "600028"}},
+        "idempotency_key": "ck_colourway_1"})
+    assert r.status_code in (200, 201), r.text
+    order = r.json()["orders"][0]
+    assert order["options"]["colourway"] == {"id": cw["id"], "name": cw["name"]}

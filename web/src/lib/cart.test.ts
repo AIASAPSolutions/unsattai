@@ -11,7 +11,7 @@ const line = (size: 'M' | 'L', quantity: number, player_name = '', number = '') 
 describe('cart items', () => {
   it('sends a product without a spec and a design without a product id', () => {
     expect(toApiItem(productEntry('prd_1', 'standard', [line('M', 2)], 'sel_2'))).toEqual({
-      product_id: 'prd_1', fabric: 'standard', logos: 0, lines: [line('M', 2)], seller_id: 'sel_2',
+      product_id: 'prd_1', fabric: 'standard', logos: 0, lines: [{ ...line('M', 2), fit: 'men' }], seller_id: 'sel_2',
     });
     const d = toApiItem(designEntry(spec, 'des_1', 'premium', [line('L', 1, 'Arul', '7')]));
     expect(d.product_id).toBeUndefined();
@@ -72,5 +72,36 @@ describe('cart items', () => {
     const e = { ...productEntry('prd_1', 'standard', [line('M', 2)]), key: 'k' };
     expect(setSingleQuantity(e, 0).lines[0].quantity).toBe(1);
     expect(setSingleQuantity(e, 9).lines[0].quantity).toBe(9);
+  });
+});
+
+describe('options and fits on cart items', () => {
+  it('sends a product colourway, sleeves and collar, and every line with its fit', () => {
+    const e = productEntry('prd_1', 'standard', [{ ...line('M', 1), fit: 'women' }], '', { colourway: 'neon', sleeves: 'long', collar: 'polo' });
+    expect(toApiItem(e)).toEqual({
+      product_id: 'prd_1', fabric: 'standard', logos: 0, seller_id: '', colourway: 'neon', sleeves: 'long', collar: 'polo',
+      lines: [{ player_name: '', number: '', fit: 'women', size: 'M', quantity: 1 }],
+    });
+    // The original colourway and no choices send nothing extra (older carts look the same).
+    const plain = toApiItem(productEntry('prd_1', 'standard', [line('M', 1)], '', { colourway: 'original' }));
+    expect(plain).not.toHaveProperty('colourway');
+    expect(plain).not.toHaveProperty('sleeves');
+  });
+  it('reads choices back from the server cart and keeps a different colourway as its own row', () => {
+    const [back] = fromApiItems([{ product_id: 'prd_1', fabric: 'standard', colourway: 'neon', sleeves: 'none',
+      lines: [{ player_name: '', number: '', size: '8Y', fit: 'kids', quantity: 1 }] }]);
+    expect(back).toMatchObject({ colourway: 'neon', sleeves: 'none', collar: '', lines: [{ fit: 'kids', size: '8Y' }] });
+    let items: CartEntry[] = addToCart([], productEntry('prd_1', 'standard', [line('M', 1)])).items;
+    items = addToCart(items, productEntry('prd_1', 'standard', [line('M', 1)], '', { colourway: 'neon' })).items;
+    expect(items).toHaveLength(2);
+  });
+  it('merges lines only when the fit matches too', () => {
+    const merged = mergeLines([line('M', 1)], [{ ...line('M', 2), fit: 'women' }, { ...line('M', 1), fit: 'men' }]);
+    expect(merged.map((l) => `${l.fit ?? 'men'}:${l.quantity}`)).toEqual(['men:2', 'women:2']);
+  });
+  it('names fits in the summary when they are mixed', () => {
+    const label = (f: string) => ({ men: 'Men', women: 'Women', kids: 'Kids' }[f] ?? f);
+    expect(linesSummary([line('M', 1)], label)).toBe('M × 1');
+    expect(linesSummary([line('M', 1), { ...line('M', 1), fit: 'kids', size: '10Y' as never }], label)).toBe('Men M × 1, Kids 10Y × 1');
   });
 });

@@ -3,10 +3,12 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { PriceSummary } from '@/components/shop/PriceSummary';
 import { orderLabel, useOrder } from '@/components/shop/orderBits';
+import { useDemoPayments } from '@/components/providers/data';
 import { Banner, Button, Card, ErrorState, Loading } from '@/components/ui';
 import { errorMessage } from '@/i18n';
 import { useI18n } from '@/i18n/provider';
 import { api } from '@/lib/api/endpoints';
+import { isDemoPaymentsOff } from '@/lib/checkout';
 import { formatDate, formatMoney } from '@/lib/price';
 import s from '../order.module.css';
 
@@ -17,6 +19,10 @@ export function PayClient({ id }: { id: string }) {
   const { order, error, loading, retry } = useOrder(id, api.order);
   const [paying, setPaying] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
+  const { demo } = useDemoPayments();
+  const [refused, setRefused] = useState(false);
+  // Online payment is not available yet (production): no "Pay (demo)", our team arranges payment.
+  const payOff = !demo || refused;
   const paid = !!order?.payment;
 
   useEffect(() => {
@@ -37,7 +43,8 @@ export function PayClient({ id }: { id: string }) {
       await api.confirmDemoPayment(order.id);
       router.replace(`/order/${encodeURIComponent(order.id)}?paid=1`);
     } catch (e) {
-      setPayError(errorMessage(t, e));
+      if (isDemoPaymentsOff(e)) setRefused(true);
+      else setPayError(errorMessage(t, e));
       setPaying(false);
     }
   };
@@ -49,10 +56,17 @@ export function PayClient({ id }: { id: string }) {
       <p className="muted">{t('payOrderRef', { ref: orderLabel(order) })}</p>
       <div className={s.layout}>
         <Card title={t('payment')}>
-          <div className={s.demoBox} data-testid="demo-box">
-            <strong>{t('demoNoMoney')}</strong>
-            <p style={{ margin: '6px 0 0' }}>{t('demoPayNote')}</p>
-          </div>
+          {payOff ? (
+            <div className={s.demoBox} data-testid="pay-coming-soon" role="status">
+              <strong>{t('payComingSoonTitle')}</strong>
+              <p style={{ margin: '6px 0 0' }}>{t('payTeamWillContact')}</p>
+            </div>
+          ) : (
+            <div className={s.demoBox} data-testid="demo-box">
+              <strong>{t('demoNoMoney')}</strong>
+              <p style={{ margin: '6px 0 0' }}>{t('demoPayNote')}</p>
+            </div>
+          )}
           {est ? (
             <p data-testid="pay-eta">
               {order.delivery?.method === 'pickup'
@@ -64,9 +78,13 @@ export function PayClient({ id }: { id: string }) {
           {payError ? <Banner tone="fail" live>{payError}</Banner> : null}
           {!order.manufacturing_ready ? <Banner tone="fail">{t('orderBlocked')}</Banner> : null}
           <div style={{ marginTop: 12 }}>
-            <Button size="lg" block busy={paying} onClick={pay} disabled={!order.manufacturing_ready} testId="demo-pay">
-              {pricing ? t('payDemoAmount', { amount: formatMoney(pricing.total, pricing.currency, lang) }) : t('demoPay')}
-            </Button>
+            {payOff ? (
+              <Button size="lg" block kind="secondary" href={`/order/${encodeURIComponent(order.id)}`} testId="view-order">{t('viewOrder')}</Button>
+            ) : (
+              <Button size="lg" block busy={paying} onClick={pay} disabled={!order.manufacturing_ready} testId="demo-pay">
+                {pricing ? t('payDemoAmount', { amount: formatMoney(pricing.total, pricing.currency, lang) }) : t('demoPay')}
+              </Button>
+            )}
           </div>
         </Card>
         <Card title={t('priceTitle')}>

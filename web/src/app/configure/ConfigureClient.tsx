@@ -8,30 +8,35 @@ import { usePincode } from '@/components/providers/shop';
 import { useSession } from '@/components/providers/session';
 import { EnquiryForm } from '@/components/shop/EnquiryForm';
 import { PriceSummary } from '@/components/shop/PriceSummary';
+import { FitSizePicker, GarmentOptionsPicker, OptionsLine, optionsText } from '@/components/shop/Sizing';
 import {
-  Banner, Button, Card, Empty, ErrorState, Modal, SelectField, Skeleton, Spinner, SvgImg, Tabs, TextField, cx,
+  Banner, Button, Card, Empty, ErrorState, Modal, Skeleton, Spinner, SvgImg, Tabs, TextField, cx,
 } from '@/components/ui';
 import { errorMessage, type StringKey } from '@/i18n';
 import { useI18n } from '@/i18n/provider';
 import { isAbort } from '@/lib/api/client';
 import { api } from '@/lib/api/endpoints';
-import { SIZES, type Preview, type Size } from '@/lib/api/types';
+import type { Preview } from '@/lib/api/types';
 import { designEntry, toApiItem } from '@/lib/cart';
 import { currentSpec, flow, rowKey, useFlow } from '@/lib/flow';
+import { collarOf, hasSleeves, sleevesOf, withOption } from '@/lib/options';
 import { BULK_PIECES, buildItems, validateItems } from '@/lib/order';
 import { reasonKey } from '@/lib/pincode';
 import { formatDate, formatMoney, quoteLines } from '@/lib/price';
 import { totalPieces } from '@/lib/roster';
+import { checkSize, normaliseFit, sizeRank } from '@/lib/sizing';
 import { buyNow, cart, useCart } from '@/lib/shopStore';
 import { useCartQuote } from '@/lib/useCartQuote';
 import s from './configure.module.css';
-import { RosterEditor, SizeChart, type RowIssues } from './RosterEditor';
+import { RosterEditor, type RowIssues } from './RosterEditor';
 
-const ROW_MSG: Record<'player_name' | 'number' | 'quantity', StringKey> = { player_name: 'tooLong', number: 'digitsOnly', quantity: 'qtyRange' };
+const ROW_MSG: Record<'player_name' | 'number' | 'quantity' | 'size', StringKey> = {
+  player_name: 'tooLong', number: 'digitsOnly', quantity: 'qtyRange', size: 'chooseSize',
+};
 
 /**
- * The last step of the custom design flow: sizes and names (one piece or a team roster),
- * fabric, the live price and delivery date for the "Deliver to" PIN code, then Add to
+ * The last step of the custom design flow: fit, sizes and names (one piece or a team roster),
+ * sleeves and collar, fabric, the live price and delivery date for the "Deliver to" PIN code, then Add to
  * cart or Buy now.
  */
 export function ConfigureClient() {
@@ -49,7 +54,6 @@ export function ConfigureClient() {
   const [error, setError] = useState<string | null>(null);
   const [added, setAdded] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
-  const [chartOpen, setChartOpen] = useState(false);
   const [pinOpen, setPinOpen] = useState(false);
   const [preview, setPreview] = useState<{ data: Preview | null; error: unknown }>({ data: null, error: null });
 
@@ -60,8 +64,9 @@ export function ConfigureClient() {
 
   const items = useMemo(() => (spec ? buildItems(draft, spec) : []), [draft, spec]);
   const pieces = totalPieces(items);
-  const sizes = useMemo(() => [...new Set(items.map((i) => i.size))].sort((a, b) => SIZES.indexOf(a) - SIZES.indexOf(b)), [items]);
-  const sizeKey = sizes.join(',');
+  // Print checks for every fit and size ordered ("M", "kids:8Y").
+  const sizeKey = useMemo(() => [...new Map(items.map((i) => [checkSize(i.fit, i.size), sizeRank(i.fit, i.size)]))]
+    .sort((a, b) => a[1] - b[1]).map(([k]) => k).join(','), [items]);
   const itemIssues = validateItems(items, draft.mode);
   const editing = draft.cartKey ? cartItems.find((e) => e.key === draft.cartKey) ?? null : null;
 
@@ -73,7 +78,7 @@ export function ConfigureClient() {
     if (!spec) return;
     const controller = new AbortController();
     const timer = setTimeout(() => {
-      api.render(spec, sizeKey ? (sizeKey.split(',') as Size[]) : [], controller.signal)
+      api.render(spec, sizeKey ? sizeKey.split(',') : [], controller.signal)
         .then((data) => setPreview({ data, error: null }))
         .catch((e) => !isAbort(e) && setPreview((p) => ({ ...p, error: e })));
     }, 300);
@@ -122,7 +127,9 @@ export function ConfigureClient() {
     if (mode === 'team' && draft.rows.length === 0) {
       // Start the roster with the studio's own player so nothing typed there is lost.
       const ty = spec.typography;
-      set({ mode, rows: [{ key: rowKey(), player_name: ty.player_name, number: ty.number, size: draft.single.size, quantity: 1 }] });
+      set({ mode, rows: [{
+        key: rowKey(), player_name: ty.player_name, number: ty.number, fit: normaliseFit(draft.single.fit), size: draft.single.size, quantity: 1,
+      }] });
     } else set({ mode });
   };
 
@@ -177,6 +184,10 @@ export function ConfigureClient() {
   };
 
   const fabricName = (id: string) => fabrics.find((f) => f.id === id)?.name ?? id;
+  const sleeves = sleevesOf(spec);
+  const collar = collarOf(spec);
+  // Sleeves and collar are part of the design: changing them redraws the preview and reprices the item.
+  const setOption = (group: 'sleeves' | 'collar', value: string) => flow.edit(withOption(spec, group, value));
   const problem = item?.quote.seller_problem ? reasonKey(item.quote.seller_problem) : null;
 
   return (
@@ -203,13 +214,13 @@ export function ConfigureClient() {
             <div style={{ height: 14 }} />
             {draft.mode === 'single' ? (
               <div className="stack">
+                <FitSizePicker fit={normaliseFit(draft.single.fit)} size={draft.single.size} garment={garment} sleeves={sleeves}
+                  onChange={(v) => set((c) => ({ single: { ...c.single, ...v } }))} testId="single-fit-size"
+                  fitTestId="single-fit" sizeTestId="single-size" guideTestId="size-chart-single"
+                  sizeError={attempted && itemIssues.some((i) => i.kind === 'row' && i.field === 'size') ? t('chooseSize') : null} />
                 <div className={s.grid2}>
-                  <SelectField label={t('size')} value={draft.single.size} testId="single-size"
-                    onValue={(v) => set((c) => ({ single: { ...c.single, size: v as Size } }))}>
-                    {SIZES.map((z) => <option key={z} value={z}>{z}</option>)}
-                  </SelectField>
                   <TextField label={t('quantity')} type="number" min={1} max={500} value={draft.single.quantity || ''} testId="single-qty"
-                    error={attempted && itemIssues.some((i) => i.kind === 'row') ? t('qtyRange') : null}
+                    error={attempted && itemIssues.some((i) => i.kind === 'row' && i.field === 'quantity') ? t('qtyRange') : null}
                     onValue={(v) => set((c) => ({ single: { ...c.single, quantity: Math.max(0, Math.min(500, Math.floor(Number(v) || 0))) } }))} />
                 </div>
                 <p className="small muted" style={{ margin: 0 }}>
@@ -217,11 +228,10 @@ export function ConfigureClient() {
                     ? t('singlePrinted', { name: [spec.typography.player_name, spec.typography.number].filter(Boolean).join(' ') })
                     : t('singleNoName')}
                 </p>
-                <button type="button" className={s.linkBtn} onClick={() => setChartOpen(true)} data-testid="size-chart-single">{t('sizeChart')}</button>
               </div>
             ) : (
               <RosterEditor rows={draft.rows} onChange={(rows) => set({ rows })} issues={attempted ? rowIssues : {}}
-                failed={{}} defaultSize={draft.single.size} />
+                failed={{}} defaultSize={draft.single.size} defaultFit={normaliseFit(draft.single.fit)} garment={garment} sleeves={sleeves} />
             )}
             {attempted && itemIssues.some((i) => i.kind === 'emptyRoster') ? <Banner tone="fail">{t('emptyRoster')}</Banner> : null}
             {itemIssues.some((i) => i.kind === 'tooManyLines' || i.kind === 'tooManyPieces') ? <Banner tone="fail">{t('tooManyLines')}</Banner> : null}
@@ -233,6 +243,12 @@ export function ConfigureClient() {
               </div>
             ) : null}
           </Card>
+
+          {hasSleeves(garment) ? (
+            <Card title={t('garmentOptions')} testId="configure-options">
+              <GarmentOptionsPicker garment={garment} sleeves={sleeves} collar={collar} onChange={setOption} testId="configure-opt" />
+            </Card>
+          ) : null}
 
           <Card title={t('stepFabric')}>
             <fieldset className={s.fieldset}>
@@ -262,6 +278,7 @@ export function ConfigureClient() {
               <div>
                 <div className={s.designName}>{spec.typography.team_name || spec.style_name || t('checkoutYourDesign')}</div>
                 <div className="small muted">{t(`garment_${garment}` as StringKey)} · {fabricName(fabric)}</div>
+                <OptionsLine text={optionsText(t, { garment, sleeves, collar })} testId="configure-options-line" />
                 <a className="small" href="/studio">{t('edit')}</a>
               </div>
             </div>
@@ -331,9 +348,6 @@ export function ConfigureClient() {
 
       <Modal open={bulkOpen} onClose={() => setBulkOpen(false)} title={t('enquiryTitle')} testId="bulk-dialog" closeLabel={t('close')}>
         <EnquiryForm spec={spec} pieces={pieces} compact testId="checkout-enquiry" />
-      </Modal>
-      <Modal open={chartOpen} onClose={() => setChartOpen(false)} title={t('sizeChart')} closeLabel={t('close')}>
-        <SizeChart />
       </Modal>
       <Modal open={pinOpen} onClose={() => setPinOpen(false)} title={t('pinTitle')} closeLabel={t('close')}>
         <PincodeForm initial={pin.pincode} addresses={me?.addresses ?? []} onDone={() => setPinOpen(false)} testId="configure-pin" />

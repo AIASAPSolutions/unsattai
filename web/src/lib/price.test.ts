@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Quote } from './api/types';
-import { breakdownRows, formatDate, formatMoney, freeDeliveryGap, fromPrice, quoteKey, quoteLines, tierNudge } from './price';
+import { breakdownRows, formatDate, formatMoney, freeDeliveryGap, fromPrice, optionParts, quoteKey, quoteLines, tierNudge } from './price';
 
 function quote(p: Partial<Quote> = {}): Quote {
   return {
@@ -76,12 +76,30 @@ describe('quote requests', () => {
     expect(quoteLines([
       { size: 'M', quantity: 1, player_name: 'A', number: '7' }, { size: 'M', quantity: 2, player_name: 'A', number: '7' },
       { size: 'L', quantity: 0, player_name: 'B', number: '8' }, { size: 'L', quantity: 1, player_name: '', number: '' },
-    ])).toEqual([{ size: 'M', quantity: 3, player_name: 'A', number: '7' }, { size: 'L', quantity: 1, player_name: '', number: '' }]);
+    ])).toEqual([{ fit: 'men', size: 'M', quantity: 3, player_name: 'A', number: '7' }, { fit: 'men', size: 'L', quantity: 1, player_name: '', number: '' }]);
   });
   it('builds the same key for the same request (coupon case-insensitive)', () => {
     const base = { garment: 'jersey' as const, fabric: 'standard', logos: 0, lines: [{ size: 'M' as const, quantity: 1, player_name: '', number: '' }],
       delivery: { method: 'ship' as const, pincode: '', state: '' }, rush: false, coupon: 'welcome10' };
     expect(quoteKey(base)).toBe(quoteKey({ ...base, coupon: 'WELCOME10 ' }));
     expect(quoteKey(base)).not.toBe(quoteKey({ ...base, rush: true }));
+  });
+});
+
+describe('option parts', () => {
+  it('lists sleeves, collar and fit parts that change the price, in that order', () => {
+    expect(optionParts({ base: 499, fit: -60, collar: 90, size: 0, sleeves: 60 })).toEqual([
+      { key: 'sleeves', amount: 60 }, { key: 'collar', amount: 90 }, { key: 'fit', amount: -60 },
+    ]);
+    expect(optionParts({ base: 499, sleeves: 0 })).toEqual([]);
+    expect(optionParts(undefined)).toEqual([]);
+  });
+  it('keeps fits and options apart in quote keys and merged lines', () => {
+    const base = { garment: 'jersey' as const, fabric: 'standard', logos: 0, lines: [{ size: 'M' as const, quantity: 1, player_name: '', number: '' }],
+      delivery: { method: 'ship' as const, pincode: '', state: '' }, rush: false, coupon: '' };
+    expect(quoteKey(base)).not.toBe(quoteKey({ ...base, lines: [{ ...base.lines[0], fit: 'women' }] }));
+    expect(quoteKey(base)).not.toBe(quoteKey({ ...base, sleeves: 'long' }));
+    expect(quoteLines([{ size: 'M', quantity: 1, player_name: '', number: '' }, { fit: 'women', size: 'M', quantity: 1, player_name: '', number: '' }]))
+      .toHaveLength(2);
   });
 });

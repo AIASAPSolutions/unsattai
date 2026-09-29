@@ -1,18 +1,20 @@
 'use client';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { useCatalogue } from '@/components/providers/data';
+import { useCatalogue, useDemoPayments } from '@/components/providers/data';
 import { OrderDetail } from '@/components/shop/OrderDetail';
+import { fitLabel } from '@/components/shop/Sizing';
 import { useOrder } from '@/components/shop/orderBits';
 import { Banner, Button, ErrorState, Loading, Modal, SelectField, Stars, TextArea, TextField } from '@/components/ui';
 import { errorMessage, tMaybe } from '@/i18n';
 import { useI18n } from '@/i18n/provider';
 import { api } from '@/lib/api/endpoints';
 import type { Order, Reorder } from '@/lib/api/types';
-import { productEntry } from '@/lib/cart';
+import { apiLine, productEntry } from '@/lib/cart';
 import { EMPTY_ADDRESS, flow, flowStore, rowKey } from '@/lib/flow';
 import { formatDate } from '@/lib/price';
 import { cart } from '@/lib/shopStore';
+import { normaliseFit } from '@/lib/sizing';
 import { whenHydrated } from '@/lib/store';
 
 /** Put a previous order back into the studio flow's options page, ready to change and order again. */
@@ -24,8 +26,8 @@ export async function applyReorder(r: Reorder) {
   const cur = flowStore.get().checkout;
   flow.setCheckout({
     mode: single ? 'single' : 'team',
-    single: single ? { size: r.items[0].size, quantity: r.items[0].quantity } : cur.single,
-    rows: single ? [] : r.items.map((it) => ({ ...it, key: rowKey() })),
+    single: single ? { fit: normaliseFit(r.items[0].fit), size: r.items[0].size, quantity: r.items[0].quantity } : cur.single,
+    rows: single ? [] : r.items.map((it) => ({ ...it, fit: normaliseFit(it.fit), key: rowKey() })),
     fabric: r.fabric || cur.fabric,
     method: r.delivery.method ?? cur.method,
     address: r.delivery.address ? { ...EMPTY_ADDRESS, ...r.delivery.address } : cur.address,
@@ -42,6 +44,7 @@ export function AccountOrderClient({ id }: { id: string }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ tone: 'pass' | 'fail'; text: string } | null>(null);
   const [dialog, setDialog] = useState<Dialog>(null);
+  const { demo } = useDemoPayments();
 
   if (loading) return <Loading label={t('loading')} />;
   if (error || !order) return <ErrorState message={errorMessage(t, error)} retryLabel={t('retry')} onRetry={retry} />;
@@ -52,7 +55,10 @@ export function AccountOrderClient({ id }: { id: string }) {
     try {
       if (order.product_id) {
         const fabric = order.pricing?.fabric.id ?? 'standard';
-        const r = cart.add(productEntry(order.product_id, fabric, order.lines.map(({ player_name, number, size, quantity }) => ({ player_name, number, size, quantity }))));
+        // Same fits, sizes, sleeves and collar as before.
+        const r = cart.add(productEntry(order.product_id, fabric, order.lines.map(apiLine), '', {
+          sleeves: order.options?.sleeves ?? '', collar: order.options?.collar ?? '',
+        }));
         if (r.outcome === 'full') throw new Error(t('cartFull'));
         router.push('/cart');
         return;
@@ -76,10 +82,14 @@ export function AccountOrderClient({ id }: { id: string }) {
       <div><Button kind="ghost" size="sm" href="/account">← {t('accOrders')}</Button></div>
       {msg ? <Banner tone={msg.tone} live testId="order-msg">{msg.text}</Banner> : null}
       {!order.payment && order.fulfilment?.status !== 'cancelled' ? (
-        <Banner tone="warn" action={t('payment')} onAction={() => router.push(
-          order.checkout_id ? `/checkout/${encodeURIComponent(order.checkout_id)}/pay` : `/order/${encodeURIComponent(order.id)}/pay`)}>
-          {t('fstatus_awaiting_payment')}
-        </Banner>
+        demo ? (
+          <Banner tone="warn" action={t('payment')} onAction={() => router.push(
+            order.checkout_id ? `/checkout/${encodeURIComponent(order.checkout_id)}/pay` : `/order/${encodeURIComponent(order.id)}/pay`)}>
+            {t('fstatus_awaiting_payment')}
+          </Banner>
+        ) : (
+          <Banner tone="warn" testId="pay-coming-soon">{t('fstatus_awaiting_payment')}. {t('payTeamWillContact')}</Banner>
+        )
       ) : null}
       {order.can_return && order.return_until ? (
         <Banner tone="info" testId="return-window">{t('returnUntil', { date: formatDate(order.return_until, lang) })}</Banner>
@@ -186,7 +196,7 @@ function ReturnForm({ order, onDone }: { order: Order; onDone: (o: Order) => voi
         <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
           <legend className="small" style={{ fontWeight: 600 }}>{t('returnWhich')}</legend>
           {order.lines.map((l) => (
-            <TextField key={l.line} label={`${t('line', { n: l.line })}: ${l.size} ${[l.player_name, l.number].filter(Boolean).join(' ')} (${l.quantity})`}
+            <TextField key={l.line} label={`${t('line', { n: l.line })}: ${t('fitSize', { fit: fitLabel(t, normaliseFit(l.fit)), size: l.size })} ${[l.player_name, l.number].filter(Boolean).join(' ')} (${l.quantity})`}
               type="number" min={0} max={l.quantity} value={qty[l.line] ?? ''} testId={`return-line-${l.line}`}
               onValue={(v) => setQty((q) => ({ ...q, [l.line]: Math.max(0, Math.min(l.quantity, Math.floor(Number(v) || 0))) }))} />
           ))}

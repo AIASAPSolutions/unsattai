@@ -1,7 +1,7 @@
 'use client';
 import { api } from './api/endpoints';
 import type {
-  Address, Design, DesignSpec, Garment, GenerateResponse, Language, OrderItem, Question, Size, Understanding,
+  Address, Design, DesignSpec, Fit, Garment, GenerateResponse, Language, OrderItem, Question, Size, Understanding,
 } from './api/types';
 import { canRedo, canUndo, commitFrom, createHistory, push, redo, replace, undo, type History } from './history';
 import { newId, newIdempotencyKey } from './ids';
@@ -33,7 +33,8 @@ export const EMPTY_ADDRESS: Address = { name: '', phone: '', line1: '', line2: '
 
 export interface CheckoutDraft {
   mode: 'single' | 'team';
-  single: { size: Size; quantity: number };
+  /** fit is missing on drafts saved before fits existed (men / unisex). */
+  single: { fit?: Fit; size: Size; quantity: number };
   rows: RosterRow[];
   fabric: string;
   rush: boolean;
@@ -74,7 +75,7 @@ export const EMPTY_BRIEF: Brief = {
 
 export const EMPTY_CHECKOUT: CheckoutDraft = {
   mode: 'single',
-  single: { size: 'M', quantity: 1 },
+  single: { fit: 'men', size: 'M', quantity: 1 },
   rows: [],
   fabric: 'standard',
   rush: false,

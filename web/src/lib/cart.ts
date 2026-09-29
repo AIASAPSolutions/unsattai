@@ -1,4 +1,5 @@
-import type { ApiCartItem, DesignSpec, Garment, OrderItem } from './api/types';
+import type { ApiCartItem, Collar, DesignSpec, Fit, Garment, OrderItem, Sleeves } from './api/types';
+import { fitSizeSummary, normaliseFit } from './sizing';
 
 // Cart items: a ready-made product or the customer's own design, each with its fabric,
 // seller choice and roster lines. Pure helpers (no React, no storage) so they are easy
@@ -18,6 +19,10 @@ export interface CartEntry {
   logos: number;
   lines: OrderItem[];
   seller_id: string;
+  /** Products only: the colourway and sleeve and collar choices (empty = the product's own). */
+  colourway?: string;
+  sleeves?: Sleeves | '';
+  collar?: Collar | '';
 }
 
 export type NewEntry = Omit<CartEntry, 'key'>;
@@ -28,8 +33,18 @@ export function entryKey(): string {
   return `c${Date.now().toString(36)}${counter.toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 }
 
-export function productEntry(productId: string, fabric: string, lines: OrderItem[], sellerId = ''): NewEntry {
-  return { product_id: productId, spec: null, design_id: '', garment: null, fabric, logos: 0, lines, seller_id: sellerId };
+export function productEntry(productId: string, fabric: string, lines: OrderItem[], sellerId = '',
+  choice: { colourway?: string; sleeves?: Sleeves | ''; collar?: Collar | '' } = {}): NewEntry {
+  return {
+    product_id: productId, spec: null, design_id: '', garment: null, fabric, logos: 0, lines, seller_id: sellerId,
+    colourway: choice.colourway && choice.colourway !== 'original' ? choice.colourway : '',
+    sleeves: choice.sleeves ?? '', collar: choice.collar ?? '',
+  };
+}
+
+/** A line as the API takes it; lines saved before fits existed are men / unisex. */
+export function apiLine({ player_name, number, fit, size, quantity }: OrderItem): OrderItem {
+  return { player_name, number, fit: normaliseFit(fit), size, quantity };
 }
 
 export function designEntry(spec: DesignSpec, designId: string, fabric: string, lines: OrderItem[]): NewEntry {
@@ -40,11 +55,16 @@ export function designEntry(spec: DesignSpec, designId: string, fabric: string, 
 export function toApiItem(e: NewEntry | CartEntry): ApiCartItem {
   const base: ApiCartItem = {
     fabric: e.fabric, logos: e.logos,
-    lines: e.lines.map(({ player_name, number, size, quantity }) => ({ player_name, number, size, quantity })),
+    lines: e.lines.map(apiLine),
     seller_id: e.seller_id,
   };
   if (e.garment) base.garment = e.garment;
-  if (e.product_id) return { product_id: e.product_id, ...base };
+  if (e.product_id) {
+    return {
+      product_id: e.product_id, ...base,
+      ...(e.colourway ? { colourway: e.colourway } : {}), ...(e.sleeves ? { sleeves: e.sleeves } : {}), ...(e.collar ? { collar: e.collar } : {}),
+    };
+  }
   return { spec: e.spec, design_id: e.design_id, ...base };
 }
 
@@ -55,8 +75,11 @@ export function fromApiItems(items: ApiCartItem[], prev: CartEntry[] = []): Cart
     const entry: NewEntry = {
       product_id: it.product_id ?? '', spec: it.spec ?? null, design_id: it.design_id ?? '', garment: it.garment ?? null,
       fabric: it.fabric || 'standard', logos: it.logos ?? 0,
-      lines: (it.lines ?? []).map(({ player_name, number, size, quantity }) => ({ player_name: player_name ?? '', number: number ?? '', size, quantity })),
+      lines: (it.lines ?? []).map(({ player_name, number, fit, size, quantity }) => ({
+        player_name: player_name ?? '', number: number ?? '', fit: normaliseFit(fit), size, quantity,
+      })),
       seller_id: it.seller_id ?? '',
+      colourway: it.colourway ?? '', sleeves: it.sleeves ?? '', collar: it.collar ?? '',
     };
     const i = unused.findIndex((p) => sameItem(p, entry));
     const key = i >= 0 ? unused.splice(i, 1)[0].key : entryKey();
@@ -87,11 +110,12 @@ export function sameProduct(a: NewEntry | CartEntry, b: NewEntry | CartEntry): b
 export const itemPieces = (e: Pick<CartEntry, 'lines'>) => e.lines.reduce((n, l) => n + (l.quantity || 0), 0);
 export const cartPieces = (items: Pick<CartEntry, 'lines'>[]) => items.reduce((n, e) => n + itemPieces(e), 0);
 
-/** Lines with the same name, number and size are one line with the quantities added up. */
+/** Lines with the same name, number, fit and size are one line with the quantities added up. */
 export function mergeLines(a: OrderItem[], b: OrderItem[]): OrderItem[] {
   const out = a.map((l) => ({ ...l }));
   for (const l of b) {
-    const hit = out.find((x) => x.player_name === l.player_name && x.number === l.number && x.size === l.size);
+    const hit = out.find((x) => x.player_name === l.player_name && x.number === l.number && x.size === l.size
+      && normaliseFit(x.fit) === normaliseFit(l.fit));
     if (hit) hit.quantity = Math.min(500, hit.quantity + l.quantity);
     else out.push({ ...l });
   }
@@ -135,12 +159,12 @@ export function mergeCarts(saved: CartEntry[], device: CartEntry[], max = MAX_CA
   return { items: out, skipped };
 }
 
-/** One-line description of an item's pieces: "M × 2, L × 1" (sizes in chart order). */
-export function linesSummary(lines: OrderItem[]): string {
-  const order = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
-  const by = new Map<string, number>();
-  for (const l of lines) by.set(l.size, (by.get(l.size) ?? 0) + l.quantity);
-  return [...by.entries()].sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0])).map(([s, q]) => `${s} × ${q}`).join(', ');
+/**
+ * One-line description of an item's pieces: "M × 2, L × 1" (sizes in chart order). When
+ * any line is not men / unisex, each size says its fit: "Women S × 1, Kids 8Y × 2".
+ */
+export function linesSummary(lines: OrderItem[], fitLabel: (f: Fit) => string = (f) => f): string {
+  return fitSizeSummary(lines, fitLabel);
 }
 
 /** Change the quantity of a one-line item (products bought by size). */

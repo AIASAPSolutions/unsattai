@@ -1,4 +1,5 @@
 'use client';
+import { useDemoPayments } from '@/components/providers/data';
 import { useSession } from '@/components/providers/session';
 import { OrderDetail } from '@/components/shop/OrderDetail';
 import { invoiceUrl, orderLabel, useOrder } from '@/components/shop/orderBits';
@@ -13,6 +14,7 @@ export function ConfirmationClient({ id }: { id: string }) {
   const { t, lang } = useI18n();
   const { me } = useSession();
   const { order, error, loading, retry } = useOrder(id, api.order);
+  const { demo } = useDemoPayments();
 
   if (loading) return <Loading label={t('loading')} />;
   if (error || !order) {
@@ -46,12 +48,13 @@ export function ConfirmationClient({ id }: { id: string }) {
         ) : null}
         {order.payment?.demo ? <p className="small muted">{t('paidDemo', { ref: order.payment.reference ?? '' })}</p> : null}
         <div className={s.actions}>
-          {!paid ? <Button href={`/order/${encodeURIComponent(order.id)}/pay`} testId="go-pay">{t('payment')}</Button> : null}
+          {!paid && demo ? <Button href={`/order/${encodeURIComponent(order.id)}/pay`} testId="go-pay">{t('payment')}</Button> : null}
           <ExternalButton href={invoiceUrl(order.id)} testId="confirmation-invoice">{paid ? t('saveInvoice') : t('saveProforma')} ↗</ExternalButton>
           {me ? <Button kind="secondary" href={`/account/orders/${encodeURIComponent(order.id)}`}>{t('viewInAccount')}</Button>
             : <Button kind="secondary" href={`/track?order=${encodeURIComponent(order.id)}`}>{t('navTrack')}</Button>}
           <Button kind="ghost" href="/design">{t('newDesign')}</Button>
         </div>
+        {!paid && !demo && order.payment_method !== 'cod' ? <Banner tone="warn" testId="pay-coming-soon">{t('payComingSoonTitle')}. {t('payTeamWillContact')}</Banner> : null}
         {!me ? <Banner tone="info">{t('guestTrackHint', { id: order.id })}</Banner> : null}
       </section>
       <div style={{ maxWidth: 820, margin: '16px auto 0' }}>

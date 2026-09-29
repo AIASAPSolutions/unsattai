@@ -9,11 +9,11 @@ const row = (p: Partial<RosterRow>): RosterRow => ({ key: Math.random().toString
 describe('buildItems', () => {
   it('single orders print the studio name and number', () => {
     expect(buildItems({ ...EMPTY_CHECKOUT, single: { size: 'L', quantity: 3 } }, spec))
-      .toEqual([{ player_name: 'Arul', number: '07', size: 'L', quantity: 3 }]);
+      .toEqual([{ player_name: 'Arul', number: '07', fit: 'men', size: 'L', quantity: 3 }]);
   });
   it('team orders use the roster, trimmed, with Indian digits normalised', () => {
     const items = buildItems({ ...EMPTY_CHECKOUT, mode: 'team', rows: [row({ player_name: ' Priya ', number: '१०', size: 'S' })] }, spec);
-    expect(items).toEqual([{ player_name: 'Priya', number: '10', size: 'S', quantity: 1 }]);
+    expect(items).toEqual([{ player_name: 'Priya', number: '10', fit: 'men', size: 'S', quantity: 1 }]);
   });
 });
 
@@ -65,5 +65,21 @@ describe('order payload and idempotency', () => {
     ];
     expect(rowsForFailure(items, { player_name: 'A', number: '1', size: 'M' })).toEqual([0, 2]);
     expect(rowsForFailure(items, { player_name: 'C', number: '', size: 'M' })).toEqual([]);
+  });
+});
+
+describe('fits on order lines', () => {
+  it('sends the fit with every line and flags a size the fit does not have', () => {
+    const items = buildItems({ ...EMPTY_CHECKOUT, mode: 'team', rows: [row({ fit: 'kids', size: '8Y' }), row({ size: 'L' })] }, spec);
+    expect(items.map((i) => i.fit)).toEqual(['kids', 'men']);
+    expect(buildItems({ ...EMPTY_CHECKOUT, single: { size: 'M', quantity: 1 } }, spec)[0].fit).toBe('men');   // older drafts
+    expect(validateItems([{ player_name: '', number: '', fit: 'women', size: '3XL', quantity: 1 }], 'single'))
+      .toEqual([{ kind: 'row', index: 0, field: 'size' }]);
+  });
+  it('matches a server failure to rows by fit as well as size', () => {
+    const items = [{ player_name: 'A', number: '1', fit: 'women' as const, size: 'S' as const, quantity: 1 },
+      { player_name: 'A', number: '1', size: 'S' as const, quantity: 1 }];
+    expect(rowsForFailure(items, { player_name: 'A', number: '1', size: 'S', fit: 'women' })).toEqual([0]);
+    expect(rowsForFailure(items, { player_name: 'A', number: '1', size: 'S' })).toEqual([1]);
   });
 });

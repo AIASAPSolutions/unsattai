@@ -1,15 +1,17 @@
 'use client';
 import { useEffect, useMemo, useState } from 'react';
-import { Banner, Button, Card, Chip, Chips, Empty, ErrorState, Loading, Modal, SelectField, Skeleton, SvgImg, TextField } from '@/components/ui';
+import { FitSizePicker, fitLabel } from '@/components/shop/Sizing';
+import { Banner, Button, Card, Chip, Chips, Empty, ErrorState, Loading, Skeleton, SvgImg, TextField } from '@/components/ui';
 import { errorMessage } from '@/i18n';
 import { useI18n } from '@/i18n/provider';
 import { ApiError } from '@/lib/api/client';
 import { api } from '@/lib/api/endpoints';
-import { SIZES, TEXT_LIMITS, type CollectionEntry, type PublicCollection, type Size } from '@/lib/api/types';
+import { TEXT_LIMITS, type CollectionEntry, type Fit, type PublicCollection, type Size } from '@/lib/api/types';
+import { sleevesOf } from '@/lib/options';
 import { formatDate, formatMoney } from '@/lib/price';
 import { local } from '@/lib/store';
+import { checkSize, normaliseFit, type FitSizes } from '@/lib/sizing';
 import { cleanNumber } from '@/lib/validation';
-import { SizeChart } from '../../configure/RosterEditor';
 import s from './team.module.css';
 
 interface SavedEntry {
@@ -34,11 +36,10 @@ export function TeamEntryClient({ token }: { token: string }) {
   const [nonce, setNonce] = useState(0);
   const [saved, setSaved] = useState<SavedEntry | null>(null);
   const [editing, setEditing] = useState(true);
-  const [form, setForm] = useState({ player_name: '', number: '', size: 'M' as Size, quantity: 1, contact: '' });
+  const [form, setForm] = useState({ player_name: '', number: '', fit: 'men' as Fit, size: 'M' as Size, quantity: 1, contact: '' });
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ tone: 'pass' | 'fail'; text: string } | null>(null);
   const [mock, setMock] = useState<string | null>(null);
-  const [chart, setChart] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -49,7 +50,7 @@ export function TeamEntryClient({ token }: { token: string }) {
         const sv = readSaved(token);
         if (sv) {
           setSaved(sv);
-          setForm({ ...sv.entry });
+          setForm({ ...sv.entry, fit: normaliseFit(sv.entry.fit) });
           setEditing(false);
         }
       })
@@ -67,13 +68,13 @@ export function TeamEntryClient({ token }: { token: string }) {
     if (!personal) return;
     const c = new AbortController();
     const timer = setTimeout(() => {
-      api.render(personal, [form.size], c.signal).then((p) => setMock(p.mockup_svg)).catch(() => undefined);
+      api.render(personal, [checkSize(form.fit, form.size)], c.signal).then((p) => setMock(p.mockup_svg)).catch(() => undefined);
     }, 450);
     return () => {
       clearTimeout(timer);
       c.abort();
     };
-  }, [personal, form.size]);
+  }, [personal, form.fit, form.size]);
 
   if (error) {
     const notFound = error instanceof ApiError && error.kind === 'not_found';
@@ -86,6 +87,8 @@ export function TeamEntryClient({ token }: { token: string }) {
   }
   if (!col) return <Loading label={t('loading')} />;
 
+  // Older servers only list men's sizes.
+  const fitSizes: FitSizes = col.fit_sizes ?? { men: col.sizes };
   const today = new Date().toISOString().slice(0, 10);
   const pastDeadline = !!col.deadline && col.deadline < today;
   const closed = col.status !== 'open' || pastDeadline;
@@ -103,7 +106,9 @@ export function TeamEntryClient({ token }: { token: string }) {
     }
     setBusy(true);
     setMsg(null);
-    const body = { player_name: form.player_name.trim(), number: num, size: form.size, quantity: form.quantity, contact: form.contact.trim() };
+    const body = {
+      player_name: form.player_name.trim(), number: num, fit: form.fit, size: form.size, quantity: form.quantity, contact: form.contact.trim(),
+    };
     try {
       const res = saved ? await api.editEntry(token, saved.id, saved.edit_key, body) : await api.addEntry(token, body);
       const sv: SavedEntry = { id: res.id, edit_key: res.edit_key ?? saved?.edit_key ?? '', entry: body };
@@ -146,7 +151,8 @@ export function TeamEntryClient({ token }: { token: string }) {
           {saved && !editing ? (
             <Card title={t('teamYourEntry')} testId="team-your-entry">
               <p style={{ marginTop: 0 }}>
-                <strong>{saved.entry.player_name || t('unnamed')}</strong> · #{saved.entry.number || '—'} · {saved.entry.size} × {saved.entry.quantity}
+                <strong>{saved.entry.player_name || t('unnamed')}</strong> · #{saved.entry.number || '—'} ·{' '}
+                {t('fitSize', { fit: fitLabel(t, normaliseFit(saved.entry.fit)), size: saved.entry.size })} × {saved.entry.quantity}
               </p>
               {!closed ? <Button kind="secondary" onClick={() => setEditing(true)} testId="team-edit">{t('teamEditEntry')}</Button> : null}
               <p className="small muted" style={{ marginBottom: 0 }}>{t('teamEditHint')}</p>
@@ -160,19 +166,18 @@ export function TeamEntryClient({ token }: { token: string }) {
                   <TextField label={t('number')} value={form.number} inputMode="numeric" maxLength={3} error={numErr}
                     onValue={(v) => setForm((f) => ({ ...f, number: v }))} testId="team-number" />
                 </div>
+                <FitSizePicker fit={form.fit} size={form.size} fitSizes={fitSizes} garment={col.spec.garment} sleeves={sleevesOf(col.spec)}
+                  onChange={(v) => setForm((f) => ({ ...f, ...v }))} testId="team-fit-size" fitTestId="team-fit" sizeTestId="team-size"
+                  guideTestId="team-size-guide" />
                 <div className={s.grid2}>
-                  <SelectField label={t('size')} value={form.size} onValue={(v) => setForm((f) => ({ ...f, size: v as Size }))} testId="team-size">
-                    {(col.sizes.length ? col.sizes : SIZES).map((z) => <option key={z} value={z}>{z}</option>)}
-                  </SelectField>
                   <TextField label={t('quantity')} type="number" min={1} max={20} value={form.quantity}
                     onValue={(v) => setForm((f) => ({ ...f, quantity: Math.max(1, Math.min(20, Math.floor(Number(v) || 1))) }))} testId="team-qty" />
                 </div>
-                <button type="button" className={s.linkBtn} onClick={() => setChart(true)}>{t('sizeChart')}</button>
                 <TextField label={t('teamContactLabel')} value={form.contact} maxLength={40} optional={t('optional')}
                   hint={t('teamContactHint')} onValue={(v) => setForm((f) => ({ ...f, contact: v }))} testId="team-contact" />
                 <div className="row" style={{ gap: 8 }}>
                   <Button type="submit" busy={busy} testId="team-submit">{saved ? t('save') : t('teamJoin')}</Button>
-                  {saved ? <Button kind="ghost" onClick={() => { setForm({ ...saved.entry }); setEditing(false); }}>{t('cancel')}</Button> : null}
+                  {saved ? <Button kind="ghost" onClick={() => { setForm({ ...saved.entry, fit: normaliseFit(saved.entry.fit) }); setEditing(false); }}>{t('cancel')}</Button> : null}
                 </div>
               </form>
             </Card>
@@ -190,7 +195,6 @@ export function TeamEntryClient({ token }: { token: string }) {
           ) : null}
         </div>
       </div>
-      <Modal open={chart} onClose={() => setChart(false)} title={t('sizeChart')} closeLabel={t('close')}><SizeChart /></Modal>
     </div>
   );
 }

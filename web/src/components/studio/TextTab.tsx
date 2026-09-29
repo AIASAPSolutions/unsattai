@@ -143,7 +143,7 @@ export function TextTab({ spec, selectedId, select, side }: StudioTools) {
           <div className="row" style={{ marginTop: 12 }}>
             <Button kind="secondary" size="sm" onClick={() => {
               const other = selected.panel === 'front' ? 'back' : 'front';
-              const [x, y] = zoneCenter(spec.garment, other);
+              const [x, y] = zoneCenter(spec.garment, other, spec);
               patchSelected({ panel: other, x, y });
             }}>⇄ {t('bringToFront')}</Button>
             <Button kind="danger" size="sm" testId="delete-layer" onClick={() => {

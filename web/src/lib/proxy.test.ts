@@ -25,7 +25,7 @@ describe('upstreamPath / upstreamUrl', () => {
       'me/orders/ord_1/review', 'me/returns', 'me/notifications', 'me/notifications/read', 'me/checkouts',
       'orders', 'orders/ord_1', 'orders/ord_1/invoice', 'orders/UJ-00001/track', 'orders/ord_1/payment-confirmed',
       'collections', 'collections/tok', 'collections/tok/entries', 'collections/tok/entries/e1', 'quotes/tok/accept',
-      'designs/generate', 'designs/d1/feedback', 'render/panels', 'meta',
+      'designs/generate', 'designs/d1/feedback', 'render/panels', 'meta', 'health', 'shop/size-guide',
     ];
     for (const p of ok) expect(upstreamPath(p.split('/')), p).toBe(p);
   });

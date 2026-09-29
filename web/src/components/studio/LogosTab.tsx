@@ -212,7 +212,7 @@ export function LogosTab({ spec, selectedId, select, side, sizes }: StudioTools)
             <div className="row" style={{ marginTop: 12 }}>
               <Button kind="secondary" size="sm" onClick={() => {
                 const other = selected.panel === 'front' ? 'back' : 'front';
-                const [x, y] = zoneCenter(spec.garment, other);
+                const [x, y] = zoneCenter(spec.garment, other, spec);
                 patch({ panel: other, x, y });
               }}>⇄ {t('bringToFront')}</Button>
               <Button kind="danger" size="sm" onClick={() => {

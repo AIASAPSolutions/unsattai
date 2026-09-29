@@ -6,7 +6,7 @@ import { SessionProvider } from '@/components/providers/session';
 import { ShopSync } from '@/components/providers/shop';
 import { I18nProvider } from '@/i18n/provider';
 import { serverT } from '@/i18n/server';
-import { loadCatalogue } from '@/lib/server/catalogue';
+import { loadCatalogue, loadDemoPayments } from '@/lib/server/catalogue';
 import './globals.css';
 
 const site = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
@@ -25,7 +25,7 @@ export const viewport: Viewport = { themeColor: '#13225a', width: 'device-width'
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const { t, lang } = await serverT();
-  const catalogue = await loadCatalogue();
+  const [catalogue, demoPayments] = await Promise.all([loadCatalogue(), loadDemoPayments()]);
   return (
     <html lang={lang}>
       <body>
@@ -34,7 +34,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
             <ShopSync />
             <Header />
             <main id="main" tabIndex={-1}>{children}</main>
-            <Footer t={t} catalogue={catalogue} />
+            <Footer t={t} catalogue={catalogue} demoPayments={demoPayments} />
           </SessionProvider>
         </I18nProvider>
       </body>

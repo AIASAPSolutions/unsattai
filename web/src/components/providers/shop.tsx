@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { isAbort } from '@/lib/api/client';
 import { api } from '@/lib/api/endpoints';
 import type { Garment, Product, Serviceability } from '@/lib/api/types';
+import { productImageUrl } from '@/lib/options';
 import { PINCODE_RE, resolvePincode, type PincodeChoice } from '@/lib/pincode';
 import { cart, pin, useShop } from '@/lib/shopStore';
 import { useSession } from './session';
@@ -117,7 +118,7 @@ export function useProductIndex() {
   return map;
 }
 
-/** Product pictures come from the API through our proxy. */
-export function productImage(p: Pick<Product, 'slug'>): string {
-  return `/api/uj/shop/products/${encodeURIComponent(p.slug)}/mockup.svg`;
+/** Product pictures come from the API through our proxy, in a colourway and with sleeve and collar choices. */
+export function productImage(p: Pick<Product, 'slug'>, choice?: { colourway?: string; sleeves?: string; collar?: string }): string {
+  return productImageUrl(p.slug, choice);
 }

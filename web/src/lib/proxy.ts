@@ -27,7 +27,7 @@ export const ALLOWED: RegExp[] = [
   /^logos\/(suggest|remove-background)$/,
   /^orders$/,
   new RegExp(`^orders\\/${ID}(\\/(payment-confirmed|invoice|track))?$`),
-  /^shop\/(catalogue|quote|delivery-estimate|enquiries|serviceability|offers|products|cart\/quote)$/,
+  /^shop\/(catalogue|quote|delivery-estimate|enquiries|serviceability|offers|products|size-guide|cart\/quote)$/,
   new RegExp(`^shop\\/sellers\\/${ID}$`),
   new RegExp(`^shop\\/products\\/${ID}(\\/(reviews|mockup\\.svg))?$`),
   /^checkout$/,

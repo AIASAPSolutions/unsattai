@@ -2,7 +2,7 @@ import type {
   ColorRole, DesignSpec, Element, LayerPanel, LogoElement, TextElement,
 } from './api/types';
 import { MAX_LOGOS } from './api/types';
-import { fitScale, isSafe, panelSize, zoneCenter } from './geometry';
+import { fitScale, isSafe, panelSize, refitLayers, zoneCenter } from './geometry';
 import { newId } from './ids';
 
 // Immutable spec edits. Only the touched branch is copied, so fields this app
@@ -33,7 +33,8 @@ export function usesLayers(spec: DesignSpec): boolean {
 export function materializeLayers(spec: DesignSpec, defaults: TextElement[]): DesignSpec {
   if (usesLayers(spec)) return { ...spec, elements: spec.elements ?? [], text_layers: true };
   const filled = defaults.map((d) => ({ ...d, rotation: d.rotation ?? 0, text: d.text ?? '', color_role: d.color_role ?? ('text' as ColorRole) }));
-  return { ...spec, elements: [...filled, ...(spec.elements ?? [])], text_layers: true };
+  // The server's defaults are placed for short sleeves and a crew neck; fit them to a sleeveless or polo zone.
+  return refitLayers({ ...spec, elements: [...filled, ...(spec.elements ?? [])], text_layers: true }, { sleeves: 'short', collar: 'crew' });
 }
 
 export function updateElement(spec: DesignSpec, id: string, patch: Partial<Element>): DesignSpec {
@@ -93,13 +94,13 @@ export function placeLogo(
     const fitted = { ...candidate, width: candidate.width * k };
     if (isSafe(spec, fitted) && !spec.elements.some((e) => overlaps(e, fitted))) return fitted;
   }
-  const [x, y] = zoneCenter(spec.garment, preferredPanel ?? 'front');
+  const [x, y] = zoneCenter(spec.garment, preferredPanel ?? 'front', spec);
   const centered: LogoElement = { ...base, panel: preferredPanel ?? 'front', x, y };
   return { ...centered, width: centered.width * fitScale(spec, centered) };
 }
 
 export function newTextLayer(spec: DesignSpec, panel: LayerPanel, text: string): TextElement {
-  const [x, y] = zoneCenter(spec.garment, panel);
+  const [x, y] = zoneCenter(spec.garment, panel, spec);
   const el: TextElement = {
     id: newId('text'), type: 'text', panel, x, y: y + 120, rotation: 0, text, size: 40,
     font: null, color_role: 'text', color: null, bind: null,

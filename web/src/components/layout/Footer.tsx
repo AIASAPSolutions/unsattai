@@ -3,7 +3,7 @@ import type { Catalogue } from '@/lib/api/types';
 import type { T } from '@/i18n';
 import s from './layout.module.css';
 
-export function Footer({ t, catalogue }: { t: T; catalogue: Catalogue | null }) {
+export function Footer({ t, catalogue, demoPayments = true }: { t: T; catalogue: Catalogue | null; demoPayments?: boolean }) {
   const co = catalogue?.company;
   const name = co?.name || 'UrJersey';
   return (
@@ -13,7 +13,7 @@ export function Footer({ t, catalogue }: { t: T; catalogue: Catalogue | null }) 
           <div>
             <h2>{name}</h2>
             <p>{t('footerTagline')}</p>
-            <p>{t('footerDemo')}</p>
+            {demoPayments ? <p>{t('footerDemo')}</p> : null}
           </div>
           <div>
             <h2>{t('footerLinks')}</h2>
@@ -21,6 +21,7 @@ export function Footer({ t, catalogue }: { t: T; catalogue: Catalogue | null }) 
               <li><Link href="/design">{t('navDesign')}</Link></li>
               <li><Link href="/teams">{t('navTeams')}</Link></li>
               <li><Link href="/track">{t('navTrack')}</Link></li>
+              <li><Link href="/size-guide" data-testid="footer-size-guide">{t('sizeGuide')}</Link></li>
               <li><Link href="/enquiry">{t('navBulk')}</Link></li>
               <li><Link href="/account">{t('navAccount')}</Link></li>
             </ul>

@@ -1,5 +1,6 @@
 import type { Address, DesignSpec, Language, OrderFailure, OrderItem, OrderRequest } from './api/types';
 import type { CheckoutDraft } from './flow';
+import { isFitSize, normaliseFit } from './sizing';
 import {
   checkCustomerName, checkEmail, checkNumber, checkPhone, checkPincode, checkPlayer, checkQuantity, checkRequired, cleanNumber,
 } from './validation';
@@ -17,11 +18,11 @@ export function buildItems(draft: Pick<CheckoutDraft, 'mode' | 'single' | 'rows'
   if (draft.mode === 'single') {
     return [{
       player_name: spec.typography.player_name, number: cleanNumber(spec.typography.number),
-      size: draft.single.size, quantity: draft.single.quantity,
+      fit: normaliseFit(draft.single.fit), size: draft.single.size, quantity: draft.single.quantity,
     }];
   }
-  return draft.rows.map(({ player_name, number, size, quantity }) => ({
-    player_name: player_name.trim(), number: cleanNumber(number), size, quantity,
+  return draft.rows.map(({ player_name, number, fit, size, quantity }) => ({
+    player_name: player_name.trim(), number: cleanNumber(number), fit: normaliseFit(fit), size, quantity,
   }));
 }
 
@@ -29,7 +30,7 @@ export type DraftIssue =
   | { kind: 'emptyRoster' }
   | { kind: 'tooManyLines' }
   | { kind: 'tooManyPieces' }
-  | { kind: 'row'; index: number; field: 'player_name' | 'number' | 'quantity' }
+  | { kind: 'row'; index: number; field: 'player_name' | 'number' | 'quantity' | 'size' }
   | { kind: 'customer'; field: 'name' | 'phone' | 'email' }
   | { kind: 'address'; field: 'line1' | 'city' | 'state' | 'pincode' };
 
@@ -41,6 +42,7 @@ export function validateItems(items: OrderItem[], mode: CheckoutDraft['mode']): 
     if (checkPlayer(it.player_name)) issues.push({ kind: 'row', index, field: 'player_name' });
     if (checkNumber(it.number)) issues.push({ kind: 'row', index, field: 'number' });
     if (checkQuantity(it.quantity)) issues.push({ kind: 'row', index, field: 'quantity' });
+    if (!isFitSize(normaliseFit(it.fit), it.size)) issues.push({ kind: 'row', index, field: 'size' });
   });
   if (items.reduce((n, i) => n + (i.quantity || 0), 0) > MAX_PIECES) issues.push({ kind: 'tooManyPieces' });
   return issues;
@@ -98,6 +100,7 @@ export function payloadHash(p: Omit<OrderRequest, 'idempotency_key'>): string {
 }
 
 /** Which roster rows a server failure refers to (the server merges identical rows into one line). */
-export function rowsForFailure(items: OrderItem[], f: Pick<OrderFailure, 'player_name' | 'number' | 'size'>): number[] {
-  return items.flatMap((it, i) => (it.player_name === f.player_name && it.number === f.number && it.size === f.size ? [i] : []));
+export function rowsForFailure(items: OrderItem[], f: Pick<OrderFailure, 'player_name' | 'number' | 'size' | 'fit'>): number[] {
+  return items.flatMap((it, i) => (it.player_name === f.player_name && it.number === f.number && it.size === f.size
+    && normaliseFit(it.fit) === normaliseFit(f.fit) ? [i] : []));
 }

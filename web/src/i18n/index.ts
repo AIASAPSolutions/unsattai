@@ -12,20 +12,25 @@ import marketEn, { type MarketStrings } from './market/en';
 import marketHi from './market/hi';
 import marketTa from './market/ta';
 import marketTe from './market/te';
+import sizingEn, { type SizingStrings } from './sizing/en';
+import sizingHi from './sizing/hi';
+import sizingTa from './sizing/ta';
+import sizingTe from './sizing/te';
 
 // Customer-facing text in English, Hindi, Telugu and Tamil. The mobile app's strings
 // (./app, copied from app/src/i18n) are reused as they are; web-only strings live in ./web and
-// marketplace strings (shop, cart, checkout, accounts, after-sales) in ./market.
+// marketplace strings (shop, cart, checkout, accounts, after-sales) in ./market, and garment
+// options, fits, the size guide and payment availability in ./sizing.
 
-export type Strings = AppStrings & WebStrings & MarketStrings;
+export type Strings = AppStrings & WebStrings & MarketStrings & SizingStrings;
 export type StringKey = keyof Strings;
 
-const en: Strings = { ...appEn, ...webEn, ...marketEn };
+const en: Strings = { ...appEn, ...webEn, ...marketEn, ...sizingEn };
 export const DICTS: Record<Language, Strings> = {
   en,
-  hi: { ...appHi, ...webHi, ...marketHi },
-  te: { ...appTe, ...webTe, ...marketTe },
-  ta: { ...appTa, ...webTa, ...marketTa },
+  hi: { ...appHi, ...webHi, ...marketHi, ...sizingHi },
+  te: { ...appTe, ...webTe, ...marketTe, ...sizingTe },
+  ta: { ...appTa, ...webTa, ...marketTa, ...sizingTa },
 };
 
 export const LANGUAGES: Language[] = ['en', 'hi', 'te', 'ta'];

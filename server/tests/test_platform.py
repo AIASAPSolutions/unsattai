@@ -330,7 +330,10 @@ def test_dashboard_reports_exports_and_crm_views(env):
     assert view["orders"][0]["id"] == o["id"]
     assert c.get("/api/v1/ops/production/utilisation", headers=h, params={"days": 5}).json()["dates"]
     assert c.get("/api/v1/ops/delivery/plan", headers=h).json()["days"]
-    wl = c.get("/api/v1/ops/production/worklist", headers=h, params={"stage": "print"}).json()
+    # ask for the day printing is planned (late in the working day it is tomorrow, not today)
+    plan = c.get(f"/api/v1/ops/orders/{o['id']}", headers=h).json()["plan"]
+    print_day = next(st["start"] for st in plan["stages"] if st["id"] == "print")
+    wl = c.get("/api/v1/ops/production/worklist", headers=h, params={"stage": "print", "day": print_day}).json()
     assert wl["items"] and wl["items"][0]["files"]
     org = c.post("/api/v1/ops/organisations", headers=h, json={"name": "Chennai Strikers", "kind": "club"}).json()
     lead = c.post("/api/v1/ops/leads", headers=h, json={"title": "Season kit", "organisation_id": org["id"], "value": 40000}).json()

@@ -8,7 +8,9 @@ import { api } from '@/lib/api/endpoints';
 import type { Collection, CollectionEntry } from '@/lib/api/types';
 import { flow, flowStore, rowKey } from '@/lib/flow';
 import { formatDate } from '@/lib/price';
-import { duplicateNumbers, sizeBreakdown } from '@/lib/roster';
+import { fitLabel } from '@/components/shop/Sizing';
+import { duplicateNumbers } from '@/lib/roster';
+import { fitSizeSummary, normaliseFit } from '@/lib/sizing';
 import { copyText } from '@/lib/share';
 import { whenHydrated } from '@/lib/store';
 import { Thumb } from '../../designs/DesignsClient';
@@ -73,7 +75,9 @@ export function TeamDashboardClient({ id }: { id: string }) {
     flow.openSpec(c.spec, c.design_id || null, 'team');
     flow.setCheckout({
       mode: 'team', fabric: c.fabric, collectionId: c.id, collectionTitle: c.title,
-      rows: c.entries.map((e) => ({ key: rowKey(), player_name: e.player_name, number: e.number, size: e.size, quantity: e.quantity })),
+      rows: c.entries.map((e) => ({
+        key: rowKey(), player_name: e.player_name, number: e.number, fit: normaliseFit(e.fit), size: e.size, quantity: e.quantity,
+      })),
     });
     router.push('/configure');
   };
@@ -91,7 +95,7 @@ export function TeamDashboardClient({ id }: { id: string }) {
               {' · '}{t('teamPlayersN', { n: c.entries.length })}
               {c.deadline ? ` · ${t('teamDeadlineOn', { date: formatDate(c.deadline, lang, true) })}` : ''}
             </p>
-            {pieces ? <p className="small muted" style={{ margin: 0 }}>{sizeBreakdown(c.entries).map((b) => `${b.size} ${b.quantity}`).join(' · ')}</p> : null}
+            {pieces ? <p className="small muted" style={{ margin: 0 }}>{fitSizeSummary(c.entries, (f) => fitLabel(t, f), ' · ', ' ')}</p> : null}
             <div className="row" style={{ gap: 8, alignItems: 'flex-end' }}>
               <div style={{ flex: 1 }}><TextField label={t('teamLink')} value={link} readOnly testId="team-link" onFocus={(e) => e.target.select()} /></div>
               <Button kind="secondary" style={{ marginBottom: 22 }}
@@ -126,6 +130,7 @@ export function TeamDashboardClient({ id }: { id: string }) {
                 <tr>
                   <th scope="col">{t('playerName')}</th>
                   <th scope="col">{t('number')}</th>
+                  <th scope="col">{t('fitLabel')}</th>
                   <th scope="col">{t('size')}</th>
                   <th scope="col">{t('quantity')}</th>
                   <th scope="col">{t('teamContact')}</th>
@@ -137,6 +142,7 @@ export function TeamDashboardClient({ id }: { id: string }) {
                   <tr key={e.id} data-testid={`entry-${e.id}`}>
                     <td>{e.player_name || <span className="muted">{t('unnamed')}</span>}</td>
                     <td className="tnum">{e.number || '—'}</td>
+                    <td>{fitLabel(t, normaliseFit(e.fit))}</td>
                     <td>{e.size}</td>
                     <td className="tnum">{e.quantity}</td>
                     <td className="small">{e.contact}</td>

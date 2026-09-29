@@ -1,0 +1,56 @@
+import type { SizingStrings } from './en';
+
+// దుస్తుల ఎంపికలు, ఫిట్ మరియు సైజ్ గైడ్ (తెలుగు).
+const sizing: SizingStrings = {
+  fitLabel: 'ఫిట్',
+  fit_men: 'పురుషులు / యూనిసెక్స్',
+  fit_women: 'మహిళలు',
+  fit_kids: 'పిల్లలు',
+  fitSize: '{fit}, {size}',
+
+  garmentOptions: 'స్లీవ్‌లు మరియు కాలర్',
+  sleevesLabel: 'స్లీవ్‌లు',
+  sleeves_short: 'చిన్న స్లీవ్‌లు',
+  sleeves_long: 'పొడవైన స్లీవ్‌లు',
+  sleeves_none: 'స్లీవ్‌లు లేవు',
+  collarLabel: 'కాలర్',
+  collar_crew: 'గుండ్రని మెడ',
+  collar_polo: 'పోలో',
+  collar_mandarin: 'మాండరిన్',
+  optionsPerPiece: 'ధర తేడాలు ఒక్కో పీస్‌కు.',
+  colourwayLabel: 'రంగుల కలయిక',
+  colourwaysN: '{n} రంగుల కలయికలలో లభిస్తుంది',
+  madeWith: 'ఇలా తయారవుతుంది',
+
+  sizeGuide: 'సైజ్ గైడ్',
+  sgIntro: 'బట్టను చదునుగా ఉంచి కొలతలు, {unit}లో. “ఛాతీకి సరిపోతుంది” పరిధిలో మీ ఛాతీ కొలత ఉన్న సైజ్‌ను ఎంచుకోండి.',
+  sgCaption: '{fit} సైజ్‌లు, కొలతలు {unit}లో',
+  sgCol_chest: 'ఛాతీ',
+  sgCol_length: 'పొడవు',
+  sgCol_shoulder: 'భుజం',
+  sgCol_sleeve: 'స్లీవ్',
+  sgCol_sleeveShort: 'స్లీవ్ (చిన్నది)',
+  sgCol_sleeveLong: 'స్లీవ్ (పొడవైనది)',
+  sgCol_waist: 'నడుము',
+  sgCol_hip: 'హిప్',
+  sgCol_body_chest: 'ఛాతీకి సరిపోతుంది',
+  sgCol_height: 'ఎత్తు',
+  sgHowTo: 'ఎలా కొలవాలి',
+  sgTolerance: 'తయారైన దుస్తుల్లో {n} {unit} వరకు తేడా ఉండవచ్చు.',
+  sgUnavailable: 'సైజ్ గైడ్ ఇప్పుడు లోడ్ కావడం లేదు.',
+  sgGarment: 'దుస్తు',
+  sgTops: 'జెర్సీలు మరియు వి-నెక్‌లు',
+  sgShorts: 'షార్ట్స్',
+  sgPageTitle: 'సైజ్ గైడ్',
+  sgPageText: 'మా పురుషులు / యూనిసెక్స్, మహిళలు మరియు పిల్లల సైజ్‌ల కొలతలు. ప్రతి ఆర్డర్ ఈ కొలతల ప్రకారమే కత్తిరించి కుట్టబడుతుంది, కాబట్టి ప్రతిసారీ అదే ఫిట్ వస్తుంది.',
+  sgSleeveless: 'స్లీవ్‌లు లేని టాప్‌లకు స్లీవ్ కొలత ఉండదు.',
+
+  payComingSoonTitle: 'ఆన్‌లైన్ చెల్లింపు త్వరలో వస్తుంది',
+  payComingSoon: 'ఆన్‌లైన్ చెల్లింపు త్వరలో వస్తుంది. దయచేసి క్యాష్ ఆన్ డెలివరీ ఎంచుకోండి.',
+  payLater: 'తర్వాత చెల్లించండి',
+  payLaterHint: 'ఆన్‌లైన్ చెల్లింపు త్వరలో వస్తుంది. మీ ఆర్డర్ ఇవ్వండి, చెల్లింపు కోసం మా బృందం మిమ్మల్ని సంప్రదిస్తుంది.',
+  payTeamWillContact: 'చెల్లింపు కోసం మా బృందం మిమ్మల్ని సంప్రదిస్తుంది.',
+  viewOrder: 'ఆర్డర్ చూడండి',
+};
+
+export default sizing;

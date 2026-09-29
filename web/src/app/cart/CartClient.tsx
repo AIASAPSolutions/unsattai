@@ -2,7 +2,8 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
-import { CartTotals, entryTitle, ItemThumb, Offers } from '@/components/market/CartBits';
+import { CartTotals, entryOptions, entryTitle, ItemThumb, Offers } from '@/components/market/CartBits';
+import { FitSizePicker, OptionsLine, fitLabel } from '@/components/shop/Sizing';
 import { usePincode, useProductIndex } from '@/components/providers/shop';
 import { useCatalogue } from '@/components/providers/data';
 import { useSession } from '@/components/providers/session';
@@ -12,6 +13,8 @@ import { useI18n } from '@/i18n/provider';
 import { itemPieces, linesSummary, setSingleQuantity, type CartEntry } from '@/lib/cart';
 import { cartQuoteRequest } from '@/lib/checkout';
 import { EMPTY_ADDRESS, flow, flowStore, rowKey } from '@/lib/flow';
+import { sleevesOf } from '@/lib/options';
+import { normaliseFit } from '@/lib/sizing';
 import { reasonKey } from '@/lib/pincode';
 import { formatDate, formatMoney } from '@/lib/price';
 import { cart, checkoutDraft, useCart, useShop, wishlist } from '@/lib/shopStore';
@@ -29,7 +32,7 @@ export async function editDesignItem(e: CartEntry) {
   const single = e.lines.length === 1 && e.lines[0].player_name === ty.player_name && e.lines[0].number === ty.number;
   flow.setCheckout({
     mode: single ? 'single' : 'team',
-    single: single ? { size: e.lines[0].size, quantity: e.lines[0].quantity } : flowStore.get().checkout.single,
+    single: single ? { fit: normaliseFit(e.lines[0].fit), size: e.lines[0].size, quantity: e.lines[0].quantity } : flowStore.get().checkout.single,
     rows: single ? [] : e.lines.map((l) => ({ ...l, key: rowKey() })),
     fabric: e.fabric, cartKey: e.key,
   });
@@ -98,6 +101,10 @@ export function CartClient() {
               const title = entryTitle(e, product, qi?.title) || (e.product_id ? '' : t('checkoutYourDesign'));
               const problems = qi?.problems ?? [];
               const reason = qi?.quote.seller_problem ? reasonKey(qi.quote.seller_problem) : null;
+              const garment = e.spec?.garment ?? product?.garment ?? qi?.garment ?? 'jersey';
+              // Ready-made items bought by size (one line, no name or number) can change fit and size here.
+              const bySize = !!e.product_id && e.lines.length === 1 && !e.lines[0].player_name && !e.lines[0].number;
+              const fitName = (f: Parameters<typeof fitLabel>[1]) => fitLabel(t, f);
               return (
                 <li key={e.key} className={s.cartItem} data-testid={`cart-item-${i}`}>
                   {product ? (
@@ -110,18 +117,27 @@ export function CartClient() {
                           {!title ? <Skeleton height={18} /> : product ? <Link href={`/shop/${encodeURIComponent(product.slug)}`} style={{ color: 'inherit' }}>{title}</Link> : title}
                         </div>
                         <div className="small muted">
-                          {e.product_id ? t('readyMade') : t('yourDesign')} · {t(`garment_${e.spec?.garment ?? product?.garment ?? qi?.garment ?? 'jersey'}` as 'garment_jersey')} · {fabricName(e.fabric)}
+                          {e.product_id ? t('readyMade') : t('yourDesign')} · {t(`garment_${garment}` as 'garment_jersey')} · {fabricName(e.fabric)}
                         </div>
+                        <OptionsLine text={entryOptions(t, e, product, qi)} testId={`cart-item-${i}-options`} />
                       </div>
                       <div className={s.itemPrice} data-testid={`cart-item-${i}-price`}>
                         {qi ? money(qi.quote.total) : <Skeleton height={20} />}
                       </div>
                     </div>
-                    <div className="small" style={{ marginTop: 4 }}>
+                    <div className="small" style={{ marginTop: 4 }} data-testid={`cart-item-${i}-sizes`}>
                       {e.lines.length > 1 || e.lines[0]?.player_name || e.lines[0]?.number
-                        ? t('rosterSummary', { n: itemPieces(e), lines: e.lines.length, sizes: linesSummary(e.lines) })
-                        : linesSummary(e.lines)}
+                        ? t('rosterSummary', { n: itemPieces(e), lines: e.lines.length, sizes: linesSummary(e.lines, fitName) })
+                        : e.lines[0] ? `${t('fitSize', { fit: fitName(normaliseFit(e.lines[0].fit)), size: e.lines[0].size })} × ${e.lines[0].quantity}` : null}
                     </div>
+                    {bySize ? (
+                      <div style={{ maxWidth: 380, marginTop: 8 }}>
+                        <FitSizePicker fit={normaliseFit(e.lines[0].fit)} size={e.lines[0].size} garment={garment}
+                          sleeves={e.sleeves || (e.spec ? sleevesOf(e.spec) : qi?.options?.sleeves)}
+                          onChange={(v) => cart.update(e.key, (x) => ({ ...x, lines: [{ ...x.lines[0], ...v }] }))}
+                          testId={`cart-fit-size-${i}`} fitTestId={`cart-fit-${i}`} sizeTestId={`cart-size-${i}`} guideTestId={`cart-size-guide-${i}`} />
+                      </div>
+                    ) : null}
                     <div className="small" style={{ marginTop: 4 }} data-testid={`cart-item-${i}-delivery`}>
                       {!pin.pincode ? <span className="muted">{t('pinForDates')}</span>
                         : !qi ? <span className="muted">{t('checkingDelivery')}</span>
@@ -134,7 +150,7 @@ export function CartClient() {
                     </div>
                     {problems.length && !reason ? <p className="small" style={{ color: 'var(--fail)', margin: '4px 0 0' }}>{problems.join(' ')}</p> : null}
                     <div className={s.itemActions}>
-                      {e.product_id && e.lines.length === 1 && !e.lines[0].player_name && !e.lines[0].number ? (
+                      {bySize ? (
                         <Stepper value={e.lines[0].quantity} onChange={(n) => cart.update(e.key, (x) => setSingleQuantity(x, n))}
                           label={`${t('quantity')} · ${e.lines[0].size}`} testId={`cart-qty-${i}`} />
                       ) : null}

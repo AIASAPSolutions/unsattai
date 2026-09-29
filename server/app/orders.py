@@ -216,6 +216,8 @@ def measurement_sheet(order: dict) -> str:
         bits.append({"short": "short sleeves", "long": "long sleeves", "none": "sleeveless"}[opts["sleeves"]])
     if opts.get("collar") not in (None, "crew") and order["garment"] == "jersey":
         bits.append({"crew": "crew neck", "polo": "polo collar", "mandarin": "mandarin collar"}[opts["collar"]])
+    if (opts.get("colourway") or {}).get("name"):
+        bits.append(f'colourway {opts["colourway"]["name"]}')
     fabric = ((order.get("pricing") or {}).get("fabric") or {}).get("name")
     if fabric:
         bits.append(fabric)

@@ -290,8 +290,11 @@ def checkout(store: PlatformStore, body: CheckoutIn, customer: dict | None, devi
     number = f"CK-{store.next_number('checkout'):05d}"
     created: list[dict] = []
     try:
-        for req, qi, (spec, product) in zip(reqs, cq["items"], resolved):
+        for req, qi, it, (spec, product) in zip(reqs, cq["items"], body.items, resolved):
             extra = {"checkout_id": cid, "product_id": (product or {}).get("id")}
+            if product and it.colourway and it.colourway != "original":
+                name = next((c["name"] for c in product.get("colourways") or [] if c["id"] == it.colourway), it.colourway)
+                extra["colourway"] = {"id": it.colourway, "name": name}
             if cq["coupon"] and cq["coupon"].get("amount"):
                 extra["forced_coupon"] = {"code": cq["coupon"]["code"], "amount": qi["coupon_share"]}
             extra["forced_charges"] = qi["charges"]

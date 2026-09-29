@@ -56,7 +56,7 @@ export function PanelEditor({ spec, panel, selectedId, onSelect, onBegin, onLive
   }, [spec]);
   const side = panel.side;
   const editable = panel.editable && side !== null;
-  const zone = useMemo(() => (side ? safeZone(spec.garment, side) : null), [spec.garment, side]);
+  const zone = useMemo(() => (side ? safeZone(spec.garment, side, { sleeves: spec.sleeves, collar: spec.collar }) : null), [spec.garment, spec.sleeves, spec.collar, side]);
   const layers = side ? spec.elements.filter((e) => e.panel === side) : [];
   const selected = layers.find((e) => e.id === selectedId) ?? null;
 

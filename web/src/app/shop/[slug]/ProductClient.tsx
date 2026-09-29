@@ -7,16 +7,17 @@ import { PincodeForm } from '@/components/market/PincodeChip';
 import { WishHeart } from '@/components/market/ProductCard';
 import { productImage, rememberProduct, usePincode, useServiceability } from '@/components/providers/shop';
 import { useSession } from '@/components/providers/session';
-import { Banner, Button, Card, Chip, ErrorState, Loading, Modal, RatingStars, Spinner, cx } from '@/components/ui';
+import { ColourwayPicker, FitSizePicker, GarmentOptionsPicker } from '@/components/shop/Sizing';
+import { Banner, Button, Card, ErrorState, Loading, Modal, RatingStars, Spinner, cx } from '@/components/ui';
 import { errorMessage, tMaybe } from '@/i18n';
 import { useI18n } from '@/i18n/provider';
 import { api } from '@/lib/api/endpoints';
-import { SIZES, type ProductDetail, type Review, type Size } from '@/lib/api/types';
+import type { Collar, Fit, ProductDetail, Review, Size, Sleeves } from '@/lib/api/types';
 import { productEntry } from '@/lib/cart';
 import { flow } from '@/lib/flow';
+import { collarOf, hasCollarChoice, hasSleeves, sleevesOf, withOption } from '@/lib/options';
 import { formatDate, formatMoney } from '@/lib/price';
 import { buyNow, cart } from '@/lib/shopStore';
-import { SizeChart } from '@/app/configure/RosterEditor';
 import s from '@/components/market/market.module.css';
 
 export function ProductClient({ slug, initial }: { slug: string; initial: ProductDetail | null }) {
@@ -48,14 +49,17 @@ function Product({ product }: { product: ProductDetail }) {
   const pin = usePincode();
   const { me } = useSession();
   const [fabric, setFabric] = useState(product.fabrics.some((f) => f.id === product.fabric) ? product.fabric : product.fabrics[0]?.id ?? 'standard');
+  const [fit, setFit] = useState<Fit>('men');
   const [size, setSize] = useState<Size | null>(null);
+  const [colourway, setColourway] = useState('original');
+  const [sleeves, setSleeves] = useState<Sleeves>(sleevesOf(product.spec));
+  const [collar, setCollar] = useState<Collar>(collarOf(product.spec));
   const [qty, setQty] = useState(1);
   const [sellerId, setSellerId] = useState<string>('');
   const [sizeErr, setSizeErr] = useState(false);
   const [added, setAdded] = useState<string | null>(null);
   const [addErr, setAddErr] = useState<string | null>(null);
   const [pinOpen, setPinOpen] = useState(false);
-  const [chartOpen, setChartOpen] = useState(false);
 
   const svc = useServiceability(pin.pincode ? { pincode: pin.pincode, garment: product.garment, fabric, pieces: qty } : null);
   const offers = useMemo(() => svc.data?.offers ?? [], [svc.data]);
@@ -71,7 +75,11 @@ function Product({ product }: { product: ProductDetail }) {
     }
     // An explicit choice of a non-recommended seller is kept; otherwise the server picks the best offer.
     const pickedSeller = sellerId && offers.find((o) => o.seller_id === sellerId && !o.recommended) ? sellerId : '';
-    return productEntry(product.id, fabric, [{ size, quantity: qty, player_name: '', number: '' }], pickedSeller);
+    return productEntry(product.id, fabric, [{ fit, size, quantity: qty, player_name: '', number: '' }], pickedSeller, {
+      colourway,
+      sleeves: hasSleeves(product.garment) ? sleeves : '',
+      collar: hasCollarChoice(product.garment) ? collar : '',
+    });
   };
 
   const addToCart = () => {
@@ -90,12 +98,18 @@ function Product({ product }: { product: ProductDetail }) {
     router.push('/checkout?buy=1');
   };
   const customise = () => {
-    flow.openSpec(product.spec, null, 'product');
-    flow.setCheckout({ fabric, single: { size: size ?? 'M', quantity: qty } });
+    // The studio starts from the colourway and options chosen here.
+    const palette = product.colourways?.find((c) => c.id === colourway)?.palette;
+    const base = palette ? { ...product.spec, palette: { ...product.spec.palette, ...palette } } : product.spec;
+    flow.openSpec(withOption(withOption(base, 'sleeves', sleeves), 'collar', collar), null, 'product');
+    flow.setCheckout({ fabric, single: { fit, size: size ?? (fit === 'kids' ? '8Y' : 'M'), quantity: qty } });
     router.push('/studio');
   };
 
   const fabricName = (id: string) => product.fabrics.find((f) => f.id === id)?.name ?? id;
+  const picture = productImage(product, {
+    colourway, sleeves: hasSleeves(product.garment) ? sleeves : undefined, collar: hasCollarChoice(product.garment) ? collar : undefined,
+  });
 
   return (
     <div className="container page" data-testid="screen-product">
@@ -105,7 +119,7 @@ function Product({ product }: { product: ProductDetail }) {
       <div className={s.pdp}>
         <div style={{ position: 'relative' }}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={productImage(product)} alt={t('productPictureAlt', { title: product.title })} className={s.pdpImg} data-testid="product-mockup" width={600} height={600} />
+          <img src={picture} alt={t('productPictureAlt', { title: product.title })} className={s.pdpImg} data-testid="product-mockup" width={600} height={600} />
           <WishHeart product={product} testId="product-wish" />
         </div>
         <div className={s.buyBox}>
@@ -133,16 +147,20 @@ function Product({ product }: { product: ProductDetail }) {
 
           <Card>
             <div className="stack" style={{ gap: 14 }}>
-              <div>
-                <div className="row" style={{ justifyContent: 'space-between' }}>
-                  <strong id="size-label">{t('size')}</strong>
-                  <button type="button" className={s.linkBtn} onClick={() => setChartOpen(true)} data-testid="product-size-chart">{t('sizeChart')}</button>
-                </div>
-                <div id="size-group" className={s.sizeRow} role="radiogroup" aria-labelledby="size-label" style={{ marginTop: 6 }}>
-                  {SIZES.map((z) => (
-                    <Chip key={z} selected={size === z} onClick={() => { setSize(z); setSizeErr(false); }} testId={`size-${z}`}>{z}</Chip>
-                  ))}
-                </div>
+              {product.colourways && product.colourways.length > 1 ? (
+                <ColourwayPicker colourways={product.colourways} value={colourway} onChange={setColourway} testId="colourway" />
+              ) : null}
+              <GarmentOptionsPicker garment={product.garment} sleeves={sleeves} collar={collar} testId="product-opt"
+                onChange={(group, v) => (group === 'sleeves' ? setSleeves(v as Sleeves) : setCollar(v as Collar))} />
+              <div id="size-group">
+                <FitSizePicker variant="pills" fit={fit} size={size} garment={product.garment} sleeves={sleeves}
+                  onChange={(v) => {
+                    // A new fit keeps the size only when the customer had picked one that the fit has.
+                    setFit(v.fit);
+                    setSize(v.fit === fit ? v.size : size && v.size === size ? size : null);
+                    if (v.fit === fit) setSizeErr(false);
+                  }}
+                  testId="product-fit-size" fitTestId="product-fit" sizeTestId="product-size" guideTestId="product-size-chart" />
                 {sizeErr ? <p className="small" role="alert" style={{ color: 'var(--fail)', margin: '6px 0 0', fontWeight: 600 }} data-testid="size-error">{t('chooseSize')}</p> : null}
               </div>
               <div className={s.qtyRow}>
@@ -223,9 +241,6 @@ function Product({ product }: { product: ProductDetail }) {
 
       <Modal open={pinOpen} onClose={() => setPinOpen(false)} title={t('pinTitle')} closeLabel={t('close')} testId="product-pin-dialog">
         <PincodeForm initial={pin.pincode} addresses={me?.addresses ?? []} onDone={() => setPinOpen(false)} testId="product-pin" />
-      </Modal>
-      <Modal open={chartOpen} onClose={() => setChartOpen(false)} title={t('sizeChart')} closeLabel={t('close')}>
-        <SizeChart />
       </Modal>
     </div>
   );

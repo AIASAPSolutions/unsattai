@@ -84,7 +84,7 @@ async function main() {
   page = await ctx.newPage();
   page.on('dialog', (d) => d.accept());
   const consoleErrors = [];
-  page.on('pageerror', (e) => consoleErrors.push(String(e)));
+  page.on('pageerror', (e) => consoleErrors.push(`${page.url()}: ${e}`));
 
   let orderId = '';
   let designShareUrl = '';
@@ -216,7 +216,8 @@ async function main() {
     await shot('01c-shop');
   });
 
-  await step('product: delivery date, other sellers, size and add to cart', async () => {
+  await step('product: colourway, long sleeves, delivery date, other sellers, size and add to cart', async () => {
+    assert(await page.locator(`${tid('colourways-royal-strikers')} span`).count() >= 2, 'colourway swatches on the product card');
     await page.click(tid('product-link-royal-strikers'));
     await page.waitForURL(/\/shop\/royal-strikers/);
     await page.locator(tid('product-title')).waitFor();
@@ -227,6 +228,26 @@ async function main() {
     assert(await page.locator(`${tid('offer-list')} li`).count() === 2, 'two sellers deliver to 600001');
     await page.click(tid('offer-sel_house'));
     await page.waitForFunction(() => /Sold by UrJersey/.test(document.querySelector('[data-testid="product-delivery"]')?.textContent || ''), null, { timeout: 10_000 });
+    // A colourway other than the original, with long sleeves: the picture follows both.
+    await page.click(tid('colourway-midnight-volt'));
+    await page.click(tid('product-opt-sleeves-long'));
+    assert(/\+₹60/.test(await page.locator(tid('product-opt-sleeves-long')).innerText()), 'long sleeves show +₹60');
+    assert(/−₹20/.test(await page.locator(tid('product-opt-sleeves-none')).innerText()), 'sleeveless shows −₹20');
+    assert(!/₹/.test(await page.locator(tid('product-opt-sleeves-short')).innerText()), 'no price shown for short sleeves');
+    await page.waitForFunction(() => {
+      const src = document.querySelector('[data-testid="product-mockup"]')?.getAttribute('src') || '';
+      return /mockup\.svg\?/.test(src) && /colourway=midnight-volt/.test(src) && /sleeves=long/.test(src);
+    }, null, { timeout: 10_000 });
+    assert(/Midnight Volt/.test(await page.locator(tid('colourway-name')).innerText()), 'colourway named');
+    const mock = await page.evaluate(async () => {
+      const r = await fetch(document.querySelector('[data-testid="product-mockup"]').getAttribute('src'));
+      return { ok: r.ok, type: r.headers.get('content-type') || '' };
+    });
+    assert(mock.ok && /svg/.test(mock.type), `mockup with options served: ${JSON.stringify(mock)}`);
+    await page.click(tid('product-size-chart'));
+    await page.locator(`${tid('product-size-chart-dialog')} table`).waitFor({ timeout: 10_000 });
+    assert(/Sleeve \(long\)/.test(await page.locator(`${tid('product-size-chart-dialog')} thead`).innerText()), 'long sleeve column in the guide');
+    await page.keyboard.press('Escape');
     await page.click(tid('add-to-cart'));
     await page.locator(tid('size-error')).waitFor();
     await page.click(tid('size-M'));
@@ -346,6 +367,22 @@ async function main() {
     await page.waitForFunction(() => /✓/.test(document.querySelector('[data-testid="studio-status"]')?.textContent || ''), null, { timeout: 30_000 });
   });
 
+  await step('studio: sleeveless with a polo collar keeps every layer printable', async () => {
+    await page.click(tid('tab-style'));
+    await page.locator(tid('studio-opt')).waitFor();
+    assert(/\+₹90/.test(await page.locator(tid('studio-opt-collar-polo')).innerText()), 'polo shows +₹90');
+    await page.click(tid('studio-opt-sleeves-none'));
+    await page.click(tid('studio-opt-collar-polo'));
+    assert(await page.locator(`${tid('studio-opt-sleeves-none')} input`).isChecked(), 'sleeveless chosen');
+    assert(await page.locator(`${tid('studio-opt-collar-polo')} input`).isChecked(), 'polo chosen');
+    await page.waitForFunction(() => !document.querySelector('[data-testid="panel-sleeve_left"]') && /Sleeveless/.test(document.querySelector('[data-testid="panel-note"]')?.textContent || ''), null, { timeout: 30_000 });
+    assert(/placket/.test(await page.locator(tid('panel-note')).innerText()), 'polo placket note on the front');
+    // Narrower zone: the layers were refitted, so the server's checks still pass.
+    await page.click(tid('tab-checks'));
+    await page.waitForFunction(() => /✓/.test(document.querySelector('[data-testid="studio-status"]')?.textContent || ''), null, { timeout: 30_000 });
+    await shot('06b-studio-sleeveless-polo');
+  });
+
   await step('save design (signs in with a one-time code)', async () => {
     await page.click(tid('save-design'));
     await page.locator(tid('save-modal')).waitFor();
@@ -382,9 +419,24 @@ async function main() {
     await page.click(tid('roster-add'));
     await page.locator(tid('roster-row-6')).waitFor();
     await page.click(tid('roster-remove-6'));
+    // A women's line and a kids' line: the size list follows the fit.
+    await page.selectOption(tid('roster-fit-1'), 'women');
+    await page.selectOption(tid('roster-fit-5'), 'kids');
+    assert(await page.locator(`${tid('roster-size-5')} option[value="8Y"]`).count() === 1, 'kids sizes offered');
+    assert(await page.locator(`${tid('roster-size-5')} option[value="XL"]`).count() === 0, 'no adult sizes for kids');
+    assert(/Y$/.test(await page.locator(tid('roster-size-5')).inputValue()), 'kids line has a kids size');
+    await page.selectOption(tid('roster-size-5'), '10Y');
     await page.click(tid('size-chart'));
     await page.locator(tid('size-chart-dialog')).locator('table').waitFor();
+    const head = await page.locator(`${tid('size-chart-dialog')} thead`).innerText();
+    assert(/Chest/.test(head) && /Length/.test(head) && /Shoulder/.test(head) && /Fits chest/.test(head) && !/Sleeve/.test(head), `sleeveless guide columns: ${head}`);
+    await page.click(tid('size-chart-dialog-view-fit-kids'));
+    await page.waitForFunction(() => /Height/.test(document.querySelector('[data-testid="size-chart-dialog"] thead')?.textContent || ''));
+    assert(/How to measure/.test(await page.locator(tid('size-chart-dialog')).innerText()), 'how to measure');
+    assert(/±?1 cm|1 cm/.test(await page.locator(tid('size-chart-dialog')).innerText()), 'tolerance shown');
+    await shot('08a-size-guide');
     await page.keyboard.press('Escape');
+    await page.locator(tid('size-chart-dialog')).waitFor({ state: 'hidden' });
     const total = await page.locator(tid('roster-total')).innerText();
     assert(/7/.test(total), `total pieces: ${total}`);
   });
@@ -406,6 +458,10 @@ async function main() {
     }, before, { timeout: 15_000 });
     for (const k of ['subtotal', 'shipping', 'tax', 'per-piece']) await page.locator(tid(`price-${k}`)).waitFor();
     assert((await page.locator(tid('price-line')).count()) >= 5, 'per-line prices');
+    // The sleeveless and polo parts, and the kids' reduction, show in the breakdown.
+    const parts = (await page.locator(tid('price-line-parts')).allInnerTexts()).join(' | ');
+    assert(/Sleeveless/.test(parts) && /Polo/.test(parts) && /Kids/.test(parts), `option parts: ${parts}`);
+    assert(/Sleeveless/.test(await page.locator(tid('configure-options')).innerText()), 'options on the configure page');
     await page.waitForFunction(() => /Delivery by/.test(document.querySelector('[data-testid="configure-delivery"]')?.textContent || ''), null, { timeout: 15_000 });
     assert(/Sold by/.test(await page.locator(tid('configure-seller')).innerText()), 'seller shown');
     await shot('08-configure');
@@ -422,6 +478,10 @@ async function main() {
     await page.waitForFunction(() => /Royal Strikers/.test(document.querySelector('[data-testid="cart-items"]')?.textContent || ''), null, { timeout: 15_000 });
     const rows = await page.locator(`${tid('cart-items')} > li`).allInnerTexts();
     assert(rows.some((x) => /Royal Strikers/.test(x)) && rows.some((x) => /7 pieces/.test(x)), `cart rows: ${rows.join(' | ')}`);
+    const ready = rows.find((x) => /Royal Strikers/.test(x));
+    assert(/Midnight Volt/.test(ready) && /Long sleeves/.test(ready), `ready-made options in the cart: ${ready}`);
+    const custom = rows.find((x) => /7 pieces/.test(x));
+    assert(/Sleeveless/.test(custom) && /Polo/.test(custom) && /Kids/.test(custom) && /Women/.test(custom), `custom options and fits in the cart: ${custom}`);
     await page.waitForFunction(() => /Sold by UrJersey/.test(document.body.textContent || '') && /Sold by Chennai Quick Prints/.test(document.body.textContent || ''), null, { timeout: 15_000 });
     await page.locator(tid('cart-totals-total')).waitFor({ timeout: 15_000 });
     // The server's cart quote: one delivery charge per seller, summed in the totals.
@@ -486,6 +546,12 @@ async function main() {
     await page.click(tid('place-order'));
     checkoutRequest = (await req).postDataJSON();
     assert(checkoutRequest.channel === 'web' && checkoutRequest.payment_method === 'online' && checkoutRequest.items.length === 2, 'web checkout of two items');
+    const readyItem = checkoutRequest.items.find((i) => i.product_id);
+    assert(readyItem.colourway === 'midnight-volt' && readyItem.sleeves === 'long', `ready-made choices sent: ${JSON.stringify(readyItem)}`);
+    assert(readyItem.lines.every((l) => l.fit === 'men'), 'every line sends its fit');
+    const designItem = checkoutRequest.items.find((i) => !i.product_id);
+    const fits = designItem.lines.map((l) => `${l.fit}:${l.size}`);
+    assert(fits.includes('women:S') && fits.includes('kids:10Y'), `women and kids lines sent: ${fits}`);
     await page.waitForURL(/\/checkout\/[^/]+\/pay/, { timeout: 60_000 });
     checkoutId = decodeURIComponent(page.url().split('/checkout/')[1].split('/')[0]);
     await page.locator(tid('demo-box')).waitFor();
@@ -498,6 +564,11 @@ async function main() {
     assert(ck.status === 'paid', `checkout paid: ${ck.status}`);
     orderId = ck.orders.find((o) => !o.product_id).id;
     productOrderId = ck.orders.find((o) => o.product_id).id;
+    const [designOrder, productOrder] = await page.evaluate(async (ids) => Promise.all(ids.map(async (id) => (await fetch(`/api/uj/orders/${encodeURIComponent(id)}`)).json())), [orderId, productOrderId]);
+    const lineFits = (o) => (o.items ?? o.lines ?? []).map((l) => `${l.fit ?? 'men'}:${l.size}`);
+    assert(lineFits(designOrder).includes('women:S') && lineFits(designOrder).includes('kids:10Y'), `order lines keep their fits: ${lineFits(designOrder)}`);
+    assert(designOrder.options?.sleeves === 'none' && designOrder.options?.collar === 'polo', `design order options: ${JSON.stringify(designOrder.options)}`);
+    assert(productOrder.options?.sleeves === 'long', `product order options: ${JSON.stringify(productOrder.options)}`);
     const href = await page.locator(tid('checkout-invoice')).first().getAttribute('href');
     // Fetched from the page, like the customer's click: it carries the browser's session and device cookies,
     // which the API needs to show an order to its owner.
@@ -533,10 +604,16 @@ async function main() {
     await page.locator(tid('order-detail')).waitFor();
     await page.locator(tid('order-timeline')).waitFor();
     await page.locator(tid('order-progress')).waitFor();
+    const opts = await page.locator(tid('order-options')).innerText();
+    assert(/Sleeveless/.test(opts) && /Polo/.test(opts), `order options: ${opts}`);
+    const detail = await page.locator(tid('order-detail')).innerText();
+    assert(/Women/.test(detail) && /Kids/.test(detail) && /10Y/.test(detail), 'order lines show fit and size');
     await shot('12-account-order');
     await page.click(tid('order-again'));
     await page.waitForURL(/\/configure/);
     await page.locator(tid('roster-row-5')).waitFor({ timeout: 10_000 });
+    const againFits = await page.evaluate(() => [...document.querySelectorAll('select[data-testid^="roster-fit-"]')].map((e) => e.value));
+    assert(againFits.includes('kids') && againFits.includes('women'), `order again keeps the fits: ${againFits}`);
   });
 
   await step('account: profile and saved addresses', async () => {
@@ -820,9 +897,17 @@ async function main() {
     await p2.fill(tid('team-number'), '9');
     assert(/taken/.test(await p2.locator(tid('team-form')).innerText()), 'taken number warned');
     await p2.fill(tid('team-number'), '14');
-    await p2.selectOption(tid('team-size'), 'L');
+    // A kids' entry: the fit changes the sizes offered.
+    await p2.selectOption(tid('team-fit'), 'kids');
+    assert(await p2.locator(`${tid('team-size')} option[value="L"]`).count() === 0, 'no adult sizes for kids');
+    await p2.selectOption(tid('team-size'), '12Y');
+    await p2.click(tid('team-size-guide'));
+    await p2.locator(`${tid('team-size-guide-dialog')} table`).waitFor({ timeout: 10_000 });
+    assert(/Height/.test(await p2.locator(`${tid('team-size-guide-dialog')} thead`).innerText()), 'kids guide opens on kids');
+    await p2.keyboard.press('Escape');
     await p2.click(tid('team-submit'));
     await p2.locator(tid('team-your-entry')).waitFor();
+    assert(/Kids/.test(await p2.locator(tid('team-your-entry')).innerText()) && /12Y/.test(await p2.locator(tid('team-your-entry')).innerText()), 'kids entry shown');
     await players.close();
     await other.close();
   });
@@ -831,6 +916,7 @@ async function main() {
     await page.goto(`${WEB}/account/teams/${collectionId}`);
     await page.locator(tid('team-entries')).waitFor({ timeout: 10_000 });
     assert(await page.locator('[data-testid^="entry-remove-"]').count() === 2, 'two entries');
+    assert(/Kids/.test(await page.locator(tid('team-entries')).innerText()), 'fit shown on the dashboard');
     await shot('18-team-dashboard');
     await page.locator('[data-testid^="entry-remove-"]').last().click();
     await page.waitForFunction(() => document.querySelectorAll('[data-testid^="entry-remove-"]').length === 1);
@@ -891,7 +977,7 @@ async function main() {
   await step('guest: shared design link, single piece with pickup, tracking', async () => {
     const guest = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
     const g = await guest.newPage();
-    g.on('pageerror', (e) => consoleErrors.push(String(e)));
+    g.on('pageerror', (e) => consoleErrors.push(`${g.url()}: ${e}`));
     await g.goto(designShareUrl);
     await g.locator(tid('shared-mockup')).waitFor({ timeout: 15_000 });
     await shot('21-shared-mobile', g);
@@ -945,6 +1031,71 @@ async function main() {
     await g.locator(tid('order-detail')).waitFor();
     await shot('23-track-mobile', g);
     await guest.close();
+  });
+
+  // ------------------------------------------------------------------ size guide page
+  await step('size guide page: from the footer, tops and shorts for every fit (phone)', async () => {
+    const m = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    const g = await m.newPage();
+    g.on('pageerror', (e) => consoleErrors.push(`${g.url()}: ${e}`));
+    await g.goto(`${WEB}/shop`);
+    await g.click(tid('footer-size-guide'));
+    await g.waitForURL(/\/size-guide$/);
+    await g.locator(`${tid('size-guide-page')} table`).waitFor({ timeout: 15_000 });
+    let head = await g.locator(`${tid('size-guide-page')} thead`).innerText();
+    assert(/Chest/.test(head) && /Sleeve/.test(head), `tops columns: ${head}`);
+    await g.click(tid('sg-sleeves-long'));
+    await g.waitForFunction(() => /long/i.test(document.querySelector('[data-testid="size-guide-page"] thead')?.textContent || ''));
+    await g.click(tid('size-guide-page-fit-women'));
+    assert(/Women/.test(await g.locator(`${tid('size-guide-page')} caption`).innerText()), 'women table');
+    await g.click(tid('sg-garment-shorts'));
+    await g.click(tid('size-guide-page-fit-kids'));
+    await g.waitForFunction(() => /Waist/.test(document.querySelector('[data-testid="size-guide-page"] thead')?.textContent || ''));
+    head = await g.locator(`${tid('size-guide-page')} thead`).innerText();
+    assert(/Hip/.test(head) && /Height/.test(head) && !/Shoulder/.test(head), `kids shorts columns: ${head}`);
+    await shot('25-size-guide-mobile', g);
+    const sitemap = await (await g.request.get(`${WEB}/sitemap.xml`)).text();
+    assert(/\/size-guide</.test(sitemap), 'size guide in the sitemap');
+    await m.close();
+  });
+
+  // ------------------------------------------------------------------ demo payments off
+  await step('demo payments off: no demo pay, cash on delivery offered instead', async () => {
+    const off = await browser.newContext({ viewport: { width: 1360, height: 900 } });
+    const o = await off.newPage();
+    o.on('pageerror', (e) => consoleErrors.push(`${o.url()}: ${e}`));
+    await o.route('**/api/uj/health', async (route) => {
+      const res = await route.fetch();
+      await route.fulfill({ response: res, json: { ...(await res.json()), demo_payments: false } });
+    });
+    await o.goto(`${WEB}/shop/royal-strikers`);
+    await o.locator(tid('product-title')).waitFor();
+    await o.click(tid('fit-women'));
+    await o.click(tid('size-S'));
+    await o.click(tid('buy-now'));
+    await o.waitForURL(/\/checkout\?buy=1/);
+    await o.locator(tid('screen-checkout')).waitFor();
+    await o.waitForFunction(() => document.querySelector('[data-testid="pay-online"] input')?.disabled === true, null, { timeout: 15_000 });
+    assert(/coming soon/i.test(await o.locator(tid('screen-checkout')).innerText()), 'online payment coming soon');
+    assert(/Women/.test(await o.locator(tid('ck-item-0-sizes')).innerText()), 'women fit at checkout');
+    await o.fill(tid('cust-name'), 'Meena Off');
+    await o.fill(tid('cust-phone'), phone(80));
+    await o.fill(tid('addr-line1'), '4 Beach Road');
+    await o.fill(tid('addr-city'), 'Chennai');
+    await o.selectOption(tid('addr-state'), 'TN');
+    await o.fill(tid('addr-pincode'), '600001');
+    await o.locator(tid('price-total')).waitFor({ timeout: 20_000 });
+    // Once the price is known, cash on delivery is chosen for the customer.
+    await o.waitForFunction(() => document.querySelector('[data-testid="pay-cod"] input')?.checked === true, null, { timeout: 15_000 });
+    await shot('26-checkout-demo-off', o);
+    const req = o.waitForRequest((r) => r.url().endsWith('/api/uj/checkout') && r.method() === 'POST');
+    await o.click(tid('place-order'));
+    const body = (await req).postDataJSON();
+    assert(body.payment_method === 'cod' && body.items[0].lines[0].fit === 'women', `COD order with the women fit: ${body.payment_method}`);
+    await o.waitForURL(/\/checkout\/[^/?]+$/, { timeout: 60_000 });
+    await o.locator(tid('checkout-number')).waitFor();
+    assert(!(await o.locator(tid('demo-pay')).count()) && !(await o.locator(tid('go-pay')).count()), 'no demo pay offered');
+    await off.close();
   });
 
   // ------------------------------------------------------------------ design from a picture

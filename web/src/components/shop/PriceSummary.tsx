@@ -1,10 +1,15 @@
 'use client';
 import { useState } from 'react';
 import { cx } from '@/components/ui';
+import type { StringKey } from '@/i18n';
 import { useI18n } from '@/i18n/provider';
-import type { Quote } from '@/lib/api/types';
-import { breakdownRows, formatDate, formatMoney, formatPercent, freeDeliveryGap, tierNudge } from '@/lib/price';
+import type { Quote, QuoteLine } from '@/lib/api/types';
+import { formatDelta } from '@/lib/options';
+import { breakdownRows, formatDate, formatMoney, formatPercent, freeDeliveryGap, optionParts, tierNudge, type OptionPart } from '@/lib/price';
+import { normaliseFit } from '@/lib/sizing';
+import { fitLabel } from './Sizing';
 import s from './shop.module.css';
+import z from './sizing.module.css';
 
 const LINES_SHOWN = 6;
 
@@ -23,6 +28,12 @@ export function PriceSummary({ quote, updating, showDates = true, showNudges = t
   const gap = showNudges ? freeDeliveryGap(quote) : null;
   const lines = allLines ? quote.lines : quote.lines.slice(0, LINES_SHOWN);
   const est = quote.estimate;
+  const mixedFits = quote.lines.some((l) => normaliseFit(l.fit) !== 'men');
+  const partLabel = (key: OptionPart, l: QuoteLine): string => {
+    if (key === 'fit') return fitLabel(t, normaliseFit(l.fit));
+    const chosen = quote.options?.[key]?.id;
+    return chosen ? t(`${key}_${chosen}` as StringKey) : t(key === 'sleeves' ? 'sleevesLabel' : 'collarLabel');
+  };
 
   const label = (key: ReturnType<typeof breakdownRows>[number]['key']): string => {
     switch (key) {
@@ -46,8 +57,13 @@ export function PriceSummary({ quote, updating, showDates = true, showNudges = t
         {lines.map((l) => (
           <li key={l.line} data-testid={`${testId}-line`}>
             <span className={s.lineWho}>
-              <strong>{l.size}</strong> × {l.quantity}
+              <strong data-testid={`${testId}-line-size`}>{mixedFits ? `${fitLabel(t, normaliseFit(l.fit))} ${l.size}` : l.size}</strong> × {l.quantity}
               {l.player_name || l.number ? <span className="muted"> · {[l.player_name, l.number].filter(Boolean).join(' ')}</span> : null}
+              {optionParts(l.parts).length ? (
+                <span className={z.parts} data-testid={`${testId}-line-parts`}>
+                  {optionParts(l.parts).map((p) => `${partLabel(p.key, l)} ${formatDelta(p.amount, quote.currency, lang)}`).join(' · ')}
+                </span>
+              ) : null}
             </span>
             <span className="tnum">
               <span className="muted small">{money(l.unit_price)} {t('each')} · </span>{money(l.line_total)}

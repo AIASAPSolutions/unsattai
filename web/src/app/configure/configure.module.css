@@ -198,6 +198,9 @@
 .colSize {
   width: 90px;
 }
+.colFit {
+  width: 150px;
+}
 .colQty {
   width: 80px;
 }

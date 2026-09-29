@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { productImage } from '@/components/providers/shop';
 import { useSession } from '@/components/providers/session';
+import { ColourwayDots } from '@/components/shop/Sizing';
 import { RatingStars, cx } from '@/components/ui';
 import { HeartIcon } from '@/components/ui/icons';
 import { errorMessage, tMaybe } from '@/i18n';
@@ -52,6 +53,7 @@ export function ProductCard({ product, priority }: { product: Product; priority?
         <div className={s.cardBody}>
           <span className={s.cardTitle}>{product.title}</span>
           <span className={s.cardMeta}>{t(`garment_${product.garment}` as 'garment_jersey')} · {tMaybe(t, `sport_${product.sport}`, product.sport)}</span>
+          <ColourwayDots colourways={product.colourways} testId={`colourways-${product.slug}`} />
           {product.rating.count ? (
             <RatingStars value={product.rating.average} count={product.rating.count}
               label={t('ratingOf', { avg: (product.rating.average ?? 0).toFixed(1), n: product.rating.count })} />

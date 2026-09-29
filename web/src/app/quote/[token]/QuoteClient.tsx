@@ -12,7 +12,8 @@ import type { Address, PublicQuote } from '@/lib/api/types';
 import { EMPTY_ADDRESS } from '@/lib/flow';
 import { validateAddress } from '@/lib/order';
 import { formatDate } from '@/lib/price';
-import { sizeBreakdown } from '@/lib/roster';
+import { fitLabel } from '@/components/shop/Sizing';
+import { fitSizeSummary } from '@/lib/sizing';
 import s from '../../order/[id]/order.module.css';
 
 /** A quote our sales team sent: prices are fixed by the quote, the customer only adds an address and accepts. */
@@ -97,7 +98,7 @@ export function QuoteClient({ token }: { token: string }) {
               {t(`garment_${q.spec.garment}` as 'garment_jersey')} · {q.pricing.fabric.name}
               {q.rush ? ` · ${t('expressChosen')}` : ''} · {t('piecesN', { n: q.pricing.pieces })}
             </p>
-            <p className="small muted" style={{ margin: 0 }}>{sizeBreakdown(q.lines).map((b) => `${b.size} ${b.quantity}`).join(' · ')}</p>
+            <p className="small muted" style={{ margin: 0 }}>{fitSizeSummary(q.lines, (f) => fitLabel(t, f), ' · ', ' ')}</p>
           </Card>
           {canAccept ? (
             <Card title={ship ? t('quoteDeliverTo') : t('pickup')}>

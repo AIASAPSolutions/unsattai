@@ -2,10 +2,12 @@
 import { useState } from 'react';
 import { ColorPickerModal } from '@/components/design/ColorPicker';
 import { useMeta } from '@/components/providers/data';
+import { GarmentOptionsPicker } from '@/components/shop/Sizing';
 import { Button, Chip, Chips, Tabs } from '@/components/ui';
 import { useT } from '@/i18n/provider';
 import { COLOR_ROLES, COVERAGES, FONTS, PATTERNS, type ColorRole, type DesignSpec } from '@/lib/api/types';
 import { flow } from '@/lib/flow';
+import { collarOf, hasSleeves, sleevesOf, withOption } from '@/lib/options';
 import { setPath } from '@/lib/spec';
 import { Slider } from './Slider';
 import s from './studio.module.css';
@@ -29,6 +31,14 @@ export function StyleTab({ spec }: StudioTools) {
 
   return (
     <>
+      {hasSleeves(spec.garment) ? (
+        <section className={s.section} aria-labelledby="st-options">
+          <h3 id="st-options">{t('garmentOptions')}</h3>
+          <GarmentOptionsPicker garment={spec.garment} sleeves={sleevesOf(spec)} collar={collarOf(spec)} testId="studio-opt"
+            onChange={(group, v) => flow.edit(withOption(latestSpec() ?? spec, group, v))} />
+        </section>
+      ) : null}
+
       <section className={s.section} aria-labelledby="st-colours">
         <h3 id="st-colours">{t('colours')}</h3>
         {COLOR_ROLES.map((r) => (

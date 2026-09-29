@@ -1,0 +1,56 @@
+import type { SizingStrings } from './en';
+
+// गारमेंट विकल्प, फ़िट और साइज़ गाइड (हिन्दी)।
+const sizing: SizingStrings = {
+  fitLabel: 'फ़िट',
+  fit_men: 'पुरुष / यूनिसेक्स',
+  fit_women: 'महिला',
+  fit_kids: 'बच्चे',
+  fitSize: '{fit}, {size}',
+
+  garmentOptions: 'आस्तीन और कॉलर',
+  sleevesLabel: 'आस्तीन',
+  sleeves_short: 'छोटी आस्तीन',
+  sleeves_long: 'पूरी आस्तीन',
+  sleeves_none: 'बिना आस्तीन',
+  collarLabel: 'कॉलर',
+  collar_crew: 'गोल गला',
+  collar_polo: 'पोलो',
+  collar_mandarin: 'मैंडरिन',
+  optionsPerPiece: 'कीमत का अंतर प्रति पीस है।',
+  colourwayLabel: 'रंग संयोजन',
+  colourwaysN: '{n} रंग संयोजनों में उपलब्ध',
+  madeWith: 'इसके साथ बना',
+
+  sizeGuide: 'साइज़ गाइड',
+  sgIntro: 'कपड़े को सपाट रखकर माप, {unit} में। वह साइज़ चुनें जिसकी “छाती के लिए” सीमा में आपकी छाती का माप आता है।',
+  sgCaption: '{fit} साइज़, माप {unit} में',
+  sgCol_chest: 'छाती',
+  sgCol_length: 'लंबाई',
+  sgCol_shoulder: 'कंधा',
+  sgCol_sleeve: 'आस्तीन',
+  sgCol_sleeveShort: 'आस्तीन (छोटी)',
+  sgCol_sleeveLong: 'आस्तीन (पूरी)',
+  sgCol_waist: 'कमर',
+  sgCol_hip: 'हिप',
+  sgCol_body_chest: 'छाती के लिए',
+  sgCol_height: 'ऊँचाई',
+  sgHowTo: 'कैसे मापें',
+  sgTolerance: 'तैयार कपड़ों में {n} {unit} तक का अंतर हो सकता है।',
+  sgUnavailable: 'साइज़ गाइड अभी लोड नहीं हो पा रही है।',
+  sgGarment: 'कपड़ा',
+  sgTops: 'जर्सी और वी-नेक',
+  sgShorts: 'शॉर्ट्स',
+  sgPageTitle: 'साइज़ गाइड',
+  sgPageText: 'हमारे पुरुष / यूनिसेक्स, महिला और बच्चों के साइज़ के माप। हर ऑर्डर इन्हीं मापों पर काटा और सिला जाता है, ताकि हर बार वही फ़िट मिले।',
+  sgSleeveless: 'बिना आस्तीन वाले टॉप में आस्तीन का माप नहीं होता।',
+
+  payComingSoonTitle: 'ऑनलाइन भुगतान जल्द आ रहा है',
+  payComingSoon: 'ऑनलाइन भुगतान जल्द आ रहा है। कृपया कैश ऑन डिलीवरी चुनें।',
+  payLater: 'बाद में भुगतान करें',
+  payLaterHint: 'ऑनलाइन भुगतान जल्द आ रहा है। अपना ऑर्डर दें, हमारी टीम भुगतान के लिए आपसे संपर्क करेगी।',
+  payTeamWillContact: 'हमारी टीम भुगतान के लिए आपसे संपर्क करेगी।',
+  viewOrder: 'ऑर्डर देखें',
+};
+
+export default sizing;

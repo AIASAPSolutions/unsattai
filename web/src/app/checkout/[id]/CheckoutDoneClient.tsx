@@ -1,5 +1,6 @@
 'use client';
 import Link from 'next/link';
+import { useDemoPayments } from '@/components/providers/data';
 import { useSession } from '@/components/providers/session';
 import { FulfilmentChip, fulfilmentStatus, invoiceUrl } from '@/components/shop/orderBits';
 import { Banner, Button, Card, ErrorState, ExternalButton, Loading } from '@/components/ui';
@@ -14,6 +15,7 @@ export function CheckoutDoneClient({ id }: { id: string }) {
   const { t, lang } = useI18n();
   const { me } = useSession();
   const { data, error, loading, retry } = useCheckout(id);
+  const { demo } = useDemoPayments();
 
   if (loading) return <Loading label={t('loading')} />;
   if (error || !data) return <div className="container page"><ErrorState message={errorMessage(t, error)} retryLabel={t('retry')} onRetry={retry} /></div>;
@@ -35,11 +37,12 @@ export function CheckoutDoneClient({ id }: { id: string }) {
           {cod ? t('codPayOnDelivery', { amount: money(data.totals.total) }) : t('paidTotal', { amount: money(data.totals.total) })}
         </p>
         <div className="row" style={{ justifyContent: 'center', marginTop: 8 }}>
-          {!done ? <Button href={`/checkout/${encodeURIComponent(data.id)}/pay`} testId="go-pay">{t('payment')}</Button> : null}
+          {!done && demo ? <Button href={`/checkout/${encodeURIComponent(data.id)}/pay`} testId="go-pay">{t('payment')}</Button> : null}
           {me ? <Button kind="secondary" href="/account" testId="to-orders">{t('viewInAccount')}</Button> : null}
           <Button kind="ghost" href="/shop">{t('continueShopping')}</Button>
         </div>
       </section>
+      {!done && !demo ? <div style={{ maxWidth: 820, margin: '0 auto 16px' }}><Banner tone="warn" testId="pay-coming-soon">{t('payComingSoonTitle')}. {t('payTeamWillContact')}</Banner></div> : null}
       {!me ? <div style={{ maxWidth: 820, margin: '0 auto 16px' }}><Banner tone="info">{t('guestCheckoutHint')}</Banner></div> : null}
 
       <div style={{ maxWidth: 820, margin: '0 auto' }} className="stack" data-testid="checkout-orders">

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DICTS, translate } from './index';
 import marketEn from './market/en';
+import sizingEn from './sizing/en';
 import webEn from './web/en';
 
 const params = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
@@ -16,7 +17,7 @@ describe('translations', () => {
     }
   });
   it('web and marketplace strings are really translated (not English copies)', () => {
-    const own = { ...webEn, ...marketEn };
+    const own = { ...webEn, ...marketEn, ...sizingEn };
     for (const lang of ['hi', 'te', 'ta'] as const) {
       const same = Object.keys(own).filter((k) => {
         const v = (own as Record<string, string>)[k];

@@ -4,7 +4,9 @@ import { productImage } from '@/components/providers/shop';
 import { Banner, Button, Skeleton, SvgImg, TextField, cx } from '@/components/ui';
 import { useI18n } from '@/i18n/provider';
 import { api } from '@/lib/api/endpoints';
-import type { CartQuote, DesignSpec, Product, PublicOffer } from '@/lib/api/types';
+import { colourwayLabel, optionsText } from '@/components/shop/Sizing';
+import type { T } from '@/i18n';
+import type { CartQuote, CartQuoteItem, DesignSpec, Product, PublicOffer } from '@/lib/api/types';
 import type { CartEntry } from '@/lib/cart';
 import { formatMoney } from '@/lib/price';
 import s from './market.module.css';
@@ -23,7 +25,9 @@ function renderThumb(spec: DesignSpec): Promise<string> {
   return p;
 }
 
-export function ItemThumb({ entry, product, alt }: { entry: Pick<CartEntry, 'spec' | 'product_id'>; product?: Product | null; alt: string }) {
+export function ItemThumb({ entry, product, alt }: {
+  entry: Pick<CartEntry, 'spec' | 'product_id' | 'colourway' | 'sleeves' | 'collar'>; product?: Product | null; alt: string;
+}) {
   const [svg, setSvg] = useState<string | null>(null);
   useEffect(() => {
     if (!entry.spec) return;
@@ -34,10 +38,25 @@ export function ItemThumb({ entry, product, alt }: { entry: Pick<CartEntry, 'spe
     };
   }, [entry.spec]);
   if (entry.product_id) {
+    const choice = { colourway: entry.colourway || undefined, sleeves: entry.sleeves || undefined, collar: entry.collar || undefined };
     // eslint-disable-next-line @next/next/no-img-element
-    return product ? <img src={productImage(product)} alt={alt} className={s.thumb} loading="lazy" width={104} height={104} /> : <Skeleton className={s.thumb} height={76} />;
+    return product ? <img src={productImage(product, choice)} alt={alt} className={s.thumb} loading="lazy" width={104} height={104} /> : <Skeleton className={s.thumb} height={76} />;
   }
   return svg ? <SvgImg svg={svg} alt={alt} className={s.thumb} /> : <Skeleton className={s.thumb} height={76} />;
+}
+
+/**
+ * What an item is made with: colourway (products), sleeves and collar. The cart quote says what
+ * the server will make; until it arrives the item's own choices (or its design) are shown.
+ */
+export function entryOptions(t: T, e: CartEntry, product?: Product | null, qi?: CartQuoteItem | null): string {
+  const garment = e.spec?.garment ?? qi?.garment ?? product?.garment ?? 'jersey';
+  return optionsText(t, {
+    garment,
+    sleeves: qi?.options?.sleeves ?? (e.sleeves || e.spec?.sleeves),
+    collar: qi?.options?.collar ?? (e.collar || e.spec?.collar),
+    colourway: e.product_id ? colourwayLabel(product?.colourways, e.colourway) : '',
+  });
 }
 
 /** Title of a cart item: the product's, the quote's, or the design's own names. */

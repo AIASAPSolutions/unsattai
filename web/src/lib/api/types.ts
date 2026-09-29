@@ -27,8 +27,24 @@ export type Font = (typeof FONTS)[number];
 export const COLOR_ROLES = ['primary', 'secondary', 'accent', 'trim', 'text'] as const;
 export type ColorRole = (typeof COLOR_ROLES)[number];
 
+/** The core adult sizes (the studio's print checks and older data use these). */
 export const SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL'] as const;
-export type Size = (typeof SIZES)[number];
+
+/** Men / unisex, women and kids charts. The size list of each fit is fixed on the server. */
+export const FITS = ['men', 'women', 'kids'] as const;
+export type Fit = (typeof FITS)[number];
+export const FIT_SIZES = {
+  men: ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL'],
+  women: ['XS', 'S', 'M', 'L', 'XL', 'XXL'],
+  kids: ['4Y', '6Y', '8Y', '10Y', '12Y', '14Y'],
+} as const;
+export const ALL_SIZES = [...FIT_SIZES.men, ...FIT_SIZES.kids] as const;
+export type Size = (typeof ALL_SIZES)[number];
+
+export const SLEEVES = ['short', 'long', 'none'] as const;
+export type Sleeves = (typeof SLEEVES)[number];
+export const COLLARS = ['crew', 'polo', 'mandarin'] as const;
+export type Collar = (typeof COLLARS)[number];
 
 export const LANGUAGES = ['en', 'hi', 'te', 'ta'] as const;
 export type Language = (typeof LANGUAGES)[number];
@@ -115,6 +131,9 @@ export interface DesignSpec extends Open {
   seed: number;
   rationale: string;
   elements: Element[];
+  /** Older designs have no sleeves or collar: short sleeves and a crew neck. */
+  sleeves?: Sleeves;
+  collar?: Collar;
 }
 
 export type CheckLevel = 'pass' | 'info' | 'warn' | 'fail';
@@ -216,6 +235,8 @@ export interface Panel {
   svg: string;
   editable: boolean;
   safe_zone: [number, number][] | null;
+  /** How the piece is made, e.g. "Sleeveless: the armholes are finished with a binding." */
+  note?: string;
 }
 
 export interface PanelsResponse {
@@ -313,6 +334,8 @@ export interface BackgroundRemoval {
 export interface OrderItem {
   player_name: string;
   number: string;
+  /** Missing on older data: men / unisex. */
+  fit?: Fit;
   size: Size;
   quantity: number;
 }
@@ -355,6 +378,7 @@ export interface OrderRequest {
 export interface OrderFile {
   name: string;
   line: number;
+  fit?: Fit;
   size: Size;
   panel: string;
   player_name: string;
@@ -426,7 +450,9 @@ export interface Order {
   status: OrderStatus;
   design_id: string;
   garment: Garment;
-  lines: (OrderItem & { line: number; files: string[] })[];
+  lines: (OrderItem & { line: number; files: string[]; measurements?: Record<string, number> })[];
+  /** Sleeves and collar the order is made with (empty for shorts). */
+  options?: { sleeves?: Sleeves; collar?: Collar };
   items_submitted: number;
   total_pieces: number;
   customer: Customer;
@@ -459,6 +485,7 @@ export interface OrderFailure {
   line: number;
   player_name: string;
   number: string;
+  fit?: Fit;
   size: Size;
   checks: Check[];
 }
@@ -466,6 +493,8 @@ export interface OrderFailure {
 export interface Meta {
   sports: string[];
   sizes: Size[];
+  options?: { sleeves: Sleeves[]; collars: Collar[]; fits: Fit[] };
+  fit_sizes?: Partial<Record<Fit, Size[]>>;
   palettes: { name: string; palette: Palette; tags: string[] }[];
   colors: { name: string; hex: string }[];
   languages: { code: Language; name: string; native: string }[];
@@ -478,6 +507,34 @@ export interface Health {
   default_provider: string;
   factory_connected: boolean;
   auth_required: boolean;
+  /** False in production: "Pay (demo)" is refused (403, code demo_payments_off). */
+  demo_payments?: boolean;
+}
+
+// ----------------------------------------------------------------- size guide (GET /shop/size-guide)
+
+export interface SizeGuideRow {
+  size: Size;
+  /** The wearer's chest all round that the size fits, in cm. */
+  body_chest: [number, number];
+  height: [number, number] | null;
+  top: { chest: number; length: number; shoulder: number; sleeve_short: number; sleeve_long: number };
+  shorts: { waist: number; hip: number; length: number };
+}
+
+export interface SizeGuide {
+  unit: string;
+  tolerance_cm: number;
+  note: string;
+  how_to_measure: { id: string; name: string; text: string }[];
+  fits: { id: Fit; name: string; sizes: SizeGuideRow[] }[];
+}
+
+/** A priced choice from the catalogue; the price is per piece and can be negative. */
+export interface OptionPrice {
+  id: string;
+  name: string;
+  price: number;
 }
 
 // ----------------------------------------------------------------- shop (server/app/platform)
@@ -493,7 +550,8 @@ export interface Catalogue {
   currency: string;
   garments: Record<Garment, { name: string; base: number }>;
   fabrics: Fabric[];
-  size_surcharge: Record<Size, number>;
+  size_surcharge: Partial<Record<Size, number>>;
+  options?: { sleeves: OptionPrice[]; collar: OptionPrice[]; fit: OptionPrice[] };
   personalisation: { name: number; number: number };
   logo_per_piece: number;
   quantity_tiers: { min: number; discount: number }[];
@@ -508,6 +566,7 @@ export interface Catalogue {
 }
 
 export interface PriceLineIn {
+  fit?: Fit;
   size: Size;
   quantity: number;
   player_name: string;
@@ -522,10 +581,13 @@ export interface QuoteRequest {
   delivery: { method: DeliveryMethod; pincode: string; state: string };
   rush: boolean;
   coupon: string;
+  sleeves?: Sleeves;
+  collar?: Collar;
 }
 
 export interface QuoteLine extends PriceLineIn {
   line: number;
+  fit?: Fit;
   unit_price: number;
   line_total: number;
   parts: Record<string, number>;
@@ -553,6 +615,8 @@ export interface Quote {
   total: number;
   average_per_piece: number;
   problems: string[];
+  /** The sleeves and collar priced, when they are not the included choice. */
+  options?: { sleeves?: OptionPrice; collar?: OptionPrice };
   sales_discount?: number;
   estimate?: Estimate | null;
   estimate_standard?: Estimate;
@@ -618,6 +682,7 @@ export interface CollectionEntry {
   id: string;
   player_name: string;
   number: string;
+  fit?: Fit;
   size: Size;
   quantity: number;
   contact: string;
@@ -656,6 +721,7 @@ export interface PublicCollection {
   organiser: string;
   fabric: string;
   sizes: Size[];
+  fit_sizes?: Partial<Record<Fit, Size[]>>;
   count: number;
   taken_numbers: string[];
   unique_numbers: boolean;
@@ -775,6 +841,16 @@ export interface Product {
   currency: string;
   image_url: string;
   style_name: string;
+  /** Other colours the design comes in; the first is always { id: "original" }. */
+  colourways?: Colourway[];
+}
+
+/** List items carry a two-colour swatch, product detail the full palette. */
+export interface Colourway {
+  id: string;
+  name: string;
+  swatch?: [string, string];
+  palette?: Partial<Palette>;
 }
 
 export interface Review {
@@ -835,6 +911,10 @@ export interface ApiCartItem {
   logos?: number;
   lines: OrderItem[];
   seller_id?: string;
+  /** Products only: a colourway id and sleeve and collar choices that override the product's. */
+  colourway?: string;
+  sleeves?: Sleeves;
+  collar?: Collar;
 }
 
 export type PaymentMethod = 'online' | 'cod';
@@ -868,6 +948,8 @@ export interface CartQuoteItem {
   coupon_share: number;
   delivery_date: string | null;
   problems: string[];
+  options?: { sleeves?: Sleeves; collar?: Collar; colourway?: string | null };
+  image_url?: string | null;
 }
 
 export interface CartQuote {

@@ -1,29 +1,36 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
+import { useMeta } from '@/components/providers/data';
+import { SizeGuideButton, fitLabel } from '@/components/shop/Sizing';
 import { Banner, Button, Modal, TextArea, cx } from '@/components/ui';
 import { useT } from '@/i18n/provider';
-import { SIZES, TEXT_LIMITS, type Size } from '@/lib/api/types';
+import { TEXT_LIMITS, type Fit, type Garment, type Size, type Sleeves } from '@/lib/api/types';
 import { rowKey, type RosterRow } from '@/lib/flow';
-import { duplicateNumbers, parseRoster, parseRosterCsv, sizeBreakdown, totalPieces, type RosterResult } from '@/lib/roster';
-import { SIZE_CHART } from '@/lib/states';
+import { duplicateNumbers, parseRoster, parseRosterCsv, totalPieces, type RosterResult } from '@/lib/roster';
+import { fitSizeSummary, fitsFrom, normaliseFit, sizeForFit, sizesFor } from '@/lib/sizing';
 import s from './configure.module.css';
 
 const CSV_MAX_BYTES = 200_000;
 
-export type RowIssues = Record<number, Partial<Record<'player_name' | 'number' | 'quantity', string>>>;
+export type RowIssues = Record<number, Partial<Record<'player_name' | 'number' | 'quantity' | 'size', string>>>;
 
-/** Team roster: one row per player, with paste, CSV import, a size chart and a duplicate-number check. */
-export function RosterEditor({ rows, onChange, issues, failed, defaultSize }: {
+/** Team roster: one row per player (fit and size each), with paste, CSV import, the size guide and a duplicate-number check. */
+export function RosterEditor({ rows, onChange, issues, failed, defaultSize, defaultFit = 'men', garment = 'jersey', sleeves }: {
   rows: RosterRow[];
   onChange: (rows: RosterRow[]) => void;
   issues: RowIssues;
   /** Rows the server rejected (print checks), by index, with the reason. */
   failed: Record<number, string>;
   defaultSize: Size;
+  defaultFit?: Fit;
+  garment?: Garment;
+  sleeves?: Sleeves;
 }) {
   const t = useT();
+  const { meta } = useMeta();
+  const source = meta?.fit_sizes ?? null;
+  const fits = fitsFrom(source);
   const [pasteOpen, setPasteOpen] = useState(false);
-  const [chartOpen, setChartOpen] = useState(false);
   const [pasted, setPasted] = useState('');
   const [result, setResult] = useState<{ added: number; errors: RosterResult['errors'] } | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -39,13 +46,14 @@ export function RosterEditor({ rows, onChange, issues, failed, defaultSize }: {
   }, [rows.length]);
 
   const dups = duplicateNumbers(rows);
-  const breakdown = sizeBreakdown(rows);
+  const breakdown = fitSizeSummary(rows, (f) => fitLabel(t, f), ' · ', ' ');
 
   const update = (i: number, patch: Partial<RosterRow>) => onChange(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const remove = (i: number) => onChange(rows.filter((_, j) => j !== i));
   const add = () => {
     const last = rows[rows.length - 1];
-    onChange([...rows, { key: rowKey(), player_name: '', number: '', size: last?.size ?? defaultSize, quantity: 1 }]);
+    const fit = last ? normaliseFit(last.fit) : defaultFit;
+    onChange([...rows, { key: rowKey(), player_name: '', number: '', fit, size: last?.size ?? sizeForFit(fit, defaultSize, source), quantity: 1 }]);
     focusLast.current = true;
   };
   const append = (r: RosterResult) => {
@@ -81,7 +89,8 @@ export function RosterEditor({ rows, onChange, issues, failed, defaultSize }: {
         <Button kind="secondary" size="sm" onClick={() => fileRef.current?.click()} testId="roster-csv">{t('csvUpload')}</Button>
         <input ref={fileRef} type="file" accept=".csv,text/csv,text/plain" hidden data-testid="roster-csv-input"
           onChange={(e) => void onFile(e.target.files?.[0])} />
-        <Button kind="ghost" size="sm" onClick={() => setChartOpen(true)} testId="size-chart">{t('sizeChart')}</Button>
+        <SizeGuideButton garment={garment} sleeves={sleeves} fit={normaliseFit(rows[0]?.fit ?? defaultFit)} testId="size-chart"
+          dialogTestId="size-chart-dialog" />
       </div>
       <p className="small muted" style={{ margin: 0 }}>{t('csvHint')}</p>
       {fileError ? <Banner tone="fail">{fileError}</Banner> : null}
@@ -116,6 +125,7 @@ export function RosterEditor({ rows, onChange, issues, failed, defaultSize }: {
                 <th scope="col" className={s.colIdx}>#</th>
                 <th scope="col">{t('playerName')}</th>
                 <th scope="col" className={s.colNo}>{t('number')}</th>
+                {fits.length > 1 ? <th scope="col" className={s.colFit}>{t('fitLabel')}</th> : null}
                 <th scope="col" className={s.colSize}>{t('size')}</th>
                 <th scope="col" className={s.colQty}>{t('quantity')}</th>
                 <th scope="col" className={s.colDel}><span className="visually-hidden">{t('removeRow')}</span></th>
@@ -127,6 +137,7 @@ export function RosterEditor({ rows, onChange, issues, failed, defaultSize }: {
                 const dup = !!r.number.trim() && dups.includes(r.number.trim());
                 const bad = failed[i];
                 const label = r.player_name || `${t('line', { n: i + 1 })}`;
+                const fit = normaliseFit(r.fit);
                 return (
                   <tr key={r.key} className={cx(bad && s.rowFailed)} data-testid={`roster-row-${i}`}>
                     <td className={s.colIdx}>{i + 1}</td>
@@ -144,10 +155,23 @@ export function RosterEditor({ rows, onChange, issues, failed, defaultSize }: {
                         data-testid={`roster-number-${i}`}
                         onChange={(e) => update(i, { number: e.target.value.replace(/[^\d०-९౦-౯௦-௯]/g, '') })} />
                     </td>
+                    {fits.length > 1 ? (
+                      <td className={s.colFit}>
+                        <select className={s.cell} value={fit} aria-label={`${t('fitLabel')} ${label}`} data-testid={`roster-fit-${i}`}
+                          onChange={(e) => {
+                            const f = e.target.value as Fit;
+                            update(i, { fit: f, size: sizeForFit(f, r.size, source) });
+                          }}>
+                          {fits.map((f) => <option key={f} value={f}>{fitLabel(t, f)}</option>)}
+                        </select>
+                      </td>
+                    ) : null}
                     <td className={s.colSize}>
-                      <select className={s.cell} value={r.size} aria-label={`${t('size')} ${label}`} data-testid={`roster-size-${i}`}
+                      <select className={cx(s.cell, is.size && s.cellBad)} value={r.size} aria-label={`${t('size')} ${label}`}
+                        aria-invalid={is.size ? true : undefined} data-testid={`roster-size-${i}`}
                         onChange={(e) => update(i, { size: e.target.value as Size })}>
-                        {SIZES.map((z) => <option key={z} value={z}>{z}</option>)}
+                        {sizesFor(fit, source).includes(r.size) ? null : <option value={r.size} disabled>{r.size}</option>}
+                        {sizesFor(fit, source).map((z) => <option key={z} value={z}>{z}</option>)}
                       </select>
                     </td>
                     <td className={s.colQty}>
@@ -172,7 +196,7 @@ export function RosterEditor({ rows, onChange, issues, failed, defaultSize }: {
         <Button kind="secondary" onClick={add} testId="roster-add">+ {t('addRow')}</Button>
         <div className="small muted tnum" data-testid="roster-total">
           {t('totalPieces', { n: totalPieces(rows) })}
-          {breakdown.length ? ` · ${breakdown.map((b) => `${b.size} ${b.quantity}`).join(' · ')}` : ''}
+          {breakdown ? ` · ${breakdown}` : ''}
         </div>
       </div>
       {dups.length ? <Banner tone="warn" testId="duplicate-numbers">{t('duplicateNumbersWarn', { numbers: dups.join(', ') })}</Banner> : null}
@@ -180,7 +204,7 @@ export function RosterEditor({ rows, onChange, issues, failed, defaultSize }: {
       <Modal open={pasteOpen} onClose={() => setPasteOpen(false)} title={t('pasteRoster')} testId="paste-dialog" closeLabel={t('close')}>
         <div className="stack">
           <TextArea label={t('roster')} hint={t('rosterHelp')} rows={8} value={pasted} onValue={setPasted}
-            placeholder={'Arul, 7, M, 2\nPriya Sharma, 10, S\nKiran, 23, XL'} testId="paste-text" />
+            placeholder={'Arul, 7, M, 2\nPriya Sharma, 10, women, S\nKavin, 4, 8Y'} testId="paste-text" />
           <div className="row" style={{ justifyContent: 'flex-end', gap: 8 }}>
             <Button kind="ghost" onClick={() => setPasteOpen(false)}>{t('cancel')}</Button>
             <Button onClick={importPasted} disabled={!pasted.trim()} testId="paste-import">{t('importRoster')}</Button>
@@ -188,35 +212,6 @@ export function RosterEditor({ rows, onChange, issues, failed, defaultSize }: {
         </div>
       </Modal>
 
-      <Modal open={chartOpen} onClose={() => setChartOpen(false)} title={t('sizeChart')} testId="size-chart-dialog" closeLabel={t('close')}>
-        <SizeChart />
-      </Modal>
-    </div>
-  );
-}
-
-export function SizeChart() {
-  const t = useT();
-  return (
-    <div className="stack">
-      <div className={s.tableWrap}>
-        <table className={s.chart}>
-          <thead>
-            <tr>
-              <th scope="col">{t('size')}</th>
-              <th scope="col">{t('chartChest')}</th>
-              <th scope="col">{t('chartLength')}</th>
-              <th scope="col">{t('chartWaist')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {SIZE_CHART.map((r) => (
-              <tr key={r.size}><th scope="row">{r.size}</th><td>{r.chest}</td><td>{r.length}</td><td>{r.waist}</td></tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <p className="small muted" style={{ margin: 0 }}>{t('sizeChartNote')}</p>
     </div>
   );
 }

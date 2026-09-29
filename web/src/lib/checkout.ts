@@ -1,3 +1,4 @@
+import { ApiError } from './api/client';
 import type {
   Address, CartQuote, CartQuoteItem, CartQuoteRequest, CheckoutItemError, CheckoutRequest, DeliveryMethod, Language,
   PaymentMethod,
@@ -122,4 +123,19 @@ export function codBlock(quote: CartQuote | null, catalogueCod?: { enabled: bool
   const max = catalogueCod?.max_order_value;
   if (max && quote.totals.total > max) return 'limit';
   return 'area';
+}
+
+/**
+ * What "Pay online" means right now. With demo payments on it is the demo payment. While
+ * online payment is not available (production), cash on delivery is the way to pay; when cash
+ * on delivery can't be used either, the order can still be placed and our team arranges payment.
+ */
+export function onlineMode(demoPayments: boolean, codWhy: ReturnType<typeof codBlock>): 'demo' | 'later' | 'off' {
+  if (demoPayments) return 'demo';
+  return codWhy ? 'later' : 'off';
+}
+
+/** A refused demo payment (the server has online payment switched off). */
+export function isDemoPaymentsOff(e: unknown): boolean {
+  return e instanceof ApiError && e.status === 403 && (e.data as { code?: string } | null)?.code === 'demo_payments_off';
 }

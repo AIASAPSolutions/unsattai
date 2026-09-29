@@ -42,16 +42,3 @@ export const STATES: { code: string; name: string }[] = [
 export function stateName(code: string): string {
   return STATES.find((s) => s.code === code)?.name ?? code;
 }
-
-/**
- * Size chart shown at checkout. These are typical body measurements for our regular
- * athletic fit, as a guide only (the price book does not carry measurements).
- */
-export const SIZE_CHART: { size: string; chest: number; length: number; waist: number }[] = [
-  { size: 'XS', chest: 46, length: 66, waist: 70 },
-  { size: 'S', chest: 49, length: 69, waist: 75 },
-  { size: 'M', chest: 52, length: 72, waist: 80 },
-  { size: 'L', chest: 55, length: 74, waist: 86 },
-  { size: 'XL', chest: 58, length: 76, waist: 92 },
-  { size: 'XXL', chest: 61, length: 78, waist: 98 },
-];
