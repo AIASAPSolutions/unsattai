@@ -7,8 +7,8 @@
  * dotted paths the server uses in 422 responses ("fabrics.0.id"), so both show in one place.
  */
 import type { FieldError } from './errors';
-import type { Garment, Size } from './types';
-import { GARMENTS, SIZES } from './types';
+import type { Collar, Fit, Garment, Size, Sleeves } from './types';
+import { COLLARS, FITS, GARMENTS, SIZES, SLEEVES } from './types';
 
 // ------------------------------------------------------------------ JSON shapes (defaults.py)
 
@@ -26,7 +26,17 @@ export interface PriceBook {
   coupons: { code: string; kind: 'percent' | 'amount'; value: number; max_discount: number | null; min_subtotal: number; active: boolean; expires: string | null; note: string; public?: boolean; title?: string }[];
   /** Cash on delivery. Missing on servers from before the marketplace. */
   cod?: { enabled: boolean; fee: number; max_order_value: number | null };
+  /** Garment options, price per piece (negative = discount). Missing on servers from before sleeves and fits. */
+  options?: PriceOptions;
 }
+export interface OptionChoice { name: string; price: number; active: boolean }
+export interface PriceOptions { sleeves: Record<Sleeves, OptionChoice>; collar: Record<Collar, OptionChoice>; fit: Record<Fit, OptionChoice> }
+export type OptionGroup = keyof PriceOptions;
+export const OPTION_GROUPS: { id: OptionGroup; title: string; ids: readonly string[]; always: string }[] = [
+  { id: 'sleeves', title: 'Sleeves', ids: SLEEVES, always: 'short' },
+  { id: 'collar', title: 'Collar (crew-neck jersey)', ids: COLLARS, always: 'crew' },
+  { id: 'fit', title: 'Fit (per line)', ids: FITS, always: '' },
+];
 export interface Production {
   timezone: string; working_days: number[]; holidays: string[]; daily_cutoff_hour: number;
   stages: { id: string; name: string; capacity_per_day: number; fixed_days: number }[]; rush_priority: boolean;
@@ -118,6 +128,42 @@ export interface PriceBookForm {
   tax: { name: string; rate: string; rate_above: string; threshold_per_piece: string; inclusive: boolean };
   coupons: { code: string; kind: 'percent' | 'amount'; value: string; max_discount: string; min_subtotal: string; active: boolean; expires: string; note: string; public: boolean; title: string }[];
   cod: { enabled: boolean; fee: string; max_order_value: string };
+  /** null when the server has no garment options yet. */
+  options: Record<OptionGroup, Record<string, { name: string; price: string; active: boolean }>> | null;
+}
+
+export function optionsToForm(o: PriceOptions | undefined): PriceBookForm['options'] {
+  if (!o) return null;
+  const out = {} as NonNullable<PriceBookForm['options']>;
+  for (const g of OPTION_GROUPS) {
+    out[g.id] = {};
+    for (const id of g.ids) {
+      const c = (o[g.id] as Record<string, OptionChoice | undefined>)[id];
+      out[g.id][id] = { name: c?.name ?? id, price: numText(c?.price ?? 0), active: c?.active ?? true };
+    }
+  }
+  return out;
+}
+
+/**
+ * Form -> price book options with the server's rules: every choice present, prices between -100000 and 100000,
+ * at least one active choice per group, and short sleeves and the crew neck always on.
+ */
+export function formToOptions(f: NonNullable<PriceBookForm['options']>, c: Collector): PriceOptions {
+  const out = {} as Record<OptionGroup, Record<string, OptionChoice>>;
+  for (const g of OPTION_GROUPS) {
+    out[g.id] = {};
+    for (const id of g.ids) {
+      const x = f[g.id][id] ?? { name: id, price: '0', active: true };
+      const name = c.required(`options.${g.id}.${id}.name`, x.name);
+      if (name.length > 60) c.add(`options.${g.id}.${id}.name`, 'At most 60 characters.');
+      const price = x.price.trim() === '' ? 0 : c.num(`options.${g.id}.${id}.price`, x.price, { min: -100000, max: 100000 });
+      out[g.id][id] = { name, price, active: x.active };
+    }
+    if (!Object.values(out[g.id]).some((x) => x.active)) c.add(`options.${g.id}`, 'Keep at least one choice switched on.');
+    if (g.always && !out[g.id][g.always].active) c.add(`options.${g.id}.${g.always}.active`, `${out[g.id][g.always].name || g.always} is the default and can't be switched off.`);
+  }
+  return out as unknown as PriceOptions;
 }
 
 export function priceBookToForm(pb: PriceBook): PriceBookForm {
@@ -141,6 +187,7 @@ export function priceBookToForm(pb: PriceBook): PriceBookForm {
       min_subtotal: numText(c.min_subtotal), active: c.active, expires: c.expires ?? '', note: c.note ?? '',
       public: !!c.public, title: c.title ?? '' })),
     cod: { enabled: pb.cod?.enabled ?? false, fee: numText(pb.cod?.fee ?? 0), max_order_value: numText(pb.cod?.max_order_value) },
+    options: optionsToForm(pb.options),
   };
 }
 
@@ -182,6 +229,7 @@ export function formToPriceBook(f: PriceBookForm, base: Partial<PriceBook> = {})
       max_order_value: c.optNum('cod.max_order_value', f.cod.max_order_value, { min: 0 }),
     },
   };
+  if (f.options) value.options = formToOptions(f.options, c);
   if (value.cod!.max_order_value === 0) c.add('cod.max_order_value', 'Leave empty for no limit, or enter an amount above 0.');
   value.coupons.forEach((x, i) => {
     if (x.public && !x.title) c.add(`coupons.${i}.title`, 'A public coupon needs a title customers can read.');
@@ -322,7 +370,7 @@ export function formToCrm(f: CrmForm, base: Partial<CrmConfig> = {}): Converted<
 export const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 export const SECTION_TITLES = {
-  price_book: 'Price book', production: 'Production', delivery: 'Delivery', company: 'Company', crm: 'CRM lists',
+  price_book: 'Price book', production: 'Production', sizing: 'Size charts', delivery: 'Delivery', company: 'Company', crm: 'CRM lists',
 } as const;
 
 /** Stable JSON for "has anything changed?" comparisons (key order independent). */

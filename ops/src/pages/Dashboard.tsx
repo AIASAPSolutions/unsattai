@@ -2,12 +2,14 @@ import { Link, useNavigate } from 'react-router-dom';
 import { OrderStatus } from '../components/domain';
 import { PaymentBadge, Stars } from '../components/marketplace';
 import { IconRefresh } from '../components/icons';
-import { Badge, Button, Card, DataTable, ErrorBox, Kpi, Loading, PageHeader } from '../components/ui';
+import { Alert, Badge, Button, Card, DataTable, ErrorBox, Kpi, Loading, PageHeader } from '../components/ui';
 import { get } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useRefData } from '../lib/refdata';
 import { day, money0, num, pct, ago } from '../lib/format';
 import { useLoad } from '../lib/hooks';
+import { env } from '../lib/env';
+import { isLiveApi, loadHealth } from '../lib/meta';
 import type { OrderSummary, Page, Plan, ReturnRec, Seller, SellerDetail } from '../lib/types';
 
 const OPEN = 'awaiting_payment,queued,in_production,ready';
@@ -87,6 +89,8 @@ function StaffDashboard() {
           <Kpi k="Cash on delivery to collect" v={m.data?.cod ? money0(m.data.cod.outstanding, c) : '…'} s={m.data?.cod ? `${num(m.data.cod.total)} order${m.data.cod.total === 1 ? '' : 's'}` : 'COD orders not yet paid'} to="/cod" testId="kpi-cod" />
         </div>
 
+        <SystemStatus />
+
         {(m.data?.bySeller.length ?? 0) > 1 && (
           <Card title="Orders by seller" flush actions={<Link to="/sellers">Sellers</Link>}>
             <DataTable rows={m.data!.bySeller} rowKey={(r) => r.seller.id} compact testId="orders-by-seller" onRowClick={(r) => nav(`/orders?seller=${r.seller.id}`)}
@@ -147,6 +151,32 @@ function StaffDashboard() {
         </Card>
       </div>
     </>
+  );
+}
+
+// ------------------------------------------------------------------ system status (GET /health)
+
+function SystemStatus() {
+  const h = useLoad(() => loadHealth(true), [], { poll: 5 * 60_000 });
+  if (!h.data) return null;
+  const demo = h.data.demo_payments;
+  const live = isLiveApi(env.apiBase);
+  return (
+    <div className="stack tight" data-testid="system-status">
+      {demo && live && (
+        <Alert tone="error"><b>Demo payments are on for a live server.</b> Customers can mark orders paid without paying. Set DEMO_PAYMENTS=0 (or APP_ENV=production) on the API and restart it.</Alert>
+      )}
+      <div className="row small" style={{ gap: 16 }}>
+        <span className="muted">System</span>
+        <span data-testid="demo-payments" data-on={demo ? 'true' : 'false'}>Demo payments{' '}
+          {demo === undefined ? <Badge>Unknown (older server)</Badge> : demo
+            ? <Badge tone={live ? 'bad' : 'warn'} title="“Pay (demo)” marks orders paid without taking money">On{live ? '' : ' (test server)'}</Badge>
+            : <Badge tone="good" title="Customers see “Online payment is coming soon; choose cash on delivery”">Off</Badge>}
+        </span>
+        {h.data.factory_connected !== undefined && <span>Factory link {h.data.factory_connected ? <Badge tone="good">Connected</Badge> : <Badge>Not connected</Badge>}</span>}
+        {h.data.version && <span className="muted">API {h.data.version}</span>}
+      </div>
+    </div>
   );
 }
 

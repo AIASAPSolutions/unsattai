@@ -13,9 +13,11 @@ import { download, get, openHtml, post } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { dateTime, day, GARMENT_LABEL, label, money } from '../../lib/format';
 import { useAction, useLoad } from '../../lib/hooks';
+import { filesByLine, fitOf, fitSize, measureColumns, MEASUREMENT_SHEET, optionsText, pieceLabel, piecesParts, printFileRequest } from '../../lib/production';
+import { useHealth } from '../../lib/meta';
 import { useRefData } from '../../lib/refdata';
 import {
-  PAYMENT_METHODS, type Activity, type AuditRow, type CheckoutRef, type Order, type OrderSummary, type Page, type Plan, type ReturnRec, type Seller, type Shipment,
+  FIT_LABEL, PAYMENT_METHODS, type Activity, type AuditRow, type CheckoutRef, type Order, type OrderSummary, type Page, type Plan, type ReturnRec, type Seller, type Shipment,
 } from '../../lib/types';
 
 interface Detail {
@@ -59,6 +61,8 @@ export default function OrderDetail() {
     undo ? 'Stage reopened.' : 'Stage marked done.');
 
   const events = [...(o.events ?? [])].reverse();
+  const opts = optionsText(o);
+  const mcols = measureColumns(o.lines);
 
   return (
     <>
@@ -85,17 +89,29 @@ export default function OrderDetail() {
       <div className="grid grid-main">
         <div className="stack" style={{ gap: 16 }}>
           <Card title="Design and lines">
-            <div className="grid" style={{ gridTemplateColumns: 'minmax(180px, 260px) 1fr', alignItems: 'start' }}>
+            <div className="grid order-design">
               <DesignPreview spec={o.spec} height={260} />
               <div className="stack tight">
                 <div><b>{o.spec.style_name}</b> <span className="muted">· {GARMENT_LABEL[o.garment]} · {label(String(o.spec.sport ?? ''))}</span></div>
+                {opts.length > 0 && <div className="row tight" data-testid="order-options">{opts.map((x) => <Badge key={x} tone="info">{x}</Badge>)}</div>}
                 {o.spec.typography?.team_name && <div>Team: <b>{o.spec.typography.team_name}</b></div>}
                 <div>{o.manufacturing_ready ? <Badge tone="good">Print-ready</Badge> : <Badge tone="bad">Checks failing</Badge>} <span className="muted small">{o.total_pieces} pieces in {o.lines.length} lines</span></div>
-                <table className="table compact">
-                  <thead><tr><th>#</th><th>Name</th><th>No.</th><th>Size</th><th className="num">Qty</th></tr></thead>
-                  <tbody>{o.lines.map((l) => <tr key={l.line}><td>{l.line}</td><td>{l.player_name || '—'}</td><td>{l.number || '—'}</td><td>{l.size}</td><td className="num">{l.quantity}</td></tr>)}</tbody>
-                </table>
+                <p className="muted small" style={{ margin: 0 }}>Each line is cut to its fit and size. Measurements are the finished garment laid flat, in cm; piece sizes are the cut line in mm (width × height) without bleed.</p>
               </div>
+            </div>
+            <div className="table-wrap" style={{ marginTop: 12 }}>
+              <table className="table compact" data-testid="order-lines">
+                <thead><tr><th>#</th><th>Name</th><th>No.</th><th>Fit</th><th>Size</th><th className="num">Qty</th>
+                  {mcols.map(([, h]) => <th key={h} className="num">{h}</th>)}<th>Pieces (mm)</th></tr></thead>
+                <tbody>{o.lines.map((l) => (
+                  <tr key={l.line} data-line={l.line}>
+                    <td>{l.line}</td><td>{l.player_name || '—'}</td><td>{l.number || '—'}</td>
+                    <td className="nowrap" title={FIT_LABEL[fitOf(l)]}>{FIT_LABEL[fitOf(l)].split(' /')[0]}</td><td className="strong">{l.size}</td><td className="num">{l.quantity}</td>
+                    {mcols.map(([k]) => <td key={k} className="num">{l.measurements?.[k] ?? '—'}</td>)}
+                    <td className="measure">{piecesParts(l.pieces_mm).map(([lbl, size]) => <div key={lbl}>{lbl} <span className="nowrap strong">{size}</span></div>)}{!l.pieces_mm && <span className="muted">On the measurement sheet</span>}</td>
+                  </tr>
+                ))}</tbody>
+              </table>
             </div>
           </Card>
 
@@ -262,17 +278,32 @@ export default function OrderDetail() {
 
           <Card title={`Print files (${o.files.length})`}>
             <div className="stack tight" data-testid="print-files">
-              {o.files.map((fl) => (
-                <div key={fl.name} className="row" style={{ justifyContent: 'space-between', flexWrap: 'nowrap' }}>
-                  <span className="ellipsis small" title={fl.name}>Line {fl.line} · {fl.size} · {label(fl.panel)}{fl.player_name && ` · ${fl.player_name}`}{fl.number && ` #${fl.number}`}</span>
-                  <Button size="xs" icon={<IconDownload />} busy={busy === fl.name} data-testid="print-file-download"
-                    onClick={() => run(fl.name, () => (canProd
-                      // Production staff and seller logins use the ops route; other roles keep the design route.
-                      ? download(`/ops/orders/${o.id}/print-files/${encodeURIComponent(fl.name)}`, fl.name)
-                      : download(`/orders/${o.id}/files/${encodeURIComponent(fl.name)}`, fl.name, { method: 'POST' })), toast.error)}>SVG</Button>
+              <div className="line-files" data-testid="measurement-sheet">
+                <div className="row" style={{ justifyContent: 'space-between', flexWrap: 'nowrap' }}>
+                  <span className="small"><b>Measurement sheet</b><br /><span className="muted">Every line's fit, size, measurements and piece sizes, for cutting and sewing.</span></span>
+                  <span className="row tight" style={{ flexWrap: 'nowrap' }}>
+                    <Button size="xs" icon={<IconDoc />} busy={busy === 'sheet-open'} data-testid="measurement-sheet-open"
+                      onClick={() => run('sheet-open', () => { const r = printFileRequest(o.id, MEASUREMENT_SHEET, canProd); return openHtml(r.path, `Measurement sheet ${o.number ?? o.id}`, { method: r.method }); }, toast.error)}>Open</Button>
+                    <Button size="xs" icon={<IconDownload />} busy={busy === 'sheet'} data-testid="measurement-sheet-download"
+                      onClick={() => run('sheet', () => { const r = printFileRequest(o.id, MEASUREMENT_SHEET, canProd); return download(r.path, `${o.number ?? o.id}_measurements.svg`, { method: r.method }); }, toast.error)}>SVG</Button>
+                  </span>
+                </div>
+              </div>
+              {filesByLine(o).map((g) => (
+                <div key={g.lineNo} className="line-files" data-testid="print-file-line" data-line={g.lineNo}>
+                  <div className="head">Line {g.lineNo} · {fitSize(g.line ?? g.files[0], true)}{g.line ? ` × ${g.line.quantity}` : ''}
+                    {g.files[0]?.player_name && ` · ${g.files[0].player_name}`}{g.files[0]?.number && ` #${g.files[0].number}`}</div>
+                  {g.files.map((fl) => (
+                    <div key={fl.name} className="row" style={{ justifyContent: 'space-between', flexWrap: 'nowrap' }}>
+                      <span className="ellipsis small" title={fl.name}>{pieceLabel(fl.panel)} <span className="muted">{fl.name}</span></span>
+                      <Button size="xs" icon={<IconDownload />} busy={busy === fl.name} data-testid="print-file-download"
+                        onClick={() => run(fl.name, () => { const r = printFileRequest(o.id, fl.name, canProd); return download(r.path, fl.name, { method: r.method }); }, toast.error)}>SVG</Button>
+                    </div>
+                  ))}
                 </div>
               ))}
               {!o.files.length && <span className="muted small">No print files for this order.</span>}
+              {o.files.length > 0 && <span className="muted small">Vector SVG at 1:1 in mm, graded to each line's fit and size; raster logos are checked for 300 dpi. Print at 100%.</span>}
             </div>
           </Card>
         </div>
@@ -303,6 +334,8 @@ function PaymentDialog({ open, total, currency, onClose, onSubmit, busy }: {
   onSubmit: (b: { method: string; reference: string; amount: number }) => void;
 }) {
   const [method, setMethod] = useState<string>('upi');
+  // The server refuses "demo" (no money) payments when demo payments are off (health.demo_payments).
+  const demoOk = useHealth().data?.demo_payments !== false;
   const [reference, setReference] = useState('');
   const [amount, setAmount] = useState(String(total));
   const amt = Number(amount);
@@ -313,7 +346,7 @@ function PaymentDialog({ open, total, currency, onClose, onSubmit, busy }: {
       <div className="form-grid">
         <Field label="Method">
           <select value={method} onChange={(e) => setMethod(e.target.value)} data-testid="payment-method">
-            {PAYMENT_METHODS.map((m) => <option key={m} value={m}>{m === 'demo' ? 'Demo (no money)' : label(m)}</option>)}
+            {PAYMENT_METHODS.filter((m) => m !== 'demo' || demoOk).map((m) => <option key={m} value={m}>{m === 'demo' ? 'Demo (no money)' : label(m)}</option>)}
           </select>
         </Field>
         <Field label={`Amount (${currency})`} errors={bad && amount !== '' ? ['Enter an amount above 0.'] : undefined} hint={`Order total ${money(total, currency)}`}>

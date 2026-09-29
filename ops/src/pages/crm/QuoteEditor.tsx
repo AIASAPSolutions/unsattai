@@ -12,9 +12,11 @@ import { env, quoteLink } from '../../lib/env';
 import { errorText } from '../../lib/errors';
 import { dateTime, day, GARMENT_LABEL, label, money } from '../../lib/format';
 import { useAction, useDebounced, useLoad } from '../../lib/hooks';
-import { blankLine, logoCount, parseRoster, toQuoteLines, totalPieces, withSalesDiscount, type EditLine } from '../../lib/quote';
+import { useFitSizes } from '../../lib/meta';
+import { blankLine, logoCount, parseRoster, specOptions, toQuoteLines, totalPieces, withFit, withSalesDiscount, type EditLine } from '../../lib/quote';
 import { useRefData } from '../../lib/refdata';
-import { GARMENTS, SIZES, type Customer, type Garment, type Lead, type Order, type OrderSummary, type Page, type Pricing, type Quote, type Spec } from '../../lib/types';
+import {
+  COLLAR_LABEL, COLLARS, FIT_LABEL, FITS, GARMENTS, SLEEVE_LABEL, SLEEVES, type Collar, type Fit, type Sleeves, type Customer, type Garment, type Lead, type Order, type OrderSummary, type Page, type Pricing, type Quote, type Spec } from '../../lib/types';
 
 interface GenDesign { id: string; spec: Spec; mockup_svg: string; manufacturing_ready: boolean }
 interface CustDetail { customer: Customer; orders: OrderSummary[]; leads: Lead[] }
@@ -51,7 +53,7 @@ export default function QuoteEditor() {
   useEffect(() => {
     if (!q) return;
     setCustomerId(q.customer_id); setLeadId(q.lead_id); setTitle(q.title); setSpec(q.spec); setDesignId(q.design_id);
-    setFabric(q.fabric); setLines(q.lines.map((l) => ({ ...l, quantity: String(l.quantity) }))); setMethod(q.delivery.method);
+    setFabric(q.fabric); setLines(q.lines.map((l) => ({ ...l, fit: l.fit ?? 'men', quantity: String(l.quantity) }))); setMethod(q.delivery.method);
     setPincode(q.delivery.pincode); setStateCode(q.delivery.state); setRush(q.rush); setCoupon(q.coupon);
     setExtra(q.extra_discount ? String(q.extra_discount) : ''); setMessage(q.message);
     if (q.status !== 'draft') setSentPath(`/quote/${q.token}`);
@@ -69,13 +71,22 @@ export default function QuoteEditor() {
   const fabrics = (pb?.fabrics ?? []).filter((f) => f.garments.includes(garment));
   useEffect(() => { if (fabrics.length && !fabrics.some((f) => f.id === fabric)) setFabric(fabrics[0].id); }, [garment, fabrics.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const conv = useMemo(() => toQuoteLines(lines), [lines]);
+  const fitSizes = useFitSizes();
+  const conv = useMemo(() => toQuoteLines(lines, fitSizes), [lines, fitSizes]);
+  const so = specOptions(spec);
+  // Offer the choices switched on in the price book (all of them if the server has no options yet), with their price.
+  const choices = <K extends 'sleeves' | 'collar'>(group: K, ids: readonly string[], cur: string) => ids
+    .filter((x) => x === cur || (pb?.options?.[group] as Record<string, { active: boolean }> | undefined)?.[x]?.active !== false)
+    .map((x) => {
+      const c = (pb?.options?.[group] as Record<string, { name: string; price: number }> | undefined)?.[x];
+      return { id: x, label: `${c?.name ?? (group === 'sleeves' ? SLEEVE_LABEL[x as Sleeves] : COLLAR_LABEL[x as Collar])}${c?.price ? ` (${c.price > 0 ? '+' : '−'}${money(Math.abs(c.price), pb?.currency)})` : ''}` };
+    });
   const extraNum = Number(extra) || 0;
   const pinBad = method === 'ship' && pincode !== '' && !/^\d{6}$/.test(pincode);
   const request = useMemo(() => ({
-    garment, fabric, logos: logoCount(spec), lines: conv.lines, rush, coupon: coupon.trim().toUpperCase(),
+    garment, fabric, logos: logoCount(spec), sleeves: so.sleeves, collar: so.collar, lines: conv.lines, rush, coupon: coupon.trim().toUpperCase(),
     delivery: { method, pincode: method === 'ship' && /^\d{6}$/.test(pincode) ? pincode : '', state: method === 'ship' ? stateCode.trim().toUpperCase() : '' },
-  }), [garment, fabric, spec, conv.lines, rush, coupon, method, pincode, stateCode]);
+  }), [garment, fabric, spec, so.sleeves, so.collar, conv.lines, rush, coupon, method, pincode, stateCode]);
   const dReq = useDebounced(request, 400);
   const linesOk = !Object.keys(conv.errors).length;
   const preview = useLoad(() => (spec && linesOk ? post<Pricing>('/shop/quote', dReq) : Promise.resolve(null)), [JSON.stringify(dReq), !!spec, linesOk]);
@@ -166,20 +177,32 @@ export default function QuoteEditor() {
                   <dt>Sport</dt><dd>{label(String(spec.sport ?? ''))}</dd>
                   <dt>Team</dt><dd>{spec.typography?.team_name || '—'}</dd>
                   <dt>Logos</dt><dd>{logoCount(spec)}</dd>
+                  <dt>Sleeves</dt><dd>{garment === 'shorts' ? <span className="muted">—</span> : (
+                    <select className="sm" value={so.sleeves} disabled={!canEdit} onChange={(e) => setSpec({ ...spec, sleeves: e.target.value })} data-testid="quote-sleeves">
+                      {choices('sleeves', SLEEVES, so.sleeves).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+                    </select>)}</dd>
+                  <dt>Collar</dt><dd>{garment !== 'jersey' ? <span className="muted">{garment === 'vneck' ? 'V-neck' : '—'}</span> : (
+                    <select className="sm" value={so.collar} disabled={!canEdit} onChange={(e) => setSpec({ ...spec, collar: e.target.value })} data-testid="quote-collar">
+                      {choices('collar', COLLARS, so.collar).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+                    </select>)}</dd>
                 </dl>
               </div>
             )}
             {!spec && !canEdit && <div className="muted">No design.</div>}
           </Card>
 
-          <Card title={`Lines (${totalPieces(lines)} pieces)`} actions={canEdit && <><Button size="sm" onClick={() => setPasteOpen(true)}>Paste roster</Button><Button size="sm" icon={<IconPlus />} onClick={() => setLines((ls) => [...ls, blankLine(ls[ls.length - 1]?.size ?? 'M')])} data-testid="add-line">Add line</Button></>} flush>
+          <Card title={`Lines (${totalPieces(lines)} pieces)`} actions={canEdit && <><Button size="sm" onClick={() => setPasteOpen(true)}>Paste roster</Button><Button size="sm" icon={<IconPlus />} onClick={() => setLines((ls) => [...ls, blankLine(ls[ls.length - 1]?.size ?? 'M', ls[ls.length - 1]?.fit ?? 'men')])} data-testid="add-line">Add line</Button></>} flush>
             <div className="table-wrap">
               <table className="table compact" data-testid="quote-lines">
-                <thead><tr><th>Size</th><th>Player name</th><th>Number</th><th className="num">Quantity</th><th /></tr></thead>
+                <thead><tr><th>Fit</th><th>Size</th><th>Player name</th><th>Number</th><th className="num">Quantity</th><th /></tr></thead>
                 <tbody>
                   {lines.map((l, i) => (
                     <tr key={i}>
-                      <td style={{ width: 90 }}><select value={l.size} disabled={!canEdit} onChange={(e) => setLine(i, { size: e.target.value as EditLine['size'] })} data-testid={`line-size-${i}`}>{SIZES.map((s) => <option key={s}>{s}</option>)}</select></td>
+                      <td style={{ width: 130 }}><select value={l.fit} disabled={!canEdit} onChange={(e) => setLines((ls) => ls.map((x, j) => (j === i ? withFit(x, e.target.value as Fit, fitSizes) : x)))} data-testid={`line-fit-${i}`}>{FITS.map((x) => <option key={x} value={x}>{FIT_LABEL[x]}</option>)}</select></td>
+                      <td style={{ width: 90 }}><select value={l.size} disabled={!canEdit} onChange={(e) => setLine(i, { size: e.target.value as EditLine['size'] })} data-testid={`line-size-${i}`} className={conv.errors[`lines.${i}.size`] ? 'invalid' : ''} title={conv.errors[`lines.${i}.size`]}>
+                        {!fitSizes[l.fit].includes(l.size) && <option>{l.size}</option>}
+                        {fitSizes[l.fit].map((s) => <option key={s}>{s}</option>)}
+                      </select></td>
                       <td><input value={l.player_name} maxLength={16} disabled={!canEdit} placeholder="Optional" onChange={(e) => setLine(i, { player_name: e.target.value })} data-testid={`line-name-${i}`} className={conv.errors[`lines.${i}.player_name`] ? 'invalid' : ''} /></td>
                       <td style={{ width: 100 }}><input value={l.number} maxLength={3} inputMode="numeric" disabled={!canEdit} placeholder="—" onChange={(e) => setLine(i, { number: e.target.value })} data-testid={`line-number-${i}`} className={conv.errors[`lines.${i}.number`] ? 'invalid' : ''} title={conv.errors[`lines.${i}.number`]} /></td>
                       <td style={{ width: 110 }}><input className={`num ${conv.errors[`lines.${i}.quantity`] ? 'invalid' : ''}`} value={l.quantity} inputMode="numeric" disabled={!canEdit} onChange={(e) => setLine(i, { quantity: e.target.value })} data-testid={`line-qty-${i}`} title={conv.errors[`lines.${i}.quantity`]} /></td>
@@ -342,7 +365,7 @@ function PasteRoster({ open, onClose, onAdd }: { open: boolean; onClose: () => v
   return (
     <Modal open={open} title="Paste roster" onClose={onClose}
       footer={<><Button onClick={onClose}>Close</Button><Button onClick={() => onAdd(parsed.lines, false)} disabled={!parsed.lines.length}>Add {parsed.lines.length} lines</Button><Button variant="primary" onClick={() => onAdd(parsed.lines, true)} disabled={!parsed.lines.length}>Replace lines</Button></>}>
-      <Field label="One player per line" hint="Name, number, size, quantity — e.g. “Arul, 7, M” or “L x 10”. Name and number are optional.">
+      <Field label="One player per line" hint="Name, number, size, quantity — e.g. “Arul, 7, M”, “L x 10”, “Kavin, 5, 8Y” (kids) or “Divya, women, S”. Name and number are optional.">
         <textarea value={text} onChange={(e) => setText(e.target.value)} style={{ minHeight: 160, fontFamily: 'var(--mono)' }} />
       </Field>
       {parsed.bad.length > 0 && <Alert tone="warn">No size found on line {parsed.bad.join(', ')}. Those lines are skipped.</Alert>}

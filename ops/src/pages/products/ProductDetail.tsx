@@ -2,21 +2,27 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { DesignPreview } from '../../components/domain';
 import { Stars } from '../../components/marketplace';
-import { IconStar, IconTrash } from '../../components/icons';
+import { IconPlus, IconStar, IconTrash } from '../../components/icons';
 import { Alert, Badge, Button, Card, ErrorBox, Field, Loading, PageHeader, StatusBadge, TagInput, useToast } from '../../components/ui';
 import { api, get, patch, post } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { ApiError, errorsByPath } from '../../lib/errors';
 import { dateTime, GARMENT_LABEL, label, money0, num } from '../../lib/format';
-import { useAction, useLoad } from '../../lib/hooks';
+import { useAction, useDebounced, useLoad } from '../../lib/hooks';
 import { priceFrom } from '../../lib/marketplace';
 import { useRefData } from '../../lib/refdata';
 import { stableJson } from '../../lib/settingsForm';
-import { GARMENTS, type Garment, type Product } from '../../lib/types';
+import { cleanColourways, fullPalette, MAX_COLOURWAYS, newColourway, ROLE_LABEL, toColourwayId, validateColourways } from '../../lib/colourways';
+import { GARMENTS, PALETTE_ROLES, type Colourway, type Garment, type Product } from '../../lib/types';
 import { useSports } from './Products';
 
-interface Form { title: string; description: string; sport: string; garment: Garment; fabric: string; tags: string[]; featured: boolean }
-const toForm = (p: Product): Form => ({ title: p.title, description: p.description, sport: p.sport, garment: p.garment, fabric: p.fabric, tags: [...p.tags], featured: p.featured });
+interface Form { title: string; description: string; sport: string; garment: Garment; fabric: string; tags: string[]; featured: boolean; colourways: Colourway[] }
+const toForm = (p: Product): Form => ({ title: p.title, description: p.description, sport: p.sport, garment: p.garment, fabric: p.fabric, tags: [...p.tags], featured: p.featured,
+  colourways: (p.colourways ?? []).map((c) => ({ id: c.id, name: c.name, palette: fullPalette(c.palette) })) });
+
+function Swatches({ palette, small }: { palette: Record<string, string>; small?: boolean }) {
+  return <span className={`swatches ${small ? '' : 'lg'}`} aria-hidden>{PALETTE_ROLES.map((r) => <i key={r} style={{ background: palette[r], ...(small ? { width: 8, height: 14 } : {}) }} />)}</span>;
+}
 
 export default function ProductDetail() {
   const { id = '' } = useParams();
@@ -28,13 +34,18 @@ export default function ProductDetail() {
   const d = useLoad(() => get<Product>(`/ops/products/${id}`), [id]);
   const [f, setF] = useState<Form | null>(null);
   const [errs, setErrs] = useState<Record<string, string[]>>({});
+  const [shown, setShown] = useState('original');
   const { busy, run } = useAction();
   useEffect(() => { if (d.data) setF(toForm(d.data)); }, [d.data]);
   const canEdit = can('pricing');
   const p = d.data;
   const dirty = !!p && !!f && stableJson(f) !== stableJson(toForm(p));
   const fabrics = (settings?.price_book.value.fabrics ?? []).filter((x) => !f || x.garments.includes(f.garment));
-  const previewSpec = useMemo(() => (p && f ? { ...p.spec, garment: f.garment } : null), [p, f?.garment]); // eslint-disable-line react-hooks/exhaustive-deps
+  const shownCw = f?.colourways.find((c) => c.id === shown);
+  const cwPalette = shownCw ? JSON.stringify(shownCw.palette) : '';
+  const previewSpec = useMemo(() => (p && f ? { ...p.spec, garment: f.garment, ...(shownCw ? { palette: { ...p.spec.palette, ...shownCw.palette } } : {}) } : null), [p, f?.garment, cwPalette]); // eslint-disable-line react-hooks/exhaustive-deps
+  const shownSpec = useDebounced(previewSpec, 300);
+  const cwErrors = useMemo(() => errorsByPath(f ? validateColourways(f.colourways) : []), [f]);
 
   if (d.error && !p) return <ErrorBox error={d.error} onRetry={d.reload} />;
   if (!p || !f) return <Loading />;
@@ -42,10 +53,14 @@ export default function ProductDetail() {
   const pb = settings?.price_book.value;
   const from = pb ? priceFrom(pb, sellers, f.garment, f.fabric) : null;
 
+  const cwChanged = stableJson(f.colourways) !== stableJson(toForm(p).colourways);
+  const cwBad = Object.keys(cwErrors).length > 0;
+  const cwErr = (path: string) => [...(cwErrors[path] ?? []), ...(errs[path] ?? [])];
   const save = () => run('save', async () => {
     setErrs({});
     const body: Record<string, unknown> = { title: f.title.trim(), description: f.description.trim(), sport: f.sport, tags: f.tags, fabric: f.fabric, featured: f.featured };
     if (f.garment !== p.garment) body.spec = { ...p.spec, garment: f.garment };
+    if (cwChanged) body.colourways = cleanColourways(f.colourways);
     const out = await patch<Product>(`/ops/products/${p.id}`, body);
     d.setData(out);
     toast.success('Product saved.');
@@ -75,9 +90,10 @@ export default function ProductDetail() {
           <Button variant="danger" icon={<IconTrash />} busy={busy === 'del'} onClick={remove}>Delete</Button>
         </>} />
       <div className="grid grid-main" style={{ alignItems: 'start' }}>
+        <div className="stack" style={{ gap: 16 }}>
         <Card title="Details" footer={canEdit && <div className="row" style={{ justifyContent: 'flex-end' }}>
           <Button disabled={!dirty} onClick={() => { setF(toForm(p)); setErrs({}); }}>Discard</Button>
-          <Button variant="primary" disabled={!dirty || f.title.trim().length < 2} busy={busy === 'save'} onClick={save} data-testid="product-save">Save</Button>
+          <Button variant="primary" disabled={!dirty || f.title.trim().length < 2 || cwBad} busy={busy === 'save'} onClick={save} data-testid="product-save">Save</Button>
         </div>}>
           {!canEdit && <div style={{ marginBottom: 12 }}><Alert>Read only: editing products needs the pricing permission.</Alert></div>}
           <fieldset disabled={!canEdit} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
@@ -112,9 +128,67 @@ export default function ProductDetail() {
             </div>
           </fieldset>
         </Card>
+        <Card title={`Colourways (${f.colourways.length + 1})`} actions={canEdit && <Button size="sm" icon={<IconPlus />} disabled={f.colourways.length >= MAX_COLOURWAYS}
+            title={f.colourways.length >= MAX_COLOURWAYS ? `At most ${MAX_COLOURWAYS} besides the original` : ''}
+            onClick={() => { const c = newColourway(f.colourways, p.spec.palette); set('colourways', [...f.colourways, c]); setShown(c.id); }} data-testid="cw-add">Add colourway</Button>}
+          footer={canEdit && cwChanged && <div className="row" style={{ justifyContent: 'flex-end' }}>
+            <span className="muted small" style={{ marginRight: 'auto' }}>{cwBad ? 'Fix the marked values to save.' : 'Colourway changes are saved with the product.'}</span>
+            <Button onClick={() => set('colourways', toForm(p).colourways)}>Discard</Button>
+            <Button variant="primary" disabled={!dirty || f.title.trim().length < 2 || cwBad} busy={busy === 'save'} onClick={save} data-testid="cw-save">Save</Button>
+          </div>}>
+          <fieldset disabled={!canEdit} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }} className="stack tight" data-testid="colourways">
+            <p className="muted small" style={{ margin: 0 }}>Customers pick a colourway in the store; the design stays the same with these colours. The original colours are always offered. Up to {MAX_COLOURWAYS} more.</p>
+            <div className={`cw-row ${shown === 'original' ? 'on' : ''}`}>
+              <div><b>Original</b><div className="muted small">original</div></div>
+              <Swatches palette={fullPalette(p.spec.palette)} />
+              <span />
+              <Button size="xs" onClick={() => setShown('original')} data-testid="cw-preview-original">Preview</Button>
+            </div>
+            {f.colourways.map((c, i) => {
+              const upd = (patch: Partial<Colourway>) => set('colourways', f.colourways.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+              return (
+                <div key={i} className={`cw-row ${shown === c.id ? 'on' : ''}`} data-testid={`cw-row-${i}`}>
+                  <div className="stack tight">
+                    <Field label="Name" errors={cwErr(`colourways.${i}.name`).length ? cwErr(`colourways.${i}.name`) : undefined}>
+                      <input value={c.name} maxLength={40} onChange={(e) => {
+                        const name = e.target.value;
+                        // Keep the id in step with the name until someone edits the id by hand.
+                        const auto = c.id === toColourwayId(c.name) || /^colourway-\d+$/.test(c.id);
+                        upd({ name, ...(auto && toColourwayId(name).length >= 2 ? { id: toColourwayId(name) } : {}) });
+                      }} data-testid={`cw-name-${i}`} />
+                    </Field>
+                    <Field label="ID" errors={[...cwErr(`colourways.${i}.id`), ...cwErr(`colourways.${i}`)].length ? [...cwErr(`colourways.${i}.id`), ...cwErr(`colourways.${i}`)] : undefined}>
+                      <input value={c.id} maxLength={31} className="mono" onChange={(e) => upd({ id: e.target.value.toLowerCase() })} data-testid={`cw-id-${i}`} />
+                    </Field>
+                  </div>
+                  <div className="cw-colours">
+                    {PALETTE_ROLES.map((r) => (
+                      <label key={r}>{ROLE_LABEL[r]}
+                        <input type="color" value={c.palette[r]} onChange={(e) => { upd({ palette: { ...c.palette, [r]: e.target.value } }); setShown(c.id); }} data-testid={`cw-${i}-${r}`} />
+                        <span className="mono">{c.palette[r]}</span>
+                      </label>
+                    ))}
+                    {PALETTE_ROLES.some((r) => cwErr(`colourways.${i}.palette.${r}`).length) && <div className="small bad-text">{PALETTE_ROLES.flatMap((r) => cwErr(`colourways.${i}.palette.${r}`))[0]}</div>}
+                  </div>
+                  <Button size="xs" onClick={() => setShown(c.id)} data-testid={`cw-preview-${i}`}>Preview</Button>
+                  <button type="button" className="icon-btn" aria-label={`Remove ${c.name || c.id}`} onClick={() => { set('colourways', f.colourways.filter((_, j) => j !== i)); if (shown === c.id) setShown('original'); }} data-testid={`cw-remove-${i}`}><IconTrash /></button>
+                </div>
+              );
+            })}
+            {cwErr('colourways').length > 0 && <div className="small bad-text">{cwErr('colourways').join(' ')}</div>}
+          </fieldset>
+        </Card>
+      </div>
         <div className="stack" style={{ gap: 16 }}>
-          <Card title="Mock-up" actions={<span className="muted small">{p.spec.style_name}</span>}>
-            {previewSpec && <DesignPreview spec={previewSpec} height={300} alt={p.title} />}
+          <Card title="Mock-up" actions={<span className="muted small">{p.spec.style_name}{shownCw ? ` · ${shownCw.name}` : ''}</span>}>
+            {shownSpec && <DesignPreview spec={shownSpec} height={300} alt={p.title} />}
+            <div className="row tight" style={{ marginTop: 8 }} data-testid="cw-swatches">
+              {[{ id: 'original', name: 'Original', palette: fullPalette(p.spec.palette) }, ...f.colourways].map((c) => (
+                <button key={c.id} type="button" className={`btn xs ${shown === c.id ? 'primary' : ''}`} onClick={() => setShown(c.id)} title={c.name}>
+                  <Swatches palette={c.palette} small />{c.name}
+                </button>
+              ))}
+            </div>
             {p.colours.length > 0 && <div className="row tight" style={{ marginTop: 8 }}>{p.colours.map((c) => <span key={c} className="tag">{c}</span>)}</div>}
           </Card>
           <Card title="In the store">

@@ -2,14 +2,15 @@ import { useMemo, useState } from 'react';
 import { Link, Navigate, Route, Routes, useNavigate, useSearchParams } from 'react-router-dom';
 import { OrderFlags, stageColor } from '../../components/domain';
 import { SellerFilter, useSellerParam, withSeller } from '../../components/marketplace';
-import { IconPrint, IconRefresh } from '../../components/icons';
+import { IconDownload, IconPrint, IconRefresh } from '../../components/icons';
 import { Alert, Badge, Button, Card, Empty, ErrorBox, Loading, PageHeader, Tabs, useToast } from '../../components/ui';
-import { get, post } from '../../lib/api';
+import { download, get, post } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { addDays, day, num, shortDay, weekday } from '../../lib/format';
 import { useAction, useLoad } from '../../lib/hooks';
 import { useRefData } from '../../lib/refdata';
-import type { Order, Plan } from '../../lib/types';
+import { fitSize, MEASUREMENT_SHEET, printFileRequest } from '../../lib/production';
+import type { Fit, Order, Plan } from '../../lib/types';
 
 interface StageCfg { id: string; name: string; capacity_per_day: number; fixed_days: number }
 
@@ -262,10 +263,17 @@ function Capacity() {
 // ------------------------------------------------------------------ worklist
 
 interface Work { stage: string; day: string; items: { order_id: string; number?: string; customer: string; pieces: number; rush: boolean; start: string; end: string;
-  lines: { line: number; size: string; quantity: number; player_name: string; number: string }[]; files: string[] }[] }
+  lines: { line: number; fit?: Fit; size: string; quantity: number; player_name: string; number: string }[]; files: string[] }[] }
 
 function Worklist() {
   const nav = useNavigate();
+  const toast = useToast();
+  const { can } = useAuth();
+  const { busy, run } = useAction();
+  const sheet = (orderId: string, number?: string) => run(`sheet-${orderId}`, () => {
+    const r = printFileRequest(orderId, MEASUREMENT_SHEET, can('production'));
+    return download(r.path, `${number ?? orderId}_measurements.svg`, { method: r.method });
+  }, toast.error);
   const [params, setParams] = useSearchParams();
   const [seller] = useSellerParam();
   const plan = useLoad(() => get<{ today: string; stages: StageCfg[] }>('/ops/production/plan', { seller_id: seller || undefined }), [seller]);
@@ -293,7 +301,7 @@ function Worklist() {
         <>
           <p className="muted" style={{ marginTop: 0 }}>{w.items.length} orders · {num(pieces)} pieces · express first</p>
           <table className="table compact" data-testid="worklist">
-            <thead><tr><th>Order</th><th>Customer</th><th className="num">Pieces</th><th>Window</th><th>Lines</th>{(stage === 'prepress' || stage === 'print') && <th>Files</th>}</tr></thead>
+            <thead><tr><th>Order</th><th>Customer</th><th className="num">Pieces</th><th>Window</th><th>Lines</th>{(stage === 'prepress' || stage === 'print') && <th>Files</th>}<th className="no-print">Measurements</th></tr></thead>
             <tbody>
               {w.items.map((i) => (
                 <tr key={i.order_id} className="clickable" onClick={() => nav(`/orders/${i.order_id}`)}>
@@ -301,8 +309,11 @@ function Worklist() {
                   <td>{i.customer}</td>
                   <td className="num">{num(i.pieces)}</td>
                   <td className="nowrap">{shortDay(i.start)}{i.end !== i.start && ` – ${shortDay(i.end)}`}</td>
-                  <td className="small">{i.lines.map((l) => `${l.size}×${l.quantity}${l.player_name ? ` ${l.player_name}` : ''}${l.number ? ` #${l.number}` : ''}`).join(' · ')}</td>
-                  {(stage === 'prepress' || stage === 'print') && <td className="small muted">{i.files.length} SVG</td>}
+                  <td className="small">{i.lines.map((l) => `${fitSize(l)}×${l.quantity}${l.player_name ? ` ${l.player_name}` : ''}${l.number ? ` #${l.number}` : ''}`).join(' · ')}</td>
+                  {(stage === 'prepress' || stage === 'print') && <td className="small muted">{i.files.length} SVG + sheet</td>}
+                  <td className="no-print" onClick={(e) => e.stopPropagation()}>
+                    <Button size="xs" icon={<IconDownload />} busy={busy === `sheet-${i.order_id}`} onClick={() => sheet(i.order_id, i.number)} data-testid="worklist-sheet">Sheet</Button>
+                  </td>
                 </tr>
               ))}
             </tbody>

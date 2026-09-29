@@ -4,11 +4,14 @@ import { get } from './api';
 import { useAuth } from './auth';
 import { actorName } from './format';
 import type { Company, CrmConfig, Delivery, PriceBook, Production } from './settingsForm';
+import type { Sizing } from './sizingForm';
 import type { Seller, Staff, Versioned } from './types';
 
 export interface AllSettings {
   price_book: Versioned<PriceBook>; production: Versioned<Production>; delivery: Versioned<Delivery>;
   company: Versioned<Company>; crm: Versioned<CrmConfig>;
+  /** Size charts (servers from before fits have none). */
+  sizing?: Versioned<Sizing>;
 }
 
 interface Ref {

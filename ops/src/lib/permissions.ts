@@ -2,7 +2,7 @@
 
 export type Permission = 'read' | 'orders' | 'pricing' | 'production' | 'delivery' | 'crm' | 'settings' | 'quotes' | 'staff' | 'seller';
 export type Role = 'admin' | 'manager' | 'sales' | 'production' | 'dispatch' | 'viewer' | 'seller';
-export type SettingsSection = 'price_book' | 'production' | 'delivery' | 'company' | 'crm';
+export type SettingsSection = 'price_book' | 'production' | 'sizing' | 'delivery' | 'company' | 'crm';
 
 export const ROLE_LABEL: Record<Role, string> = {
   admin: 'Admin', manager: 'Manager', sales: 'Sales', production: 'Production', dispatch: 'Dispatch', viewer: 'Viewer', seller: 'Seller',
@@ -12,7 +12,7 @@ export const ROLE_HELP: Record<Role, string> = {
   admin: 'Everything, including staff accounts.',
   manager: 'Orders, prices, production, delivery, CRM and all settings.',
   sales: 'Orders (payments, notes, holds), CRM and quotes.',
-  production: 'Production stages and production settings.',
+  production: 'Production stages, production settings and size charts.',
   dispatch: 'Shipments and delivery settings.',
   viewer: 'Read only.',
   seller: "A partner unit's own login: only that seller's orders, production, shipments, returns and cash on delivery.",
@@ -39,7 +39,7 @@ export function isSellerLogin(perms: readonly string[] | undefined): boolean {
 }
 
 export function sectionPermission(section: SettingsSection): Permission {
-  return ({ price_book: 'pricing', production: 'production', delivery: 'delivery' } as const)[section as 'price_book'] ?? 'settings';
+  return ({ price_book: 'pricing', production: 'production', sizing: 'production', delivery: 'delivery' } as const)[section as 'price_book'] ?? 'settings';
 }
 
 /** Same rule as PUT /ops/settings/{section}: the section's permission or "settings". */

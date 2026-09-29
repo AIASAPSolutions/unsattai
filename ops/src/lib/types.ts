@@ -3,8 +3,35 @@ import type { Role } from './permissions';
 
 export type Garment = 'jersey' | 'vneck' | 'shorts';
 export const GARMENTS: Garment[] = ['jersey', 'vneck', 'shorts'];
-export const SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL'] as const;
+/** Every size of every fit, in chart order (server engine/sizing.py). */
+export const SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', '4Y', '6Y', '8Y', '10Y', '12Y', '14Y'] as const;
 export type Size = (typeof SIZES)[number];
+export const ADULT_SIZES: readonly Size[] = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL'];
+export const KIDS_SIZES: readonly Size[] = ['4Y', '6Y', '8Y', '10Y', '12Y', '14Y'];
+
+/** Size charts per order line. The size list of each fit is fixed; GET /meta `fit_sizes` has the same lists. */
+export const FITS = ['men', 'women', 'kids'] as const;
+export type Fit = (typeof FITS)[number];
+export const FIT_SIZES: Record<Fit, readonly Size[]> = {
+  men: ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL'],
+  women: ['XS', 'S', 'M', 'L', 'XL', 'XXL'],
+  kids: ['4Y', '6Y', '8Y', '10Y', '12Y', '14Y'],
+};
+export const FIT_LABEL: Record<Fit, string> = { men: 'Men / unisex', women: 'Women', kids: 'Kids' };
+/** The size a new line of this fit starts at. */
+export const FIT_DEFAULT_SIZE: Record<Fit, Size> = { men: 'M', women: 'M', kids: '8Y' };
+
+/** Garment options (spec.sleeves, spec.collar). Sleeves don't apply to shorts; collars only to the crew-neck jersey. */
+export const SLEEVES = ['short', 'long', 'none'] as const;
+export type Sleeves = (typeof SLEEVES)[number];
+export const SLEEVE_LABEL: Record<Sleeves, string> = { short: 'Short sleeves', long: 'Long sleeves', none: 'Sleeveless' };
+export const COLLARS = ['crew', 'polo', 'mandarin'] as const;
+export type Collar = (typeof COLLARS)[number];
+export const COLLAR_LABEL: Record<Collar, string> = { crew: 'Crew neck', polo: 'Polo collar', mandarin: 'Mandarin collar' };
+export interface OrderOptions { sleeves?: Sleeves; collar?: Collar }
+
+/** Finished garment measurements of a line (cm): tops have chest, length, shoulder (and sleeve); shorts waist, hip, length. */
+export type Measurements = Partial<Record<'chest' | 'length' | 'shoulder' | 'sleeve' | 'waist' | 'hip', number>>;
 export const FULFILMENT = ['awaiting_payment', 'queued', 'in_production', 'ready', 'dispatched', 'delivered', 'cancelled'] as const;
 export type Fulfilment = (typeof FULFILMENT)[number];
 export const PAYMENT_METHODS = ['cash', 'upi', 'bank_transfer', 'card', 'cheque', 'demo'] as const;
@@ -29,10 +56,12 @@ export interface OrderSummary {
   product_id?: string | null; cod_collected?: boolean | null;
 }
 
-export interface PriceParts { garment: number; fabric: number; logos: number; size: number; name: number; number: number }
+export interface PriceParts { garment: number; fabric: number; logos: number; size: number; name: number; number: number; sleeves?: number; collar?: number; fit?: number }
+export interface OptionPrice { id: string; name: string; price: number }
 export interface Pricing {
   currency: string; price_book_version: number | 'draft'; garment: Garment; fabric: { id: string; name: string };
-  lines: { line: number; size: Size; quantity: number; player_name: string; number: string; unit_price: number; line_total: number; parts: PriceParts }[];
+  lines: { line: number; fit?: Fit; size: Size; quantity: number; player_name: string; number: string; unit_price: number; line_total: number; parts: PriceParts }[];
+  options?: { sleeves?: OptionPrice; collar?: OptionPrice };
   pieces: number; subtotal: number;
   quantity_discount: { min: number; rate: number; amount: number; next: { min: number; rate: number; pieces_needed: number } | null };
   rush: { selected: boolean; amount: number; rate: number; label: string };
@@ -52,10 +81,14 @@ export interface StageState { id: string; name: string; done_at: string | null; 
 export interface Address { name?: string; phone?: string; line1: string; line2?: string; city: string; state: string; pincode: string }
 export interface Order {
   id: string; number?: string; created_at: string; status: string; design_id?: string; spec: Spec; garment: Garment;
-  lines: { line: number; size: Size; quantity: number; player_name: string; number: string; files?: string[] }[];
+  lines: OrderLine[];
+  /** Sleeves and collar the order is made with (empty for shorts). */
+  options?: OrderOptions;
+  /** Production sheets besides the per-piece print files, e.g. "measurements.svg". */
+  sheets?: string[];
   total_pieces: number; customer: { name: string; phone: string; email?: string }; customer_id?: string; channel?: string;
   checks?: { level: string; message?: string; code?: string }[]; manufacturing_ready?: boolean;
-  files: { name: string; line: number; size: Size; panel: string; player_name: string; number: string }[];
+  files: { name: string; line: number; fit?: Fit; size: Size; panel: string; player_name: string; number: string }[];
   payment: null | { demo: boolean; method: string; reference: string; amount?: number; confirmed_at: string; recorded_by?: string; note?: string;
     collected?: boolean; collected_at?: string | null; collected_by?: string };
   factory?: Record<string, unknown> | null;
@@ -71,6 +104,14 @@ export interface Order {
   seller?: { id: string; name: string }; checkout_id?: string | null; payment_method?: 'online' | 'cod'; product_id?: string | null;
   refunds?: { id: string; amount: number; at: string; method: string; note: string }[];
   review?: { id: string; rating: number; title: string; body: string; created_at: string; hidden: boolean } | null;
+}
+
+export interface OrderLine {
+  line: number; fit?: Fit; size: Size; quantity: number; player_name: string; number: string; files?: string[];
+  /** Finished garment measurements in cm (from the size chart when the order was placed). */
+  measurements?: Measurements;
+  /** Flat pattern piece sizes in mm, width and height, before bleed: {front: [w, h], ...}. */
+  pieces_mm?: Record<string, [number, number]>;
 }
 
 export interface PlanStage { id: string; name: string; start: string; end: string; pieces: number }
@@ -107,7 +148,7 @@ export interface Activity {
   id: string; kind: (typeof ACTIVITY_KINDS)[number]; subject: string; body: string; due_at: string | null; owner: string;
   done: boolean; done_at: string | null; created_by: string; created_at?: string;
 }
-export interface QuoteLine { size: Size; quantity: number; player_name: string; number: string }
+export interface QuoteLine { fit?: Fit; size: Size; quantity: number; player_name: string; number: string }
 export interface Quote {
   id: string; number: string; customer_id: string; lead_id: string; title: string; spec: Spec; design_id: string; garment: Garment;
   fabric: string; lines: QuoteLine[]; delivery: { method: 'ship' | 'pickup'; pincode: string; state: string }; rush: boolean;
@@ -144,10 +185,15 @@ export interface PincodeCheck {
 
 export interface Product {
   id: string; slug: string; title: string; description: string; sport: string; garment: Garment; spec: Spec; tags: string[];
-  colours: string[]; fabric: string; featured: boolean; status: 'draft' | 'published'; orders_count: number; rating: Rating;
+  colours: string[]; fabric: string; colourways?: Colourway[]; featured: boolean; status: 'draft' | 'published'; orders_count: number; rating: Rating;
   source: { kind: 'spec' | 'brief' | 'order' | 'quote' | 'seed'; ref?: string }; published_at: string | null;
   created_at?: string; updated_at?: string;
 }
+
+/** Another colour choice of a product; "original" (the product's own palette) is implied and never stored. */
+export const PALETTE_ROLES = ['primary', 'secondary', 'accent', 'trim', 'text'] as const;
+export type PaletteRole = (typeof PALETTE_ROLES)[number];
+export interface Colourway { id: string; name: string; palette: Record<PaletteRole, string> }
 
 export interface Review {
   id: string; order_id: string; product_id: string; seller_id: string; seller_name?: string; customer_id: string; customer_name: string;

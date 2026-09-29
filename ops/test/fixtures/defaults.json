@@ -1,341 +1,821 @@
 {
- "price_book": {
-  "currency": "INR",
-  "garments": {
-   "jersey": {
-    "name": "Crew-neck jersey",
-    "base": 499
-   },
-   "vneck": {
-    "name": "V-neck jersey",
-    "base": 549
-   },
-   "shorts": {
-    "name": "Shorts",
-    "base": 349
-   }
+  "sizing": {
+    "unit": "cm",
+    "tolerance_cm": 1.0,
+    "note": "Garment measurements, laid flat. Chest, waist and hip are measured across (half the circumference). Length is from the highest point of the shoulder to the hem.",
+    "fits": {
+      "men": {
+        "name": "Men / unisex",
+        "sizes": [
+          {
+            "size": "XS",
+            "body_chest": [
+              84,
+              89
+            ],
+            "height": null,
+            "top": {
+              "chest": 46,
+              "length": 67,
+              "shoulder": 42,
+              "sleeve_short": 18,
+              "sleeve_long": 58
+            },
+            "shorts": {
+              "waist": 34,
+              "hip": 50,
+              "length": 43
+            }
+          },
+          {
+            "size": "S",
+            "body_chest": [
+              90,
+              95
+            ],
+            "height": null,
+            "top": {
+              "chest": 49,
+              "length": 70,
+              "shoulder": 44,
+              "sleeve_short": 19,
+              "sleeve_long": 60
+            },
+            "shorts": {
+              "waist": 36,
+              "hip": 52,
+              "length": 44
+            }
+          },
+          {
+            "size": "M",
+            "body_chest": [
+              96,
+              101
+            ],
+            "height": null,
+            "top": {
+              "chest": 52,
+              "length": 72,
+              "shoulder": 46,
+              "sleeve_short": 20,
+              "sleeve_long": 62
+            },
+            "shorts": {
+              "waist": 38,
+              "hip": 54,
+              "length": 45
+            }
+          },
+          {
+            "size": "L",
+            "body_chest": [
+              102,
+              107
+            ],
+            "height": null,
+            "top": {
+              "chest": 55,
+              "length": 74,
+              "shoulder": 48,
+              "sleeve_short": 21,
+              "sleeve_long": 64
+            },
+            "shorts": {
+              "waist": 40,
+              "hip": 56,
+              "length": 46
+            }
+          },
+          {
+            "size": "XL",
+            "body_chest": [
+              108,
+              113
+            ],
+            "height": null,
+            "top": {
+              "chest": 58,
+              "length": 76,
+              "shoulder": 50,
+              "sleeve_short": 22,
+              "sleeve_long": 65
+            },
+            "shorts": {
+              "waist": 43,
+              "hip": 58,
+              "length": 47
+            }
+          },
+          {
+            "size": "XXL",
+            "body_chest": [
+              114,
+              119
+            ],
+            "height": null,
+            "top": {
+              "chest": 61,
+              "length": 78,
+              "shoulder": 52,
+              "sleeve_short": 23,
+              "sleeve_long": 66
+            },
+            "shorts": {
+              "waist": 46,
+              "hip": 60,
+              "length": 48
+            }
+          },
+          {
+            "size": "3XL",
+            "body_chest": [
+              120,
+              127
+            ],
+            "height": null,
+            "top": {
+              "chest": 64,
+              "length": 80,
+              "shoulder": 54,
+              "sleeve_short": 24,
+              "sleeve_long": 67
+            },
+            "shorts": {
+              "waist": 49,
+              "hip": 62,
+              "length": 49
+            }
+          }
+        ]
+      },
+      "women": {
+        "name": "Women",
+        "sizes": [
+          {
+            "size": "XS",
+            "body_chest": [
+              78,
+              82
+            ],
+            "height": null,
+            "top": {
+              "chest": 42,
+              "length": 62,
+              "shoulder": 36,
+              "sleeve_short": 15,
+              "sleeve_long": 56
+            },
+            "shorts": {
+              "waist": 32,
+              "hip": 48,
+              "length": 36
+            }
+          },
+          {
+            "size": "S",
+            "body_chest": [
+              83,
+              87
+            ],
+            "height": null,
+            "top": {
+              "chest": 44.5,
+              "length": 64,
+              "shoulder": 37.5,
+              "sleeve_short": 16,
+              "sleeve_long": 57
+            },
+            "shorts": {
+              "waist": 34,
+              "hip": 50,
+              "length": 37
+            }
+          },
+          {
+            "size": "M",
+            "body_chest": [
+              88,
+              92
+            ],
+            "height": null,
+            "top": {
+              "chest": 47,
+              "length": 66,
+              "shoulder": 39,
+              "sleeve_short": 17,
+              "sleeve_long": 58
+            },
+            "shorts": {
+              "waist": 36,
+              "hip": 52,
+              "length": 38
+            }
+          },
+          {
+            "size": "L",
+            "body_chest": [
+              93,
+              98
+            ],
+            "height": null,
+            "top": {
+              "chest": 49.5,
+              "length": 68,
+              "shoulder": 40.5,
+              "sleeve_short": 18,
+              "sleeve_long": 59
+            },
+            "shorts": {
+              "waist": 38,
+              "hip": 54,
+              "length": 39
+            }
+          },
+          {
+            "size": "XL",
+            "body_chest": [
+              99,
+              105
+            ],
+            "height": null,
+            "top": {
+              "chest": 52,
+              "length": 70,
+              "shoulder": 42,
+              "sleeve_short": 19,
+              "sleeve_long": 60
+            },
+            "shorts": {
+              "waist": 40,
+              "hip": 56,
+              "length": 40
+            }
+          },
+          {
+            "size": "XXL",
+            "body_chest": [
+              106,
+              112
+            ],
+            "height": null,
+            "top": {
+              "chest": 55,
+              "length": 72,
+              "shoulder": 43.5,
+              "sleeve_short": 20,
+              "sleeve_long": 61
+            },
+            "shorts": {
+              "waist": 43,
+              "hip": 58,
+              "length": 41
+            }
+          }
+        ]
+      },
+      "kids": {
+        "name": "Kids",
+        "sizes": [
+          {
+            "size": "4Y",
+            "body_chest": [
+              54,
+              58
+            ],
+            "height": [
+              98,
+              110
+            ],
+            "top": {
+              "chest": 32,
+              "length": 44,
+              "shoulder": 28,
+              "sleeve_short": 11,
+              "sleeve_long": 36
+            },
+            "shorts": {
+              "waist": 25,
+              "hip": 34,
+              "length": 28
+            }
+          },
+          {
+            "size": "6Y",
+            "body_chest": [
+              58,
+              62
+            ],
+            "height": [
+              110,
+              122
+            ],
+            "top": {
+              "chest": 34,
+              "length": 48,
+              "shoulder": 30,
+              "sleeve_short": 12,
+              "sleeve_long": 40
+            },
+            "shorts": {
+              "waist": 26,
+              "hip": 36,
+              "length": 30
+            }
+          },
+          {
+            "size": "8Y",
+            "body_chest": [
+              62,
+              67
+            ],
+            "height": [
+              122,
+              134
+            ],
+            "top": {
+              "chest": 36,
+              "length": 52,
+              "shoulder": 32,
+              "sleeve_short": 13,
+              "sleeve_long": 44
+            },
+            "shorts": {
+              "waist": 27,
+              "hip": 38,
+              "length": 32
+            }
+          },
+          {
+            "size": "10Y",
+            "body_chest": [
+              67,
+              72
+            ],
+            "height": [
+              134,
+              146
+            ],
+            "top": {
+              "chest": 38,
+              "length": 56,
+              "shoulder": 34,
+              "sleeve_short": 14,
+              "sleeve_long": 48
+            },
+            "shorts": {
+              "waist": 28,
+              "hip": 40,
+              "length": 34
+            }
+          },
+          {
+            "size": "12Y",
+            "body_chest": [
+              72,
+              77
+            ],
+            "height": [
+              146,
+              158
+            ],
+            "top": {
+              "chest": 41,
+              "length": 60,
+              "shoulder": 36,
+              "sleeve_short": 15,
+              "sleeve_long": 52
+            },
+            "shorts": {
+              "waist": 30,
+              "hip": 43,
+              "length": 36
+            }
+          },
+          {
+            "size": "14Y",
+            "body_chest": [
+              77,
+              82
+            ],
+            "height": [
+              158,
+              170
+            ],
+            "top": {
+              "chest": 44,
+              "length": 64,
+              "shoulder": 38,
+              "sleeve_short": 16,
+              "sleeve_long": 55
+            },
+            "shorts": {
+              "waist": 32,
+              "hip": 46,
+              "length": 38
+            }
+          }
+        ]
+      }
+    }
   },
-  "fabrics": [
-   {
-    "id": "standard",
-    "name": "Dri-fit polyester, 140 GSM",
-    "surcharge": 0,
-    "garments": [
-     "jersey",
-     "vneck",
-     "shorts"
+  "price_book": {
+    "currency": "INR",
+    "garments": {
+      "jersey": {
+        "name": "Crew-neck jersey",
+        "base": 499
+      },
+      "vneck": {
+        "name": "V-neck jersey",
+        "base": 549
+      },
+      "shorts": {
+        "name": "Shorts",
+        "base": 349
+      }
+    },
+    "fabrics": [
+      {
+        "id": "standard",
+        "name": "Dri-fit polyester, 140 GSM",
+        "surcharge": 0,
+        "garments": [
+          "jersey",
+          "vneck",
+          "shorts"
+        ]
+      },
+      {
+        "id": "premium",
+        "name": "Micro-mesh polyester, 160 GSM",
+        "surcharge": 120,
+        "garments": [
+          "jersey",
+          "vneck",
+          "shorts"
+        ]
+      },
+      {
+        "id": "pro",
+        "name": "Lycra blend, 180 GSM",
+        "surcharge": 220,
+        "garments": [
+          "jersey",
+          "vneck"
+        ]
+      }
+    ],
+    "size_surcharge": {
+      "XS": 0,
+      "S": 0,
+      "M": 0,
+      "L": 0,
+      "XL": 0,
+      "XXL": 60,
+      "3XL": 90,
+      "4Y": 0,
+      "6Y": 0,
+      "8Y": 0,
+      "10Y": 0,
+      "12Y": 0,
+      "14Y": 0
+    },
+    "options": {
+      "sleeves": {
+        "short": {
+          "name": "Short sleeves",
+          "price": 0,
+          "active": true
+        },
+        "long": {
+          "name": "Long sleeves",
+          "price": 60,
+          "active": true
+        },
+        "none": {
+          "name": "Sleeveless",
+          "price": -20,
+          "active": true
+        }
+      },
+      "collar": {
+        "crew": {
+          "name": "Crew neck",
+          "price": 0,
+          "active": true
+        },
+        "polo": {
+          "name": "Polo collar with buttons",
+          "price": 90,
+          "active": true
+        },
+        "mandarin": {
+          "name": "Mandarin collar",
+          "price": 50,
+          "active": true
+        }
+      },
+      "fit": {
+        "men": {
+          "name": "Men / unisex",
+          "price": 0,
+          "active": true
+        },
+        "women": {
+          "name": "Women",
+          "price": 0,
+          "active": true
+        },
+        "kids": {
+          "name": "Kids",
+          "price": -60,
+          "active": true
+        }
+      }
+    },
+    "personalisation": {
+      "name": 40,
+      "number": 30
+    },
+    "logo_per_piece": 25,
+    "quantity_tiers": [
+      {
+        "min": 1,
+        "discount": 0.0
+      },
+      {
+        "min": 10,
+        "discount": 0.05
+      },
+      {
+        "min": 25,
+        "discount": 0.1
+      },
+      {
+        "min": 50,
+        "discount": 0.15
+      },
+      {
+        "min": 100,
+        "discount": 0.2
+      }
+    ],
+    "minimum_pieces": 1,
+    "rush": {
+      "enabled": true,
+      "fee_rate": 0.25,
+      "label": "Express production"
+    },
+    "tax": {
+      "name": "GST",
+      "rate": 0.05,
+      "rate_above": 0.12,
+      "threshold_per_piece": 1000,
+      "inclusive": false
+    },
+    "coupons": [
+      {
+        "code": "WELCOME10",
+        "kind": "percent",
+        "value": 10,
+        "max_discount": 500,
+        "min_subtotal": 1000,
+        "active": true,
+        "expires": null,
+        "note": "First order",
+        "public": true,
+        "title": "10% off orders above 1000 (up to 500)"
+      }
+    ],
+    "cod": {
+      "enabled": true,
+      "fee": 49,
+      "max_order_value": 20000
+    }
+  },
+  "production": {
+    "timezone": "Asia/Kolkata",
+    "working_days": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "holidays": [],
+    "daily_cutoff_hour": 14,
+    "stages": [
+      {
+        "id": "prepress",
+        "name": "Artwork and print files",
+        "capacity_per_day": 2000,
+        "fixed_days": 0
+      },
+      {
+        "id": "print",
+        "name": "Sublimation printing",
+        "capacity_per_day": 400,
+        "fixed_days": 0
+      },
+      {
+        "id": "press",
+        "name": "Heat press",
+        "capacity_per_day": 400,
+        "fixed_days": 1
+      },
+      {
+        "id": "cut",
+        "name": "Cutting",
+        "capacity_per_day": 500,
+        "fixed_days": 0
+      },
+      {
+        "id": "stitch",
+        "name": "Stitching",
+        "capacity_per_day": 250,
+        "fixed_days": 1
+      },
+      {
+        "id": "qc",
+        "name": "Quality check",
+        "capacity_per_day": 600,
+        "fixed_days": 0
+      },
+      {
+        "id": "pack",
+        "name": "Packing",
+        "capacity_per_day": 800,
+        "fixed_days": 0
+      }
+    ],
+    "rush_priority": true
+  },
+  "delivery": {
+    "origin": {
+      "city": "Tiruppur",
+      "state": "TN",
+      "pincode": "641601"
+    },
+    "dispatch_days": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "pickup": {
+      "enabled": true,
+      "label": "Collect from our workshop",
+      "fee": 0
+    },
+    "zones": [
+      {
+        "id": "home",
+        "name": "Tamil Nadu",
+        "states": [
+          "TN"
+        ],
+        "pincode_prefixes": [
+          "60",
+          "61",
+          "62",
+          "63",
+          "64"
+        ],
+        "base": 80,
+        "per_piece": 4,
+        "free_above": 5000,
+        "transit_days": 2
+      },
+      {
+        "id": "south",
+        "name": "South India",
+        "states": [
+          "KL",
+          "KA",
+          "AP",
+          "TS",
+          "PY"
+        ],
+        "pincode_prefixes": [
+          "50",
+          "51",
+          "52",
+          "53",
+          "56",
+          "57",
+          "58",
+          "59",
+          "67",
+          "68",
+          "69"
+        ],
+        "base": 120,
+        "per_piece": 6,
+        "free_above": 8000,
+        "transit_days": 3
+      },
+      {
+        "id": "metro",
+        "name": "Metro cities",
+        "states": [
+          "DL",
+          "MH"
+        ],
+        "pincode_prefixes": [
+          "11",
+          "40"
+        ],
+        "base": 150,
+        "per_piece": 7,
+        "free_above": 10000,
+        "transit_days": 4
+      },
+      {
+        "id": "rest",
+        "name": "Rest of India",
+        "states": [],
+        "pincode_prefixes": [],
+        "base": 180,
+        "per_piece": 8,
+        "free_above": 12000,
+        "transit_days": 6
+      }
+    ],
+    "carriers": [
+      {
+        "id": "surface",
+        "name": "Surface courier",
+        "tracking_url": "",
+        "active": true
+      },
+      {
+        "id": "air",
+        "name": "Air express",
+        "tracking_url": "",
+        "active": true
+      }
     ]
-   },
-   {
-    "id": "premium",
-    "name": "Micro-mesh polyester, 160 GSM",
-    "surcharge": 120,
-    "garments": [
-     "jersey",
-     "vneck",
-     "shorts"
+  },
+  "company": {
+    "name": "UrJersey",
+    "legal_name": "",
+    "tax_id": "",
+    "email": "",
+    "phone": "",
+    "address": "",
+    "invoice_prefix": "UJ",
+    "quote_valid_days": 14,
+    "support_hours": "Mon-Sat 9:30-18:30"
+  },
+  "crm": {
+    "lead_stages": [
+      "new",
+      "contacted",
+      "design_shared",
+      "quoted",
+      "negotiation",
+      "won",
+      "lost"
+    ],
+    "lead_sources": [
+      "web",
+      "mobile",
+      "whatsapp",
+      "walk_in",
+      "referral",
+      "event",
+      "phone",
+      "other"
+    ],
+    "organisation_kinds": [
+      "team",
+      "club",
+      "school",
+      "college",
+      "academy",
+      "company",
+      "event",
+      "other"
+    ],
+    "ticket_categories": [
+      "order_status",
+      "sizing",
+      "quality",
+      "delivery",
+      "payment",
+      "design",
+      "other"
+    ],
+    "reorder_reminder_days": 300,
+    "return_window_days": 7,
+    "returnable_reasons": [
+      "damaged",
+      "wrong_item",
+      "print_quality"
     ]
-   },
-   {
-    "id": "pro",
-    "name": "Lycra blend, 180 GSM",
-    "surcharge": 220,
-    "garments": [
-     "jersey",
-     "vneck"
-    ]
-   }
-  ],
-  "size_surcharge": {
-   "XS": 0,
-   "S": 0,
-   "M": 0,
-   "L": 0,
-   "XL": 0,
-   "XXL": 60
-  },
-  "personalisation": {
-   "name": 40,
-   "number": 30
-  },
-  "logo_per_piece": 25,
-  "quantity_tiers": [
-   {
-    "min": 1,
-    "discount": 0.0
-   },
-   {
-    "min": 10,
-    "discount": 0.05
-   },
-   {
-    "min": 25,
-    "discount": 0.1
-   },
-   {
-    "min": 50,
-    "discount": 0.15
-   },
-   {
-    "min": 100,
-    "discount": 0.2
-   }
-  ],
-  "minimum_pieces": 1,
-  "rush": {
-   "enabled": true,
-   "fee_rate": 0.25,
-   "label": "Express production"
-  },
-  "tax": {
-   "name": "GST",
-   "rate": 0.05,
-   "rate_above": 0.12,
-   "threshold_per_piece": 1000,
-   "inclusive": false
-  },
-  "coupons": [
-   {
-    "code": "WELCOME10",
-    "kind": "percent",
-    "value": 10,
-    "max_discount": 500,
-    "min_subtotal": 1000,
-    "active": true,
-    "expires": null,
-    "note": "First order",
-    "public": true,
-    "title": "10% off orders above 1000 (up to 500)"
-   }
-  ],
-  "cod": {
-   "enabled": true,
-   "fee": 49,
-   "max_order_value": 20000
   }
- },
- "production": {
-  "timezone": "Asia/Kolkata",
-  "working_days": [
-   0,
-   1,
-   2,
-   3,
-   4,
-   5
-  ],
-  "holidays": [],
-  "daily_cutoff_hour": 14,
-  "stages": [
-   {
-    "id": "prepress",
-    "name": "Artwork and print files",
-    "capacity_per_day": 2000,
-    "fixed_days": 0
-   },
-   {
-    "id": "print",
-    "name": "Sublimation printing",
-    "capacity_per_day": 400,
-    "fixed_days": 0
-   },
-   {
-    "id": "press",
-    "name": "Heat press",
-    "capacity_per_day": 400,
-    "fixed_days": 1
-   },
-   {
-    "id": "cut",
-    "name": "Cutting",
-    "capacity_per_day": 500,
-    "fixed_days": 0
-   },
-   {
-    "id": "stitch",
-    "name": "Stitching",
-    "capacity_per_day": 250,
-    "fixed_days": 1
-   },
-   {
-    "id": "qc",
-    "name": "Quality check",
-    "capacity_per_day": 600,
-    "fixed_days": 0
-   },
-   {
-    "id": "pack",
-    "name": "Packing",
-    "capacity_per_day": 800,
-    "fixed_days": 0
-   }
-  ],
-  "rush_priority": true
- },
- "delivery": {
-  "origin": {
-   "city": "Tiruppur",
-   "state": "TN",
-   "pincode": "641601"
-  },
-  "dispatch_days": [
-   0,
-   1,
-   2,
-   3,
-   4,
-   5
-  ],
-  "pickup": {
-   "enabled": true,
-   "label": "Collect from our workshop",
-   "fee": 0
-  },
-  "zones": [
-   {
-    "id": "home",
-    "name": "Tamil Nadu",
-    "states": [
-     "TN"
-    ],
-    "pincode_prefixes": [
-     "60",
-     "61",
-     "62",
-     "63",
-     "64"
-    ],
-    "base": 80,
-    "per_piece": 4,
-    "free_above": 5000,
-    "transit_days": 2
-   },
-   {
-    "id": "south",
-    "name": "South India",
-    "states": [
-     "KL",
-     "KA",
-     "AP",
-     "TS",
-     "PY"
-    ],
-    "pincode_prefixes": [
-     "50",
-     "51",
-     "52",
-     "53",
-     "56",
-     "57",
-     "58",
-     "59",
-     "67",
-     "68",
-     "69"
-    ],
-    "base": 120,
-    "per_piece": 6,
-    "free_above": 8000,
-    "transit_days": 3
-   },
-   {
-    "id": "metro",
-    "name": "Metro cities",
-    "states": [
-     "DL",
-     "MH"
-    ],
-    "pincode_prefixes": [
-     "11",
-     "40"
-    ],
-    "base": 150,
-    "per_piece": 7,
-    "free_above": 10000,
-    "transit_days": 4
-   },
-   {
-    "id": "rest",
-    "name": "Rest of India",
-    "states": [],
-    "pincode_prefixes": [],
-    "base": 180,
-    "per_piece": 8,
-    "free_above": 12000,
-    "transit_days": 6
-   }
-  ],
-  "carriers": [
-   {
-    "id": "surface",
-    "name": "Surface courier",
-    "tracking_url": "",
-    "active": true
-   },
-   {
-    "id": "air",
-    "name": "Air express",
-    "tracking_url": "",
-    "active": true
-   }
-  ]
- },
- "company": {
-  "name": "UrJersey",
-  "legal_name": "",
-  "tax_id": "",
-  "email": "",
-  "phone": "",
-  "address": "",
-  "invoice_prefix": "UJ",
-  "quote_valid_days": 14,
-  "support_hours": "Mon-Sat 9:30-18:30"
- },
- "crm": {
-  "lead_stages": [
-   "new",
-   "contacted",
-   "design_shared",
-   "quoted",
-   "negotiation",
-   "won",
-   "lost"
-  ],
-  "lead_sources": [
-   "web",
-   "mobile",
-   "whatsapp",
-   "walk_in",
-   "referral",
-   "event",
-   "phone",
-   "other"
-  ],
-  "organisation_kinds": [
-   "team",
-   "club",
-   "school",
-   "college",
-   "academy",
-   "company",
-   "event",
-   "other"
-  ],
-  "ticket_categories": [
-   "order_status",
-   "sizing",
-   "quality",
-   "delivery",
-   "payment",
-   "design",
-   "other"
-  ],
-  "reorder_reminder_days": 300,
-  "return_window_days": 7,
-  "returnable_reasons": [
-   "damaged",
-   "wrong_item",
-   "print_quality"
-  ]
- }
 }

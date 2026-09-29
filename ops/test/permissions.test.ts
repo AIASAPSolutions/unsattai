@@ -31,6 +31,7 @@ describe('settings sections', () => {
   it('maps sections to permissions like PUT /ops/settings/{section}', () => {
     expect(sectionPermission('price_book')).toBe('pricing');
     expect(sectionPermission('production')).toBe('production');
+    expect(sectionPermission('sizing')).toBe('production');
     expect(sectionPermission('delivery')).toBe('delivery');
     expect(sectionPermission('company')).toBe('settings');
     expect(sectionPermission('crm')).toBe('settings');
@@ -40,6 +41,7 @@ describe('settings sections', () => {
     ['production', 'price_book', false], ['production', 'production', true], ['production', 'delivery', false],
     ['dispatch', 'delivery', true], ['dispatch', 'crm', false], ['sales', 'price_book', false], ['sales', 'crm', false],
     ['viewer', 'company', false],
+    ['production', 'sizing', true], ['manager', 'sizing', true], ['sales', 'sizing', false], ['viewer', 'sizing', false], ['dispatch', 'sizing', false],
   ] as const)('%s editing %s -> %s', (role, section, ok) => {
     expect(canEditSection(P[role], section)).toBe(ok);
   });

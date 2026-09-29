@@ -5,8 +5,11 @@ import { post } from '../../lib/api';
 import { ApiError } from '../../lib/errors';
 import { GARMENT_LABEL, money, pct } from '../../lib/format';
 import { useDebounced, useLoad } from '../../lib/hooks';
-import { formToPriceBook, priceBookToForm, setIn, type PriceBook, type PriceBookForm } from '../../lib/settingsForm';
-import { GARMENTS, SIZES, type Garment, type Pricing, type Size } from '../../lib/types';
+import { formToPriceBook, OPTION_GROUPS, priceBookToForm, setIn, type PriceBook, type PriceBookForm } from '../../lib/settingsForm';
+import {
+  ADULT_SIZES, COLLAR_LABEL, COLLARS, FIT_DEFAULT_SIZE, FIT_LABEL, FIT_SIZES, FITS, GARMENTS, KIDS_SIZES, SLEEVE_LABEL, SLEEVES,
+  type Collar, type Fit, type Garment, type Pricing, type Size, type Sleeves,
+} from '../../lib/types';
 import { CellErr, F, NumInput, SettingsEditor, type Editor } from './common';
 
 type E = Editor<PriceBookForm, PriceBook>;
@@ -71,10 +74,20 @@ function Body({ e }: { e: E }) {
         <div className="card-body" style={{ paddingTop: 6 }}><CellErr errors={err('fabrics')} /><span className="muted small">Removing a fabric does not change existing orders. IDs are lower case letters, digits, - and _.</span></div>
       </Card>
 
+      {f.options && <OptionsCard e={e} />}
+
       <div className="grid grid-2">
         <Card title="Size surcharges">
-          <div className="form-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
-            {SIZES.map((s) => <F key={s} label={s} errors={err(`size_surcharge.${s}`)}><NumInput value={f.size_surcharge[s]} onChange={(v) => set(['size_surcharge', s], v)} errors={err(`size_surcharge.${s}`)} suffix={cur} /></F>)}
+          <div className="stack tight" data-testid="size-surcharges">
+            {([['Men and women', ADULT_SIZES], ['Kids', KIDS_SIZES]] as const).map(([title, list]) => (
+              <div key={title}>
+                <div className="muted small strong" style={{ marginBottom: 4 }}>{title}</div>
+                <div className="form-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+                  {list.map((s) => <F key={s} label={s} errors={err(`size_surcharge.${s}`)}><NumInput value={f.size_surcharge[s]} onChange={(v) => set(['size_surcharge', s], v)} errors={err(`size_surcharge.${s}`)} suffix={cur} testId={`size-surcharge-${s}`} /></F>)}
+                </div>
+              </div>
+            ))}
+            <span className="muted small">Per piece, added to every line of that size. Women's sizes XS to XXL use the same surcharges as men's.</span>
           </div>
         </Card>
         <Card title="Personalisation and minimum">
@@ -165,21 +178,73 @@ function Body({ e }: { e: E }) {
   );
 }
 
+// ------------------------------------------------------------------ garment options
+
+function OptionsCard({ e }: { e: E }) {
+  const { form: f, err } = e;
+  const set = (path: (string | number)[], v: unknown) => e.setForm((cur) => setIn(cur, path, v));
+  const opts = f.options!;
+  return (
+    <Card title="Garment options" flush>
+      <div className="grid" style={{ padding: 12, gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))' }} data-testid="garment-options">
+        {OPTION_GROUPS.map((g) => (
+          <div key={g.id}>
+            <div className="strong small" style={{ marginBottom: 4 }}>{g.title}</div>
+            <table className="table compact opt-table">
+              <thead><tr><th>Choice</th><th className="num">Per piece</th><th>On</th></tr></thead>
+              <tbody>
+                {g.ids.map((id) => {
+                  const x = opts[g.id][id];
+                  const p = `options.${g.id}.${id}`;
+                  const fixed = id === g.always;
+                  return (
+                    <tr key={id} data-option={`${g.id}-${id}`}>
+                      <td>
+                        <input value={x.name} maxLength={60} onChange={(v) => set(['options', g.id, id, 'name'], v.target.value)} className={err(`${p}.name`) ? 'invalid' : ''}
+                          aria-label={`${id} name`} data-testid={`opt-${g.id}-${id}-name`} />
+                        <div className="muted small">{id}</div>
+                        <CellErr errors={err(`${p}.name`)} />
+                      </td>
+                      <td style={{ width: 120 }}><NumInput value={x.price} onChange={(v) => set(['options', g.id, id, 'price'], v)} errors={err(`${p}.price`)} suffix={f.currency} testId={`opt-${g.id}-${id}-price`} /><CellErr errors={err(`${p}.price`)} /></td>
+                      <td style={{ width: 44 }}>
+                        <input type="checkbox" checked={x.active} disabled={fixed} title={fixed ? 'The default choice is always offered' : 'Offer this choice to customers'}
+                          onChange={(v) => set(['options', g.id, id, 'active'], v.target.checked)} aria-label={`Offer ${x.name}`} data-testid={`opt-${g.id}-${id}-active`} />
+                        <CellErr errors={err(`${p}.active`)} />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <CellErr errors={err(`options.${g.id}`)} />
+          </div>
+        ))}
+      </div>
+      <div className="card-body" style={{ paddingTop: 0 }}>
+        <CellErr errors={err('options')} />
+        <span className="muted small">Added to the price of every piece; a negative price is a discount (sleeveless, for example). Switched-off choices are hidden from customers and new quotes. Short sleeves and the crew neck are the defaults and are always offered. Collars apply to the crew-neck jersey only; sleeves to jerseys, not shorts.</span>
+      </div>
+    </Card>
+  );
+}
+
 // ------------------------------------------------------------------ Try it: draft vs current
 
-interface Example { garment: Garment; fabric: string; size: Size; quantity: string; xxl: string; names: boolean; numbers: boolean; logos: string; rush: boolean; coupon: string; pincode: string; cod: boolean }
+interface Example { garment: Garment; fabric: string; fit: Fit; size: Size; sleeves: Sleeves; collar: Collar; quantity: string; xxl: string; names: boolean; numbers: boolean; logos: string; rush: boolean; coupon: string; pincode: string; cod: boolean }
 
 function TryIt({ e }: { e: E }) {
-  const [ex, setEx] = useState<Example>({ garment: 'jersey', fabric: 'standard', size: 'M', quantity: '15', xxl: '0', names: true, numbers: true, logos: '1', rush: false, coupon: '', pincode: '600001', cod: false });
+  const [ex, setEx] = useState<Example>({ garment: 'jersey', fabric: 'standard', fit: 'men', size: 'M', sleeves: 'short', collar: 'crew', quantity: '15', xxl: '0', names: true, numbers: true, logos: '1', rush: false, coupon: '', pincode: '600001', cod: false });
   const setX = <K extends keyof Example>(k: K, v: Example[K]) => setEx((c) => ({ ...c, [k]: v }));
   const fabrics = e.draft.value.fabrics.filter((x) => x.garments.includes(ex.garment));
   const fabric = fabrics.some((x) => x.id === ex.fabric) ? ex.fabric : fabrics[0]?.id ?? 'standard';
   const request = useMemo(() => {
     const q = Math.max(0, Math.round(Number(ex.quantity) || 0));
     const x = Math.max(0, Math.round(Number(ex.xxl) || 0));
-    const line = (size: Size, quantity: number) => ({ size, quantity, player_name: ex.names ? 'PLAYER' : '', number: ex.numbers ? '10' : '' });
-    const lines = [...(q ? [line(ex.size, q)] : []), ...(x ? [line('XXL', x)] : [])];
-    return { garment: ex.garment, fabric, logos: Math.min(4, Math.max(0, Math.round(Number(ex.logos) || 0))), lines: lines.length ? lines : [line(ex.size, 1)],
+    const line = (size: Size, quantity: number) => ({ fit: ex.fit, size, quantity, player_name: ex.names ? 'PLAYER' : '', number: ex.numbers ? '10' : '' });
+    const big = FIT_SIZES[ex.fit][FIT_SIZES[ex.fit].length - 1];
+    const lines = [...(q ? [line(ex.size, q)] : []), ...(x ? [line(big, x)] : [])];
+    return { garment: ex.garment, fabric,
+      sleeves: ex.garment === 'shorts' ? 'short' : ex.sleeves, collar: ex.garment === 'jersey' ? ex.collar : 'crew', logos: Math.min(4, Math.max(0, Math.round(Number(ex.logos) || 0))), lines: lines.length ? lines : [line(ex.size, 1)],
       rush: ex.rush, coupon: ex.coupon.trim().toUpperCase(), delivery: { method: 'ship', pincode: /^\d{6}$/.test(ex.pincode) ? ex.pincode : '', state: '' },
       payment_method: ex.cod ? 'cod' : 'online' };
   }, [ex, fabric]);
@@ -188,8 +253,10 @@ function TryIt({ e }: { e: E }) {
     [JSON.stringify(body)]);
   const r = sim.data;
   const cur = e.draft.value.currency;
+  const optionsOf = (p: Pricing) => p.lines.reduce((a, l) => a + ((l.parts.sleeves ?? 0) + (l.parts.collar ?? 0) + (l.parts.fit ?? 0)) * l.quantity, 0);
   const rows: [string, (p: Pricing) => number][] = [
     ['Subtotal', (p) => p.subtotal],
+    ['of which garment options', optionsOf],
     ['Quantity discount', (p) => -p.quantity_discount.amount],
     ['Express', (p) => p.rush.amount],
     ['Coupon', (p) => -(p.coupon?.amount ?? 0)],
@@ -205,9 +272,12 @@ function TryIt({ e }: { e: E }) {
         <div className="form-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
           <F label="Garment"><select className="sm" value={ex.garment} onChange={(v) => setX('garment', v.target.value as Garment)}>{GARMENTS.map((g) => <option key={g} value={g}>{GARMENT_LABEL[g]}</option>)}</select></F>
           <F label="Fabric"><select className="sm" value={fabric} onChange={(v) => setX('fabric', v.target.value)}>{fabrics.map((x) => <option key={x.id} value={x.id}>{x.name || x.id}</option>)}</select></F>
-          <F label="Size"><select className="sm" value={ex.size} onChange={(v) => setX('size', v.target.value as Size)}>{SIZES.map((s) => <option key={s}>{s}</option>)}</select></F>
+          <F label="Fit"><select className="sm" value={ex.fit} onChange={(v) => { const fit = v.target.value as Fit; setEx((c) => ({ ...c, fit, size: FIT_SIZES[fit].includes(c.size) ? c.size : FIT_DEFAULT_SIZE[fit] })); }} data-testid="try-fit">{FITS.map((x) => <option key={x} value={x}>{FIT_LABEL[x]}</option>)}</select></F>
+          <F label="Size"><select className="sm" value={ex.size} onChange={(v) => setX('size', v.target.value as Size)} data-testid="try-size">{FIT_SIZES[ex.fit].map((s) => <option key={s}>{s}</option>)}</select></F>
+          <F label="Sleeves"><select className="sm" value={ex.sleeves} disabled={ex.garment === 'shorts'} onChange={(v) => setX('sleeves', v.target.value as Sleeves)} data-testid="try-sleeves">{SLEEVES.map((x) => <option key={x} value={x}>{SLEEVE_LABEL[x]}</option>)}</select></F>
+          <F label="Collar"><select className="sm" value={ex.collar} disabled={ex.garment !== 'jersey'} onChange={(v) => setX('collar', v.target.value as Collar)} data-testid="try-collar">{COLLARS.map((x) => <option key={x} value={x}>{COLLAR_LABEL[x]}</option>)}</select></F>
           <F label="Pieces"><input className="sm num" value={ex.quantity} inputMode="numeric" onChange={(v) => setX('quantity', v.target.value)} data-testid="try-qty" /></F>
-          <F label="Extra XXL pieces"><input className="sm num" value={ex.xxl} inputMode="numeric" onChange={(v) => setX('xxl', v.target.value)} /></F>
+          <F label={`Extra ${FIT_SIZES[ex.fit][FIT_SIZES[ex.fit].length - 1]} pieces`}><input className="sm num" value={ex.xxl} inputMode="numeric" onChange={(v) => setX('xxl', v.target.value)} /></F>
           <F label="Logos"><input className="sm num" value={ex.logos} inputMode="numeric" onChange={(v) => setX('logos', v.target.value)} /></F>
           <F label="Pincode"><input className="sm" value={ex.pincode} maxLength={6} onChange={(v) => setX('pincode', v.target.value)} /></F>
           <F label="Coupon"><input className="sm" value={ex.coupon} maxLength={24} onChange={(v) => setX('coupon', v.target.value.toUpperCase())} /></F>

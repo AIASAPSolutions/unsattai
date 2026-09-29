@@ -131,6 +131,8 @@ try {
     const leads = Number((await tid('kpi-leads').innerText()).replace(/\D/g, ''));
     assert(leads >= 1, 'open lead from the enquiry');
     await tid('utilisation').waitFor();
+    await tid('demo-payments').waitFor();
+    assert(await tid('demo-payments').getAttribute('data-on') === 'true', 'the throw-away API has demo payments on, and the dashboard says so');
     await shot('02-dashboard');
   });
 
@@ -563,7 +565,9 @@ try {
     await tid('product-create').click();
     await toast();
     await page.waitForURL(/\/products\/prd_/);
-    await tid('design-preview').locator('img').waitFor();
+    seed.productId = page.url().split('/products/')[1].split(/[?#]/)[0];
+    await tid('product-edit-title').waitFor(); // the detail page, not the list it came from
+    await tid('design-preview').first().locator('img').waitFor();
     await tid('product-edit-description').fill('Ready-made cricket kit with bold diagonal stripes.');
     await tid('product-save').click();
     await toast();
@@ -678,6 +682,123 @@ try {
     await shot('45-dashboard-marketplace');
   });
 
+  await step('size charts: a wrong kids value is marked, then a kids value is edited and saved', async () => {
+    await page.goto(`${OPS}/settings/sizing`);
+    await tid('sizing-table-men').waitFor();
+    await tid('sizing-tab-kids').click();
+    await tid('sizing-table-kids').waitFor();
+    const v0 = Number((await tid('settings-version').innerText()).replace(/\D/g, ''));
+    // 10Y smaller than 8Y is refused next to the field before anything is sent
+    await tid('sz-kids-10Y-top.chest').fill('30');
+    await tid('settings-save').click();
+    await tid('sizing-table-kids').locator('tr[data-size="10Y"]').getByText('Must not be smaller than 8Y').waitFor();
+    await tid('sizing-tab-kids').locator('.badge').waitFor();
+    await shot('46a-size-chart-error');
+    await tid('sz-kids-10Y-top.chest').fill('38');
+    await tid('sz-kids-8Y-top.chest').fill('36.5');
+    await tid('sz-kids-8Y-height-1').fill('135');
+    await tid('settings-save').click();
+    await toast();
+    await page.waitForFunction((v) => document.querySelector('[data-testid="settings-version"]')?.textContent?.includes(`version ${v + 1}`), v0);
+    const sz = await api('/ops/settings/sizing', { token: seed.admin });
+    const row = sz.value.fits.kids.sizes.find((r) => r.size === '8Y');
+    assert(row.top.chest === 36.5 && row.height[1] === 135, `kids 8Y saved (${JSON.stringify(row)})`);
+    const guide = await api('/shop/size-guide');
+    assert(guide.fits.find((f) => f.id === 'kids').sizes.find((r) => r.size === '8Y').top.chest === 36.5, 'customers see the new kids chart');
+    await shot('46-size-charts-kids');
+  });
+
+  await step('price book: set the long-sleeve price; Try it prices long sleeves for a kids size', async () => {
+    await page.goto(`${OPS}/settings/price-book`);
+    await tid('opt-sleeves-long-price').waitFor();
+    const v0 = Number((await tid('settings-version').innerText()).replace(/\D/g, ''));
+    assert(await tid('opt-sleeves-short-active').isDisabled(), 'short sleeves cannot be switched off');
+    assert(await tid('opt-collar-crew-active').isDisabled(), 'crew neck cannot be switched off');
+    await tid('size-surcharge-3XL').waitFor();
+    await tid('size-surcharge-8Y').waitFor();
+    await tid('opt-sleeves-long-price').fill('75');
+    await tid('try-fit').selectOption('kids');
+    await tid('try-size').selectOption('8Y');
+    await tid('try-sleeves').selectOption('long');
+    await tid('try-table').locator('tr', { hasText: 'of which garment options' }).waitFor();
+    await page.waitForFunction(() => {
+      const a = document.querySelector('[data-testid="try-current"]')?.textContent;
+      const b = document.querySelector('[data-testid="try-draft"]')?.textContent;
+      return a && b && a !== b;
+    }, null, { timeout: 15000 });
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await shot('47-price-book-options');
+    await tid('settings-save').click();
+    await toast();
+    await page.waitForFunction((v) => document.querySelector('[data-testid="settings-version"]')?.textContent?.includes(`version ${v + 1}`), v0);
+    const pb = await api('/ops/settings/price_book', { token: seed.admin });
+    assert(pb.value.options.sleeves.long.price === 75 && pb.value.options.sleeves.short.active, `long sleeves 75 (${JSON.stringify(pb.value.options.sleeves)})`);
+    const cat = await api('/shop/catalogue');
+    assert(cat.options.sleeves.find((x) => x.id === 'long').price === 75, 'catalogue shows the new long-sleeve price');
+  });
+
+  await step('order with a kids line and long sleeves: measurements, pieces and the measurement sheet', async () => {
+    const phoneK = `93${String(Date.now() + 5).slice(-8)}`;
+    seed.kidsOrder = await api('/orders', { body: {
+      design_id: seed.designId, spec: { ...seed.spec, sleeves: 'long' }, customer: { name: `Junior Club ${RUN}`, phone: phoneK },
+      items: [{ player_name: 'KAVIN', number: '5', fit: 'kids', size: '8Y', quantity: 4 }, { player_name: 'COACH', number: '1', fit: 'men', size: 'L', quantity: 1 }],
+      idempotency_key: `e2e_${RUN}_kids`, channel: 'web', delivery: { method: 'ship', address: address(`Junior Club ${RUN}`, phoneK) },
+    } });
+    assert(seed.kidsOrder.options?.sleeves === 'long', `order has long sleeves (${JSON.stringify(seed.kidsOrder.options)})`);
+    await page.goto(`${OPS}/orders/${seed.kidsOrder.id}`);
+    const kidsRow = tid('order-lines').locator('tr', { hasText: 'KAVIN' });
+    await kidsRow.waitFor();
+    const txt = await kidsRow.innerText();
+    assert(txt.includes('Kids') && txt.includes('8Y') && txt.includes('36.5') && txt.includes('Sleeves (2)'), `kids line shows fit, size, the saved chart and pieces (${txt.replace(/\s+/g, ' ')})`);
+    await tid('order-options').getByText('Long sleeves').waitFor();
+    await tid('print-files').locator('[data-testid="print-file-line"]', { hasText: 'Kids 8Y' }).waitFor();
+    assert(await tid('print-file-line').count() === 2, 'print files grouped in two lines');
+    const [file] = await Promise.all([page.waitForEvent('download'), tid('measurement-sheet-download').click()]);
+    const svg = (await import('node:fs')).readFileSync(await file.path(), 'utf8');
+    assert(file.suggestedFilename().endsWith('_measurements.svg'), `sheet file name ${file.suggestedFilename()}`);
+    assert(svg.startsWith('<svg') && svg.includes('Measurement sheet') && svg.includes('8Y') && svg.includes('long sleeves'), `measurement sheet SVG (${svg.length} bytes)`);
+    // Piece sizes are fully visible: the lines table fits its card at desktop width, with no hidden overflow.
+    const fit = await tid('order-lines').evaluate((t) => ({ sw: t.parentElement.scrollWidth, cw: t.parentElement.clientWidth, cell: t.querySelector('tr[data-line="1"] td.measure').innerText }));
+    assert(fit.sw <= fit.cw + 1, `lines table fits its card (${fit.sw} > ${fit.cw})`);
+    assert(/Front, back\s+\d+\s×\s\d+/.test(fit.cell) && /Sleeves \(2\)\s+\d+\s×\s\d+/.test(fit.cell), `piece sizes shown in full (${fit.cell})`);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await shot('48-order-kids-measurements');
+    // On a phone the table scrolls sideways instead of clipping.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(400); // the side menu slides away (0.15 s transition)
+    const narrow = await tid('order-lines').evaluate((t) => ({ sw: t.parentElement.scrollWidth, cw: t.parentElement.clientWidth, ox: getComputedStyle(t.parentElement).overflowX,
+      page: document.documentElement.scrollWidth, vw: window.innerWidth }));
+    assert(narrow.page <= narrow.vw + 1, `narrow screen: the page itself does not scroll sideways (${JSON.stringify(narrow)})`);
+    assert(narrow.sw > narrow.cw && (narrow.ox === 'auto' || narrow.ox === 'scroll'), `narrow screen: the lines table scrolls sideways inside its card (${JSON.stringify(narrow)})`);
+    // Show the table scrolled to its last column (piece sizes), page itself at the left edge.
+    await tid('order-lines').evaluate((t) => { t.parentElement.scrollLeft = t.parentElement.scrollWidth; const r = t.getBoundingClientRect(); window.scrollTo(0, window.scrollY + r.top - 120); });
+    await page.screenshot({ path: `${OUT}48b-order-lines-narrow.png` });
+    await page.setViewportSize({ width: 1440, height: 900 });
+  });
+
+  await step('products: add a colourway with its own colours', async () => {
+    await page.goto(`${OPS}/products/${seed.productId}`);
+    await tid('colourways').waitFor();
+    const before = (await api(`/ops/products/${seed.productId}`, { token: seed.admin })).colourways?.length ?? 0;
+    await tid('cw-add').click();
+    const i = before;
+    await tid(`cw-name-${i}`).fill('Sunset Orange');
+    assert(await tid(`cw-id-${i}`).inputValue() === 'sunset-orange', 'id follows the name');
+    await tid(`cw-${i}-primary`).fill('#ff6a00');
+    await tid(`cw-${i}-secondary`).fill('#1b1b3a');
+    await tid('cw-swatches').getByText('Sunset Orange').waitFor();
+    await tid('cw-save').click();
+    await toast();
+    const p = await api(`/ops/products/${seed.productId}`, { token: seed.admin });
+    const cw = p.colourways.find((c) => c.id === 'sunset-orange');
+    assert(cw && cw.palette.primary.toLowerCase() === '#ff6a00' && cw.name === 'Sunset Orange', `colourway saved (${JSON.stringify(p.colourways)})`);
+    const shop = await api(`/shop/products/${p.slug}`);
+    assert(shop.colourways.some((c) => c.id === 'sunset-orange'), 'the store offers the colourway');
+    await tid('design-preview').locator('img').waitFor();
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await shot('49-product-colourway');
+  });
+
   const prodEmail = `prod.${RUN}@urjersey.test`;
   const prodPassword = 'Pr0duction-Pass';
   await step('create a production-role staff user', async () => {
@@ -717,6 +838,10 @@ try {
     await page.goto(`${OPS}/settings/production`);
     await tid('holidays').waitFor();
     assert(await page.getByTestId('settings-readonly').count() === 0, 'production settings editable for production role');
+    // and so are the size charts
+    await page.goto(`${OPS}/settings/sizing?fit=kids`);
+    await tid('sizing-table-kids').waitFor();
+    assert(await page.getByTestId('settings-readonly').count() === 0 && !(await tid('sz-kids-8Y-top.chest').isDisabled()), 'size charts editable for production role');
     // and the board lets them work
     await page.goto(`${OPS}/production/board`);
     await tid('board').waitFor();
