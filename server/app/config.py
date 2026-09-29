@@ -56,6 +56,9 @@ class Settings:
     ai_bonus_edits_per_order: int = env_int("AI_BONUS_EDITS_PER_ORDER", 20)
     ai_edits_per_minute: int = env_int("AI_EDITS_PER_MINUTE", 4)
     ai_daily_budget: int = env_int("AI_DAILY_BUDGET", 2000)  # all phones together; 0 = no cap
+    # "Pay (demo)" marks an order paid without taking money. Off in production unless switched on on purpose
+    # (a closed pilot); real online payment needs a payment gateway.
+    demo_payments: bool = field(default_factory=lambda: env_bool("DEMO_PAYMENTS", not is_production()))
 
 
 settings = Settings()

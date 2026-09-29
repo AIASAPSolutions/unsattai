@@ -8,7 +8,9 @@ from xml.sax.saxutils import escape, quoteattr
 from ..schemas import DesignSpec, LogoElement, TextElement
 from . import layout, patterns
 from .color import contrast_ratio, darken, mix
-from .garments import GARMENT_PANELS, MOCK_SLEEVE_RIGHT, SIZE_SCALE, Panel, mirrored_sleeve
+from . import sizing
+from .garments import (MOCK_SLEEVE_LONG_RIGHT, MOCK_SLEEVE_RIGHT, TOP_GARMENTS, Panel, mirrored_sleeve,
+                       spec_panels)
 
 # Indic fallbacks keep Hindi, Telugu and Tamil names printable when the Latin face lacks the glyphs.
 _INDIC = "'Noto Sans Devanagari', 'Noto Sans Telugu', 'Noto Sans Tamil'"
@@ -18,7 +20,6 @@ FONT_STACKS = {
     "modern": (f"Bahnschrift, 'DIN Alternate', 'Arial Narrow', Arial, {_INDIC}, sans-serif", 700),
 }
 
-TOP_GARMENTS = ("jersey", "vneck")
 
 
 def _f(v: float) -> str:
@@ -34,6 +35,18 @@ class RenderCtx:
         self.defs: list[str] = []
         self.min_feature_mm = math.inf
         self._n = 0
+        # Print sheets for a size: (width factor, height factor) of the current piece. Artwork is
+        # counter-scaled so it moves with the piece but keeps its proportions.
+        self.grade: tuple[float, float] | None = None
+
+    def graded(self, x: float, y: float, svg: str) -> str:
+        """Keep a name, number or logo anchored at (x, y) undistorted on a stretched piece."""
+        if not self.grade or not svg:
+            return svg
+        sx, sy = self.grade
+        u = sizing.art_scale(sx, sy)
+        return (f'<g transform="translate({_f(x)},{_f(y)}) scale({u / sx:.5f},{u / sy:.5f}) '
+                f'translate({_f(-x)},{_f(-y)})">{svg}</g>')
 
     def uid(self, name: str) -> str:
         self._n += 1
@@ -118,10 +131,15 @@ def _accents(ctx: RenderCtx, panel: Panel) -> str:
         # Half of this stroke falls outside the cut line, leaving a ~9 mm printed collar band.
         out.append(f'<path d="{panel.neck}" fill="none" stroke="{ctx.c(a.collar_role)}" stroke-width="18"/>')
         ctx.feature(9)
+    if panel.armhole:
+        # Sleeveless: a printed binding band around each armhole (half the stroke is outside the cut).
+        out.append(f'<path d="{panel.armhole}" fill="none" stroke="{ctx.c(a.cuff_role)}" stroke-width="18"/>')
+        ctx.feature(9)
     if panel.kind == "sleeve":
-        out.append(f'<rect x="-20" y="238" width="500" height="40" fill="{ctx.c(a.cuff_role)}"/>')
+        cuff = panel.h - 22
+        out.append(f'<rect x="-20" y="{_f(cuff)}" width="500" height="40" fill="{ctx.c(a.cuff_role)}"/>')
         for k in range(a.shoulder_stripes):
-            out.append(f'<rect x="-20" y="{_f(214 - k * 20)}" width="500" height="10" fill="{ctx.c("accent")}"/>')
+            out.append(f'<rect x="-20" y="{_f(cuff - 24 - k * 20)}" width="500" height="10" fill="{ctx.c("accent")}"/>')
         if a.shoulder_stripes:
             ctx.feature(10)
     if panel.waist:
@@ -139,10 +157,11 @@ def _text(ctx: RenderCtx, s: str, x: float, y: float, size: float, max_w: float,
     fit = f' textLength="{_f(max_w)}" lengthAdjust="spacingAndGlyphs"' if len(s) * size * 0.62 > max_w else ""
     rot = f' transform="rotate({_f(rotation)} {_f(cx)} {_f(cy)})"' if rotation and cx is not None else ""
     ctx.feature(size * 0.12)   # approximate stroke weight of the glyphs
-    return (f'<text x="{_f(x)}" y="{_f(y)}" text-anchor="middle" font-family={quoteattr(fam)} '
-            f'font-weight="{weight}" font-size="{_f(size)}" fill="{fill}" stroke="{stroke}" '
-            f'stroke-width="{_f(max(1.0, size * 0.04))}" paint-order="stroke" stroke-linejoin="round"{fit}{rot}>'
-            f'{escape(s)}</text>')
+    return ctx.graded(cx if cx is not None else x, cy if cy is not None else y - size * 0.35,
+                      f'<text x="{_f(x)}" y="{_f(y)}" text-anchor="middle" font-family={quoteattr(fam)} '
+                      f'font-weight="{weight}" font-size="{_f(size)}" fill="{fill}" stroke="{stroke}" '
+                      f'stroke-width="{_f(max(1.0, size * 0.04))}" paint-order="stroke" stroke-linejoin="round"{fit}{rot}>'
+                      f'{escape(s)}</text>')
 
 
 def _typography(ctx: RenderCtx, panel: Panel) -> str:
@@ -181,8 +200,9 @@ def _elements(ctx: RenderCtx, panel: Panel) -> str:
         elif isinstance(el, LogoElement):
             w, h = el.width, el.width * el.aspect
             rot = f' transform="rotate({_f(el.rotation)} {_f(el.x)} {_f(el.y)})"' if el.rotation else ""
-            out.append(f'<image x="{_f(el.x - w / 2)}" y="{_f(el.y - h / 2)}" width="{_f(w)}" height="{_f(h)}" '
-                       f'preserveAspectRatio="xMidYMid meet" href={quoteattr(el.src)}{rot}/>')
+            out.append(ctx.graded(el.x, el.y, f'<image x="{_f(el.x - w / 2)}" y="{_f(el.y - h / 2)}" width="{_f(w)}" '
+                                              f'height="{_f(h)}" preserveAspectRatio="xMidYMid meet" '
+                                              f'href={quoteattr(el.src)}{rot}/>'))
     return "".join(out)
 
 
@@ -203,24 +223,48 @@ def _lerp(a, b, t):
 
 
 OUTLINE = 'fill="none" stroke="#0b0d10" stroke-opacity="0.55" stroke-width="2" stroke-linejoin="round"'
+EDGE = OUTLINE.replace('fill="none" ', "")      # the same outline on a filled shape
 
 
 def _mock_sleeves(ctx: RenderCtx, fill_id: str) -> str:
-    sleeves = [MOCK_SLEEVE_RIGHT, mirrored_sleeve()]
+    long = ctx.spec.sleeves == "long"
+    right = MOCK_SLEEVE_LONG_RIGHT if long else MOCK_SLEEVE_RIGHT
+    sleeves = [right, mirrored_sleeve(right)]
+    reach = 0.5 if long else 1.0      # cuff band and stripes sit near the cuff, not halfway up a long sleeve
     clip = ctx.uid("slv")
     ctx.defs.append(f'<clipPath id="{clip}"><path d="{" ".join(_pts(s) for s in sleeves)}"/></clipPath>')
     a = ctx.spec.accents
     trims = []
     for S, S2, U2, U, _ in sleeves:
-        band = [S2, U2, _lerp(U2, U, 0.14), _lerp(S2, S, 0.14)]
+        band = [S2, U2, _lerp(U2, U, 0.14 * reach), _lerp(S2, S, 0.14 * reach)]
         trims.append(f'<path d="{_pts(band)}" fill="{ctx.c(a.cuff_role)}"/>')
         for k in range(a.shoulder_stripes):
-            f0, f1 = 0.2 + k * 0.12, 0.26 + k * 0.12
+            f0, f1 = (0.2 + k * 0.12) * reach, (0.26 + k * 0.12) * reach
             stripe = [_lerp(S2, S, f0), _lerp(U2, U, f0), _lerp(U2, U, f1), _lerp(S2, S, f1)]
             trims.append(f'<path d="{_pts(stripe)}" fill="{ctx.c("accent")}"/>')
     return (f'<g clip-path="url(#{clip})"><use href="#{fill_id}"/>{"".join(trims)}'
-            f'<rect x="-200" y="0" width="940" height="320" fill="#000" opacity="0.08"/></g>'
+            f'<rect x="-200" y="0" width="940" height="{640 if long else 320}" fill="#000" opacity="0.08"/></g>'
             + "".join(f'<path d="{_pts(s)}" {OUTLINE}/>' for s in sleeves))
+
+
+def _mock_collar(ctx: RenderCtx, panel: Panel) -> str:
+    """Polo and mandarin collars are knitted separately; the mock-up draws them on top."""
+    sp = ctx.spec
+    if sp.garment != "jersey" or sp.collar == "crew" or not panel.neck:
+        return ""
+    col, edge = ctx.c(sp.accents.collar_role), darken(ctx.c(sp.accents.collar_role), 0.7)
+    if sp.collar == "mandarin":
+        return (f'<path d="{panel.neck}" fill="none" stroke="{col}" stroke-width="30" stroke-linecap="round"/>'
+                f'<path d="{panel.neck}" fill="none" stroke="{edge}" stroke-opacity="0.5" stroke-width="2" '
+                f'transform="translate(0,-15)"/>')
+    if panel.kind == "back":
+        return (f'<path d="M170,-6 C190,26 230,34 270,34 C310,34 350,26 370,-6 L360,-16 C340,8 300,14 270,14 '
+                f'C240,14 200,8 180,-16 Z" fill="{col}" {EDGE}/>')
+    placket = (f'<rect x="256" y="88" width="28" height="62" fill="{col}" {EDGE}/>'
+               + "".join(f'<circle cx="270" cy="{_f(y)}" r="5" fill="{edge}"/>' for y in (106, 122, 138)))
+    flap = "M178,-10 L270,96 L222,118 L150,14 Z"
+    return (placket + f'<path d="{flap}" fill="{col}" {EDGE}/>'
+            + f'<path d="{flap}" transform="translate(540,0) scale(-1,1)" fill="{col}" {EDGE}/>')
 
 
 def _mock_view(ctx: RenderCtx, panel: Panel, fill_id: str, sleeve_fill_id: str | None, shade_id: str, ox: float) -> str:
@@ -236,6 +280,7 @@ def _mock_view(ctx: RenderCtx, panel: Panel, fill_id: str, sleeve_fill_id: str |
                  f'{_typography(ctx, panel)}{_elements(ctx, panel)}<rect x="-10" y="-10" width="{_f(panel.w + 20)}" '
                  f'height="{_f(panel.h + 20)}" fill="url(#{shade_id})"/></g>')
     parts.append(f'<path d="{panel.d}" {OUTLINE}/>')
+    parts.append(_mock_collar(ctx, panel))
     label = "FRONT" if panel.kind in ("front", "shorts_front") else "BACK"
     parts.append(f'<text x="{_f(panel.w / 2)}" y="{_f(panel.h + 42)}" text-anchor="middle" '
                  f'font-family="Arial, sans-serif" font-size="22" letter-spacing="4" fill="#8a8f98">{label}</text>')
@@ -245,7 +290,7 @@ def _mock_view(ctx: RenderCtx, panel: Panel, fill_id: str, sleeve_fill_id: str |
 
 def render_mockup(spec: DesignSpec, prefix: str | None = None) -> tuple[str, RenderCtx]:
     ctx = RenderCtx(spec, prefix)
-    panels = {p.name: p for p in GARMENT_PANELS[spec.garment]}
+    panels = {p.name: p for p in spec_panels(spec)}
     front, back = panels["front"], panels["back"]
     top = spec.garment in TOP_GARMENTS
 
@@ -254,7 +299,7 @@ def render_mockup(spec: DesignSpec, prefix: str | None = None) -> tuple[str, Ren
         + _pattern_layer(ctx, 0, 0, front.w, front.h, 60, front.kind)
     ctx.defs.append(f'<g id="{fill_id}">{body_fill}</g>')
     sleeve_fill_id = None
-    if top:
+    if top and spec.sleeves != "none":
         if spec.pattern.coverage in ("side_panels", "chest_band"):
             sleeve_fill_id = ctx.uid("sfill")
             ctx.defs.append(f'<g id="{sleeve_fill_id}">{_base(ctx, -220, -120, 980, 500)}</g>')
@@ -283,30 +328,35 @@ def render_mockup(spec: DesignSpec, prefix: str | None = None) -> tuple[str, Ren
 
 def render_print_sheet(spec: DesignSpec, size: str = "M", mirror: bool = False, roll_width: float = 1600,
                        bleed: float = 10, design_id: str = "", only: str | None = None,
-                       label: str = "") -> tuple[str, RenderCtx]:
-    """Production sheet: every pattern piece, graded to `size`, with bleed and cut lines.
+                       label: str = "", fit: str = "men", sizing_chart: dict | None = None) -> tuple[str, RenderCtx]:
+    """Production sheet: every pattern piece, graded to `fit` and `size` from the size chart, with bleed
+    and cut lines.
 
-    Units are millimetres (width/height carry `mm`, so RIP software imports at 1:1).
+    Units are millimetres (width/height carry `mm`, so RIP software imports at 1:1). Everything is vector;
+    raster logos are checked for 300 DPI at their printed size by the manufacturing checks.
     """
-    if size not in SIZE_SCALE:
-        raise ValueError(f"unknown size {size!r}")
+    if not sizing.valid(fit, size):
+        raise ValueError(f"unknown size {size!r} for {fit}")
+    r = sizing.row(sizing_chart, fit, size)
     ctx = RenderCtx(spec, "p" + uuid.uuid4().hex[:6])
-    k = SIZE_SCALE[size]
     margin, gap, label_h = 20.0, 25.0, 18.0
-    header_h = 40.0 if only is None else 55.0
-    pieces = GARMENT_PANELS[spec.garment]
+    header_h = 48.0 if only is None else 63.0
+    pieces = spec_panels(spec)
     if only is not None:
         pieces = [p for p in pieces if p.name == only]
         if not pieces:
             raise ValueError(f"unknown panel {only!r} for {spec.garment}")
-        roll_width = min(roll_width, pieces[0].w * k + 2 * bleed + 2 * margin)
-    widest = max(p.w * k + 2 * bleed for p in pieces)
+    factors = {p.name: sizing.grade(p.kind, spec.sleeves, r) for p in pieces}
+    if only is not None:
+        roll_width = min(roll_width, pieces[0].w * factors[only][0] + 2 * bleed + 2 * margin)
+    widest = max(p.w * factors[p.name][0] + 2 * bleed for p in pieces)
     if widest + 2 * margin > roll_width:
         raise ValueError(f"roll width {roll_width} mm is narrower than the widest piece ({widest:.0f} mm)")
 
     placed, x, y, row_h = [], margin, margin + header_h, 0.0
     for p in pieces:
-        pw, ph = p.w * k + 2 * bleed, p.h * k + 2 * bleed
+        sx, sy = factors[p.name]
+        pw, ph = p.w * sx + 2 * bleed, p.h * sy + 2 * bleed
         if x + pw > roll_width - margin and x > margin:
             x, y, row_h = margin, y + row_h + gap, 0.0
         placed.append((p, x + bleed, y + bleed))
@@ -314,32 +364,41 @@ def render_print_sheet(spec: DesignSpec, size: str = "M", mirror: bool = False, 
         row_h = max(row_h, ph + label_h)
     W, H = roll_width, y + row_h + margin
 
+    fit_name = sizing.FIT_NAMES.get(fit, fit)
     items, labels = [], []
     for p, px, py in placed:
+        sx, sy = factors[p.name]
+        ctx.grade = (sx, sy)
         mid = ctx.uid("bleed")
-        b = bleed / k
+        b = bleed / min(sx, sy)
         ctx.defs.append(f'<mask id="{mid}" maskUnits="userSpaceOnUse" x="{_f(-b - 5)}" y="{_f(-b - 5)}" '
                         f'width="{_f(p.w + 2 * b + 10)}" height="{_f(p.h + 2 * b + 10)}">'
                         f'<path d="{p.d}" fill="#fff" stroke="#fff" stroke-width="{_f(2 * b)}" '
                         f'stroke-linejoin="round"/></mask>')
         art = panel_art(ctx, p, pad=b + 2)
-        items.append(f'<g id="{ctx.prefix}-{p.name}" transform="translate({_f(px)},{_f(py)}) scale({k})">'
+        items.append(f'<g id="{ctx.prefix}-{p.name}" transform="translate({_f(px)},{_f(py)}) scale({sx:.5f},{sy:.5f})">'
                      f'<g mask="url(#{mid})">{art}</g>'
-                     f'<path d="{p.d}" fill="none" stroke="#ff00ff" stroke-width="{0.35 / k:.3f}" '
+                     f'<path d="{p.d}" fill="none" stroke="#ff00ff" stroke-width="{0.35 / min(sx, sy):.3f}" '
                      f'data-role="CutContour"/></g>')
-        lx = px + p.w * k / 2
-        labels.append((W - lx if mirror else lx, py + p.h * k + bleed + 12, f"{p.name.upper().replace('_', ' ')} / {size}"))
-
+        lx = px + p.w * sx / 2
+        labels.append((W - lx if mirror else lx, py + p.h * sy + bleed + 12,
+                       f"{p.name.upper().replace('_', ' ')} / {fit_name.upper()} {size} / "
+                       f"{p.w * sx:.0f} x {p.h * sy:.0f} mm"))
+    ctx.grade = None
     body = "".join(items)
     if mirror:
         body = f'<g transform="translate({_f(W)},0) scale(-1,1)">{body}</g>'
     label_svg = "".join(f'<text x="{_f(lx)}" y="{_f(ly)}" text-anchor="middle" font-family="Arial, sans-serif" '
                         f'font-size="8" fill="#000">{escape(t)}</text>' for lx, ly, t in labels)
-    header = (f"{spec.style_name} | design {design_id or '-'} | size {size} | "
+    m = sizing.measurements(spec.garment, spec.sleeves, r)
+    options = [spec.garment] + ([f"sleeves {spec.sleeves}", f"collar {spec.collar}"] if spec.garment in TOP_GARMENTS else [])
+    header = (f"{spec.style_name} | design {design_id or '-'} | {fit_name} {size} | "
               + (f"{label} | " if label else f"roll {roll_width:.0f} mm | ") +
               f"bleed {bleed:.0f} mm | cut line = magenta" + (" | MIRRORED FOR TRANSFER PAPER" if mirror else ""))
+    spec_line = (" | ".join(options) + " | finished garment (cm, flat): "
+                 + ", ".join(f"{k} {v:g}" for k, v in m.items()))
     # A single-piece file is narrow, so its ruler goes under the header instead of beside it.
-    rx, ry = (W - margin - 100, margin) if only is None else (margin, margin + 16)
+    rx, ry = (W - margin - 100, margin) if only is None else (margin, margin + 22)
     head_size = 9 if only is None else 5
     ruler = (f'<g><rect x="{_f(rx)}" y="{_f(ry)}" width="100" height="4" fill="#000"/>'
              + "".join(f'<rect x="{_f(rx + i * 10)}" y="{_f(ry + 4)}" width="0.5" height="{3 if i % 5 else 6}" fill="#000"/>'
@@ -351,5 +410,7 @@ def render_print_sheet(spec: DesignSpec, size: str = "M", mirror: bool = False, 
            f'<title>{escape(header)}</title><defs>{"".join(ctx.defs)}</defs>'
            f'<rect width="{_f(W)}" height="{_f(H)}" fill="#fff"/>'
            f'<text x="{_f(margin)}" y="{_f(margin + 10)}" font-family="Arial, sans-serif" font-size="{head_size}">{escape(header)}</text>'
+           f'<text x="{_f(margin)}" y="{_f(margin + 10 + head_size * 1.4)}" font-family="Arial, sans-serif" '
+           f'font-size="{head_size * 0.8:g}">{escape(spec_line)}</text>'
            f'{ruler}{body}{label_svg}</svg>')
     return svg, ctx

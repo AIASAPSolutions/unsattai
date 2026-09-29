@@ -11,7 +11,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
-from ..schemas import GARMENTS, SIZES
+from ..engine import sizing as sizing_engine
+from ..schemas import ALL_SIZES, COLLARS, FITS, GARMENTS, SLEEVES
 from . import defaults
 from .db import PlatformStore
 
@@ -80,11 +81,40 @@ class Cod(_M):
     max_order_value: float | None = Field(None, gt=0, description="orders above this total can't use cash on delivery")
 
 
+class OptionChoice(_M):
+    name: str = Field(..., min_length=1, max_length=60)
+    price: float = Field(0, ge=-100_000, le=100_000, description="per piece; negative = discount")
+    active: bool = True
+
+
+class Options(_M):
+    sleeves: dict[Literal[SLEEVES], OptionChoice]
+    collar: dict[Literal[COLLARS], OptionChoice]
+    fit: dict[Literal[FITS], OptionChoice]
+
+    @model_validator(mode="after")
+    def _all(self):
+        for group, keys in (("sleeves", SLEEVES), ("collar", COLLARS), ("fit", FITS)):
+            got = getattr(self, group)
+            if set(got) != set(keys):
+                raise ValueError(f"{group}: every choice is needed ({', '.join(keys)}); switch one off with active")
+            if not any(c.active for c in got.values()):
+                raise ValueError(f"{group}: at least one choice must be active")
+        if not self.sleeves["short"].active or not self.collar["crew"].active:
+            raise ValueError("short sleeves and the crew neck are the defaults and can't be switched off")
+        return self
+
+
+def _default_options() -> "Options":
+    return Options.model_validate(defaults.PRICE_BOOK["options"])
+
+
 class PriceBook(_M):
     currency: str = Field("INR", pattern=r"^[A-Z]{3}$")
     garments: dict[Literal[GARMENTS], GarmentPrice]
     fabrics: list[Fabric] = Field(..., min_length=1)
-    size_surcharge: dict[Literal[SIZES], float]
+    size_surcharge: dict[Literal[ALL_SIZES], float]
+    options: Options = Field(default_factory=_default_options)
     personalisation: dict[Literal["name", "number"], float]
     logo_per_piece: float = Field(0, ge=0)
     quantity_tiers: list[Tier] = Field(..., min_length=1)
@@ -212,7 +242,73 @@ class CRMConfig(_M):
         return self
 
 
-MODELS = {"price_book": PriceBook, "production": Production, "delivery": Delivery, "company": Company, "crm": CRMConfig}
+def _pair(v, what):
+    if v is None:
+        return v
+    if len(v) != 2 or v[0] > v[1]:
+        raise ValueError(f"{what} is [from, to] with from <= to")
+    return v
+
+
+class TopMeasure(_M):
+    chest: float = Field(..., gt=10, lt=120)
+    length: float = Field(..., gt=20, lt=130)
+    shoulder: float = Field(..., gt=10, lt=90)
+    sleeve_short: float = Field(..., gt=3, lt=60)
+    sleeve_long: float = Field(..., gt=15, lt=100)
+
+
+class ShortsMeasure(_M):
+    waist: float = Field(..., gt=10, lt=100)
+    hip: float = Field(..., gt=15, lt=110)
+    length: float = Field(..., gt=10, lt=100)
+
+
+class SizeRow(_M):
+    size: Literal[ALL_SIZES]
+    body_chest: list[float] = Field(..., description="wearer's chest all round, cm [from, to]")
+    height: list[float] | None = Field(None, description="child's height, cm [from, to]")
+    top: TopMeasure
+    shorts: ShortsMeasure
+
+    @field_validator("body_chest")
+    @classmethod
+    def _bc(cls, v):
+        return _pair(v, "body_chest")
+
+    @field_validator("height")
+    @classmethod
+    def _h(cls, v):
+        return _pair(v, "height")
+
+
+class FitChart(_M):
+    name: str = Field(..., min_length=1, max_length=40)
+    sizes: list[SizeRow]
+
+
+class Sizing(_M):
+    unit: Literal["cm"] = "cm"
+    tolerance_cm: float = Field(1.0, ge=0, le=5)
+    note: str = Field("", max_length=400)
+    fits: dict[Literal[FITS], FitChart]
+
+    @model_validator(mode="after")
+    def _sizes(self):
+        if set(self.fits) != set(FITS):
+            raise ValueError(f"a chart is needed for each fit: {', '.join(FITS)}")
+        for fit, chart in self.fits.items():
+            got = [r.size for r in chart.sizes]
+            want = list(sizing_engine.FIT_SIZES[fit])
+            if got != want:
+                raise ValueError(f"{fit}: the sizes are fixed as {', '.join(want)} (in that order); only measurements change")
+            for a, b in zip(chart.sizes, chart.sizes[1:]):
+                if b.top.chest < a.top.chest or b.top.length < a.top.length:
+                    raise ValueError(f"{fit} {b.size}: chest and length must not be smaller than {a.size}")
+        return self
+
+
+MODELS = {"sizing": Sizing, "price_book": PriceBook, "production": Production, "delivery": Delivery, "company": Company, "crm": CRMConfig}
 
 
 class ConfigInvalid(Exception):
@@ -262,6 +358,7 @@ def public_catalogue(store: PlatformStore) -> dict:
         "garments": pb["garments"],
         "fabrics": pb["fabrics"],
         "size_surcharge": pb["size_surcharge"],
+        "options": public_options(pb),
         "personalisation": pb["personalisation"],
         "logo_per_piece": pb["logo_per_piece"],
         "quantity_tiers": pb["quantity_tiers"],
@@ -275,4 +372,29 @@ def public_catalogue(store: PlatformStore) -> dict:
         "cod": pb.get("cod") or {"enabled": False, "fee": 0, "max_order_value": None},
         "returns": {"window_days": get(store, "crm")["return_window_days"],
                     "reasons": get(store, "crm")["returnable_reasons"]},
+    }
+
+
+def public_options(pb: dict) -> dict:
+    """Active garment options with their per-piece prices."""
+    opts = pb.get("options") or defaults.PRICE_BOOK["options"]
+    return {group: [{"id": k, "name": c["name"], "price": c["price"]} for k, c in choices.items() if c.get("active", True)]
+            for group, choices in opts.items()}
+
+
+def size_guide(store: PlatformStore) -> dict:
+    """The size charts customers see (Men, Women, Kids), with how to measure."""
+    chart = get(store, "sizing")
+    active = {c["id"] for c in public_options(get(store, "price_book"))["fit"]}
+    return {
+        "unit": chart["unit"], "tolerance_cm": chart["tolerance_cm"], "note": chart["note"],
+        "how_to_measure": [
+            {"id": "chest", "name": "Chest", "text": "Lay the garment flat and measure straight across, 2 cm below the armholes."},
+            {"id": "length", "name": "Length", "text": "From the highest point of the shoulder, next to the collar, down to the hem."},
+            {"id": "shoulder", "name": "Shoulder", "text": "Across the back from one shoulder seam to the other."},
+            {"id": "sleeve", "name": "Sleeve", "text": "From the shoulder seam to the end of the sleeve."},
+            {"id": "body_chest", "name": "Your chest", "text": "Around your body at the fullest part of the chest, under the arms."},
+            {"id": "height", "name": "Height (kids)", "text": "The child's height without shoes."},
+        ],
+        "fits": [{"id": fit, **c} for fit, c in chart["fits"].items() if fit in active],
     }

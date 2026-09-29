@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from . import ai_edit, from_image, logos, orders, service
 from .background import remove_background
 from .config import env_int, env_str, settings
+from .engine import sizing
 from .engine.garments import GARMENT_PANELS
 from .engine.i18n import LANGUAGE_NAMES
 from .engine.renderer import render_print_sheet
@@ -24,12 +25,14 @@ from .engine.vocab import NAMED_COLORS, PALETTES
 from .providers import PROVIDERS
 from .providers.base import SLM_SYSTEM_PROMPT, build_user_message, creative_part
 from .refine import refine as refine_spec
+from .schemas import COLLARS, FITS, SLEEVES
 from .schemas import (COLOR_ROLES, COVERAGES, FONTS, GARMENTS, LOGO_MIME, MAX_LOGO_BYTES, MAX_LOGOS, PATTERNS, SIZES,
                       SPORTS, TEXT_LIMITS, DesignSpec, FeedbackRequest, FromImageRequest, GenerateRequest, LogoSuggestRequest,
                       OrderRequest, PanelsRequest, PaymentConfirmation, PrintRequest, RefineRequest, RenderRequest,
                       UnderstandRequest)
 from .platform import notify
 from .platform import api_market, api_ops, api_ops_market, api_shop, catalog, lifecycle, pricing, security, sellers
+from .platform import config as pconfig
 from .platform.config import ConfigInvalid
 from .platform.db import PlatformStore
 from .understand import understand as understand_brief
@@ -95,7 +98,8 @@ def health():
     return {"status": "ok", "app": "UrJersey API", "version": VERSION, "default_provider": settings.provider,
             "providers": {name: p.available() for name, p in PROVIDERS.items()},
             "factory_connected": bool(settings.factory_url), "auth_required": bool(settings.api_keys),
-            "ai_edits": ai_edit.provider(), "messaging": notify.status()}
+            "ai_edits": ai_edit.provider(), "messaging": notify.status(),
+            "demo_payments": settings.demo_payments}
 
 
 @app.get("/api/v1/meta")
@@ -110,6 +114,8 @@ def meta():
                    "logo_bytes": MAX_LOGO_BYTES, "logo_types": LOGO_MIME, "quantity": [1, 500], "order_rows": 200,
                    "undo": 60},
         "panels": {g: [p.name for p in ps] for g, ps in GARMENT_PANELS.items()},
+        "options": {"sleeves": SLEEVES, "collars": COLLARS, "fits": FITS},
+        "fit_sizes": sizing.FIT_SIZES,
     }
 
 
@@ -206,11 +212,13 @@ def mockup_svg(design_id: str):
 
 
 @app.get("/api/v1/designs/{design_id}/print.svg", dependencies=KEY)
-def print_svg(design_id: str, size: str = Query("M", pattern="^(XS|S|M|L|XL|XXL)$"), mirror: bool = False,
+def print_svg(design_id: str, size: str = Query("M", pattern="^(XS|S|M|L|XL|XXL|3XL|4Y|6Y|8Y|10Y|12Y|14Y)$"),
+              fit: str = Query("men", pattern="^(men|women|kids)$"), mirror: bool = False,
               roll_width: float = Query(1600, ge=600, le=3200), download: bool = False):
     spec = DesignSpec.model_validate_json(_design_or_404(design_id)["spec_json"])
     try:
-        svg, _ = render_print_sheet(spec, size=size, mirror=mirror, roll_width=roll_width, design_id=design_id)
+        svg, _ = render_print_sheet(spec, size=size, mirror=mirror, roll_width=roll_width, design_id=design_id,
+                                    fit=fit, sizing_chart=pconfig.get(store, "sizing"))
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
     headers = {"Content-Disposition": f'attachment; filename="{design_id}_{size}{"_mirrored" if mirror else ""}.svg"'} \
@@ -223,7 +231,7 @@ def print_from_spec(req: PrintRequest):
     """Stateless print sheet from a spec, so exports never depend on server storage."""
     try:
         svg, _ = render_print_sheet(req.spec, size=req.size, mirror=req.mirror, roll_width=req.roll_width,
-                                    design_id=req.design_id)
+                                    design_id=req.design_id, fit=req.fit, sizing_chart=pconfig.get(store, "sizing"))
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
     return Response(svg, media_type=SVG)
@@ -259,7 +267,8 @@ def _cod_problem(req: OrderRequest, seller: dict) -> str | None:
     q = pricing.quote(store, pricing.QuoteRequest(
         garment=req.spec.garment, fabric=req.fabric, rush=req.rush, coupon=req.coupon, seller_id=seller["id"],
         payment_method="cod", logos=min(4, sum(1 for e in req.spec.elements if e.type == "logo")),
-        lines=[pricing.PriceLine(size=i.size, quantity=i.quantity, player_name=i.player_name, number=i.number)
+        sleeves=req.spec.sleeves, collar=req.spec.collar,
+        lines=[pricing.PriceLine(fit=i.fit, size=i.size, quantity=i.quantity, player_name=i.player_name, number=i.number)
                for i in req.items],
         delivery=pricing.DeliveryChoice(method=d.method if d else "ship",
                                         pincode=d.address.pincode if d and d.address else "",
@@ -283,7 +292,7 @@ def place_order(req: OrderRequest, customer: dict | None = None, quote: dict | N
             if problem:
                 raise HTTPException(422, {"message": problem, "code": "cod_unavailable"})
     try:
-        order, created = orders.create(store, req)
+        order, created = orders.create(store, req, sizing_chart=pconfig.get(store, "sizing"))
     except KeyError as e:
         raise HTTPException(409, "This idempotency key was already used for a different order.") from e
     if not order.get("pricing"):

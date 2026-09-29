@@ -108,6 +108,28 @@ def extract_garment(normalized: str) -> str | None:
     return None
 
 
+_SLEEVE_WORDS = (
+    ("none", r"\b(sleeveless|no[\s-]?sleeves?|without sleeves?|vest|tank[\s-]?top|singlet)\b"),
+    ("long", r"\b(long|full)[\s-]?(sleeves?|sleeved|hands?)\b"),
+    ("short", r"\b(short|half)[\s-]?(sleeves?|sleeved|hands?)\b"),
+)
+_COLLAR_WORDS = (
+    ("polo", r"\bpolo\b"),
+    ("mandarin", r"\bmandarin\b|\b(chinese|band|nehru)[\s-]?(collar|neck)\b"),
+    ("crew", r"\b(round|crew)[\s-]?neck\b"),
+)
+
+
+def extract_sleeves(normalized: str) -> str | None:
+    t = normalized.lower()
+    return next((v for v, rx in _SLEEVE_WORDS if re.search(rx, t)), None)
+
+
+def extract_collar(normalized: str) -> str | None:
+    t = normalized.lower()
+    return next((v for v, rx in _COLLAR_WORDS if re.search(rx, t)), None)
+
+
 def _question(qid: str, field: str, kind: str, message: str, options: list[dict]) -> dict:
     return {"id": qid, "field": field, "kind": kind, "message": message, "options": options}
 
@@ -178,6 +200,7 @@ def understand(req: UnderstandRequest) -> dict:
         "detected_language": detected_lang,
         "sport": sport, "sport_source": sport_source,
         "garment": garment, "garment_source": "form" if req.garment else ("prompt" if prompt_garment else "default"),
+        "options": _options(normalized, garment),
         "colors": colors,
         "patterns": brief.patterns,
         "themes": themes,
@@ -190,4 +213,22 @@ def understand(req: UnderstandRequest) -> dict:
     }
 
 
-__all__ = ["understand", "extract_number", "extract_team", "extract_player", "MOOD_PATTERNS"]
+def _options(normalized: str, garment: str) -> dict:
+    """Sleeves and collar the brief asks for (None: not mentioned, the default is used)."""
+    if garment == "shorts":
+        return {"sleeves": None, "collar": None}
+    return {"sleeves": extract_sleeves(normalized), "collar": extract_collar(normalized) if garment == "jersey" else None}
+
+
+def garment_options(spec_garment: str, prompt: str, sleeves: str | None, collar: str | None) -> dict:
+    """The sleeves and collar for a new design: what was chosen, else what the brief says, else the defaults."""
+    found = _options(i18n.normalize(prompt), spec_garment)
+    out = {"sleeves": "short", "collar": "crew"}
+    if spec_garment != "shorts":
+        out["sleeves"] = sleeves or found["sleeves"] or "short"
+    if spec_garment == "jersey":
+        out["collar"] = collar or found["collar"] or "crew"
+    return out
+
+
+__all__ = ["understand", "garment_options", "extract_sleeves", "extract_collar", "extract_number", "extract_team", "extract_player", "MOOD_PATTERNS"]

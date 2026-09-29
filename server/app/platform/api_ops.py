@@ -250,7 +250,8 @@ def router(store: PlatformStore, key_dep) -> APIRouter:
     @r.put("/settings/{section}")
     def put_settings(section: str, body: SettingsPut, s: dict = Depends(security.current_staff)):
         _section(section)
-        perm = {"price_book": "pricing", "production": "production", "delivery": "delivery"}.get(section, "settings")
+        perm = {"price_book": "pricing", "production": "production", "sizing": "production",
+                "delivery": "delivery"}.get(section, "settings")
         if not (security.can(s, perm) or security.can(s, "settings")):
             raise HTTPException(403, f"Your role ({s['role']}) cannot change {section}.")
         try:

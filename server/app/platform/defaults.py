@@ -15,7 +15,27 @@ PRICE_BOOK = {
         {"id": "premium", "name": "Micro-mesh polyester, 160 GSM", "surcharge": 120, "garments": ["jersey", "vneck", "shorts"]},
         {"id": "pro", "name": "Lycra blend, 180 GSM", "surcharge": 220, "garments": ["jersey", "vneck"]},
     ],
-    "size_surcharge": {"XS": 0, "S": 0, "M": 0, "L": 0, "XL": 0, "XXL": 60},
+    # Per size, any fit. Sizes not listed cost nothing extra.
+    "size_surcharge": {"XS": 0, "S": 0, "M": 0, "L": 0, "XL": 0, "XXL": 60, "3XL": 90,
+                       "4Y": 0, "6Y": 0, "8Y": 0, "10Y": 0, "12Y": 0, "14Y": 0},
+    # Garment options, per piece. A negative price is a discount. Inactive choices are hidden.
+    "options": {
+        "sleeves": {
+            "short": {"name": "Short sleeves", "price": 0, "active": True},
+            "long": {"name": "Long sleeves", "price": 60, "active": True},
+            "none": {"name": "Sleeveless", "price": -20, "active": True},
+        },
+        "collar": {
+            "crew": {"name": "Crew neck", "price": 0, "active": True},
+            "polo": {"name": "Polo collar with buttons", "price": 90, "active": True},
+            "mandarin": {"name": "Mandarin collar", "price": 50, "active": True},
+        },
+        "fit": {
+            "men": {"name": "Men / unisex", "price": 0, "active": True},
+            "women": {"name": "Women", "price": 0, "active": True},
+            "kids": {"name": "Kids", "price": -60, "active": True},
+        },
+    },
     "personalisation": {"name": 40, "number": 30},
     "logo_per_piece": 25,
     "quantity_tiers": [
@@ -96,4 +116,6 @@ CRM = {
     "returnable_reasons": ["damaged", "wrong_item", "print_quality"],
 }
 
-ALL = {"price_book": PRICE_BOOK, "production": PRODUCTION, "delivery": DELIVERY, "company": COMPANY, "crm": CRM}
+from ..engine.sizing import DEFAULT_SIZING as SIZING  # noqa: E402
+
+ALL = {"sizing": SIZING, "price_book": PRICE_BOOK, "production": PRODUCTION, "delivery": DELIVERY, "company": COMPANY, "crm": CRM}

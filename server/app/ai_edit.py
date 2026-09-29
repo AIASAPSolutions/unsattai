@@ -26,7 +26,7 @@ from .engine import i18n
 from .engine.color import best_text_color, contrast_ratio
 from .engine.vocab import NAMED_COLORS
 from .refine import _Edit
-from .schemas import COLOR_ROLES, COVERAGES, FONTS, PATTERNS, SPORTS, DesignSpec, RefineRequest
+from .schemas import COLLARS, COLOR_ROLES, COVERAGES, FONTS, PATTERNS, SLEEVES, SPORTS, DesignSpec, RefineRequest
 from .store import Store
 
 log = logging.getLogger("urjersey.ai_edit")
@@ -54,6 +54,8 @@ FIELDS: dict[str, tuple] = {
     "typography.number": ("number",),
     "sport": ("enum", SPORTS),
     "style_name": ("text", 48),
+    "sleeves": ("enum", SLEEVES),
+    "collar": ("enum", COLLARS),
 }
 
 OUTPUT_SCHEMA = {
@@ -92,6 +94,8 @@ Fields and allowed values:
   An empty value removes it.
 - sport: {", ".join(SPORTS)}
 - style_name: short name for the look (48 chars)
+- sleeves: {", ".join(SLEEVES)} (none = sleeveless; not for shorts)
+- collar: {", ".join(COLLARS)} (crew-neck jersey only; a V-neck keeps its V)
 
 Rules: change only what was asked; use the current design to judge relative requests such as "a bit darker"
 or "bigger pattern"; keep names and numbers readable against the body colour. If the request is not about
@@ -135,7 +139,7 @@ def _claude_client():
 
 def _user_message(req: RefineRequest) -> str:
     s = req.spec
-    current = {"garment": s.garment, "sport": s.sport, "style_name": s.style_name, "base": s.base,
+    current = {"garment": s.garment, "sleeves": s.sleeves, "collar": s.collar, "sport": s.sport, "style_name": s.style_name, "base": s.base,
                "palette": s.palette.model_dump(), "pattern": s.pattern.model_dump(),
                "accents": s.accents.model_dump(), "typography": s.typography.model_dump()}
     lang = i18n.LANGUAGE_NAMES.get(req.language, ("English",))[0]
@@ -240,6 +244,8 @@ def apply_changes(spec: DesignSpec, changes: list[dict], instruction: str) -> tu
             continue
         value = _coerce(field, c.get("value", ""), instruction)
         if value is None:
+            continue
+        if (field == "sleeves" and e.data["garment"] == "shorts") or (field == "collar" and e.data["garment"] != "jersey"):
             continue
         label = field.split(".")[-1].replace("_", " ")
         e.set(field, value, f"{label.capitalize()} set to {value}" if value != "" else f"{label.capitalize()} removed")

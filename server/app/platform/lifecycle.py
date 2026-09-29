@@ -135,7 +135,8 @@ def price_order(store: PlatformStore, order: dict, extras: dict) -> dict:
     logos = sum(1 for e in spec.get("elements", []) if e.get("type") == "logo")
     req = QuoteRequest(
         garment=order["garment"], fabric=extras.get("fabric") or "standard", logos=min(logos, 4),
-        lines=[PriceLine(size=ln["size"], quantity=ln["quantity"], player_name=ln["player_name"], number=ln["number"])
+        sleeves=spec.get("sleeves") or "short", collar=spec.get("collar") or "crew",
+        lines=[PriceLine(fit=ln.get("fit") or "men", size=ln["size"], quantity=ln["quantity"], player_name=ln["player_name"], number=ln["number"])
                for ln in order["lines"]],
         delivery=DeliveryChoice(**(extras.get("delivery_choice") or {})), rush=bool(extras.get("rush")),
         coupon=extras.get("coupon") or "", seller_id=(order.get("seller") or {}).get("id") or "",

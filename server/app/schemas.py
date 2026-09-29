@@ -17,16 +17,26 @@ COVERAGES = ("full", "top", "bottom", "diagonal_band", "side_panels", "chest_ban
 GARMENTS = ("jersey", "vneck", "shorts")
 FONTS = ("block", "athletic", "modern")
 COLOR_ROLES = ("primary", "secondary", "accent", "trim", "text")
-SIZES = ("XS", "S", "M", "L", "XL", "XXL")
+SIZES = ("XS", "S", "M", "L", "XL", "XXL")          # Men's sizes before fits existed; kept for old clients
+# Every size of every fit (Men XS-3XL, Women XS-XXL, Kids 4Y-14Y); engine/sizing.py has the lists and charts.
+ALL_SIZES = ("XS", "S", "M", "L", "XL", "XXL", "3XL", "4Y", "6Y", "8Y", "10Y", "12Y", "14Y")
+FIT_SIZES = {"men": ALL_SIZES[:7], "women": ALL_SIZES[:6], "kids": ALL_SIZES[7:]}
 SPORTS = ("football", "cricket", "basketball", "rugby", "hockey", "volleyball",
           "kabaddi", "cycling", "running", "esports", "netball", "badminton")
 PROVIDERS = ("auto", "rule", "claude", "slm")
+# Garment options. Sleeves and collar apply to tops (jersey, vneck); a V-neck always has its V collar.
+SLEEVES = ("short", "long", "none")          # none = sleeveless
+COLLARS = ("crew", "polo", "mandarin")       # jersey only
+FITS = ("men", "women", "kids")               # per order line: which size chart
 
 HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 PatternType = Literal[PATTERNS]
 Coverage = Literal[COVERAGES]
 Garment = Literal[GARMENTS]
+Sleeves = Literal[SLEEVES]
+Collar = Literal[COLLARS]
+Fit = Literal[FITS]
 Font = Literal[FONTS]
 ColorRole = Literal[COLOR_ROLES]
 
@@ -158,6 +168,8 @@ class DesignSpec(BaseModel):
     # Unknown fields survive a round trip, so older/newer clients never lose data.
     model_config = ConfigDict(extra="allow")
     garment: Garment = "jersey"
+    sleeves: Sleeves = "short"
+    collar: Collar = "crew"
     sport: str = "football"
     style_name: str = Field("Untitled", max_length=48)
     base: Literal["solid", "gradient"] = "solid"
@@ -192,9 +204,16 @@ LANGUAGES = ("en", "hi", "te", "ta")
 Language = Literal[LANGUAGES]
 
 
+class GarmentChoice(BaseModel):
+    """Options the customer picked before designing. None = decide from the brief, else the default."""
+    sleeves: Sleeves | None = None
+    collar: Collar | None = None
+
+
 class GenerateRequest(BaseModel):
     prompt: str = Field(..., min_length=3, max_length=600)
     garment: Garment = "jersey"
+    options: GarmentChoice = Field(default_factory=GarmentChoice)
     sport: str | None = None
     team_name: str = Field("", max_length=24)
     player_name: str = Field("", max_length=16)
@@ -243,13 +262,13 @@ class FeedbackRequest(BaseModel):
 
 class RenderRequest(BaseModel):
     spec: DesignSpec
-    sizes: list[Literal[SIZES]] = Field(default_factory=list, max_length=6)
+    sizes: list[str] = Field(default_factory=list, max_length=20, description="\"M\" or \"fit:size\", e.g. \"kids:8Y\"")
 
 
 class PanelsRequest(BaseModel):
     spec: DesignSpec
     include_elements: bool = True
-    sizes: list[Literal[SIZES]] = Field(default_factory=list, max_length=6)
+    sizes: list[str] = Field(default_factory=list, max_length=20, description="\"M\" or \"fit:size\", e.g. \"kids:8Y\"")
 
 
 class RefineRequest(BaseModel):
@@ -261,6 +280,7 @@ class RefineRequest(BaseModel):
 class FromImageRequest(BaseModel):
     image: str = Field(..., max_length=8_200_000, description="data:image/png|jpeg;base64,... up to 6 MB")
     garment: Garment = "jersey"
+    options: GarmentChoice = Field(default_factory=GarmentChoice)
     sport: str | None = None
     team_name: str = Field("", max_length=24)
     player_name: str = Field("", max_length=16)
@@ -285,7 +305,8 @@ class LogoSuggestRequest(BaseModel):
 class PrintRequest(BaseModel):
     spec: DesignSpec
     design_id: str = Field("", max_length=40)
-    size: Literal[SIZES] = "M"
+    size: Literal[ALL_SIZES] = "M"
+    fit: Fit = "men"
     mirror: bool = False
     roll_width: float = Field(1600, ge=600, le=3200)
 
@@ -299,11 +320,22 @@ class Check(BaseModel):
 
 # ----------------------------------------------------------------- orders
 
+def check_fit_size(fit: str, size: str) -> None:
+    if size not in FIT_SIZES[fit]:
+        raise ValueError(f"{size} is not a {fit} size; {fit} sizes are {', '.join(FIT_SIZES[fit])}")
+
+
 class OrderItem(BaseModel):
     player_name: str = Field("", max_length=16)
     number: str = Field("", pattern=r"^\d{0,3}$")
-    size: Literal[SIZES]
+    fit: Fit = "men"
+    size: Literal[ALL_SIZES]
     quantity: int = Field(..., ge=1, le=500)
+
+    @model_validator(mode="after")
+    def _fit_size(self):
+        check_fit_size(self.fit, self.size)
+        return self
 
 
 class Customer(BaseModel):

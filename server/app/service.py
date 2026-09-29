@@ -5,7 +5,7 @@ import random
 
 from .config import settings
 from .engine import i18n, layout
-from .engine.garments import GARMENT_PANELS
+from .engine.garments import spec_panels
 from .engine.manufacturing import is_manufacturing_ready, run_checks
 from .engine.renderer import RenderCtx, panel_art, render_mockup
 from .providers import PROVIDERS, ProviderError, parse_brief, resolve
@@ -22,6 +22,24 @@ def render_preview(spec: DesignSpec, prefix: str | None = None, sizes: list[str]
             "manufacturing_ready": is_manufacturing_ready(checks)}
 
 
+def _panel_note(spec: DesignSpec, p) -> str:
+    """What the flat piece is, so a front piece without its sleeves doesn't read as sleeveless."""
+    if p.kind in ("front", "back") and spec.garment != "shorts":
+        if spec.sleeves == "none":
+            note = "Sleeveless: the armholes are finished with a binding."
+        else:
+            note = f"Flat {p.kind} piece as printed. The {'long ' if spec.sleeves == 'long' else ''}sleeves are " \
+                   "separate pieces, sewn on."
+        if spec.garment == "jersey" and spec.collar != "crew":
+            note += f" The {spec.collar} collar is knitted separately"
+            note += " and the button placket is cut at the centre front, so keep text below it." \
+                if spec.collar == "polo" and p.kind == "front" else "."
+        return note
+    if p.kind == "sleeve":
+        return "Sleeves follow the jersey's colours and trim."
+    return ""
+
+
 def render_panels(spec: DesignSpec, include_elements: bool = True, sizes: list[str] | None = None) -> dict:
     """One SVG per pattern piece in panel millimetres (viewBox 0 0 w h), clipped to the cut line."""
     art_spec = spec if include_elements else spec.model_copy(update={"elements": []})
@@ -31,7 +49,7 @@ def render_panels(spec: DesignSpec, include_elements: bool = True, sizes: list[s
             update={"team_name": "", "player_name": "", "number": ""})})
     ctx = RenderCtx(art_spec, "pn")
     panels = []
-    for p in GARMENT_PANELS[spec.garment]:
+    for p in spec_panels(spec):
         clip = ctx.uid("clip")
         before = len(ctx.defs)
         art = panel_art(ctx, p, pad=4)
@@ -41,9 +59,9 @@ def render_panels(spec: DesignSpec, include_elements: bool = True, sizes: list[s
                f'<defs>{defs}<clipPath id="{clip}"><path d="{p.d}"/></clipPath></defs>'
                f'<g clip-path="url(#{clip})">{art}</g>'
                f'<path d="{p.d}" fill="none" stroke="#0b0d10" stroke-opacity="0.5" stroke-width="2"/></svg>')
-        zone = layout.safe_zone(spec.garment, side) if side else None
+        zone = layout.safe_zone(spec.garment, side, spec.sleeves, spec.collar) if side else None
         panels.append({"name": p.name, "kind": p.kind, "side": side, "width": p.w, "height": p.h, "outline": p.d,
-                       "svg": svg, "editable": zone is not None,
+                       "svg": svg, "editable": zone is not None, "note": _panel_note(spec, p),
                        "safe_zone": [list(pt) for pt in zone] if zone else None})
     _, mctx = render_mockup(spec, "pc")
     checks = run_checks(spec, mctx.min_feature_mm, sizes)
@@ -57,6 +75,11 @@ def render_panels(spec: DesignSpec, include_elements: bool = True, sizes: list[s
         "checks": [c.model_dump() for c in checks],
         "manufacturing_ready": is_manufacturing_ready(checks),
     }
+
+
+def with_options(spec: DesignSpec, prompt: str, sleeves: str | None, collar: str | None) -> DesignSpec:
+    from .understand import garment_options
+    return spec.model_copy(update=garment_options(spec.garment, prompt, sleeves, collar))
 
 
 def generate(store: Store, req: GenerateRequest) -> dict:
@@ -83,6 +106,7 @@ def generate(store: Store, req: GenerateRequest) -> dict:
 
     if len(specs) < req.variants:
         specs += PROVIDERS["rule"].generate(req, req.variants - len(specs), seed + 1000)
+    specs = [with_options(s, req.prompt, req.options.sleeves, req.options.collar) for s in specs]
 
     gid, ids = store.save_generation(req.model_dump(), provider.name, fallback_reason, specs)
     return {

@@ -3,7 +3,7 @@
 Every amount on a quote is itemised, so the customer, the sales team and the
 invoice all see the same numbers:
 
-    per piece = garment base + fabric + logos + size surcharge + name + number
+    per piece = garment base + fabric + logos + options (sleeves, collar, fit) + size surcharge + name + number
     subtotal  = sum of lines
     - quantity discount (tier by total pieces)
     + express production fee
@@ -20,18 +20,24 @@ from __future__ import annotations
 
 from datetime import date
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
-from ..schemas import SIZES, Garment
+from ..schemas import ALL_SIZES, Collar, Fit, Garment, Sleeves, check_fit_size
 from . import config
 from .db import PlatformStore
 
 
 class PriceLine(BaseModel):
-    size: str = Field(..., pattern="^(" + "|".join(SIZES) + ")$")
+    fit: Fit = "men"
+    size: str = Field(..., pattern="^(" + "|".join(ALL_SIZES) + ")$")
     quantity: int = Field(..., ge=1, le=5000)
     player_name: str = Field("", max_length=16)
     number: str = Field("", pattern=r"^\d{0,3}$")
+
+    @model_validator(mode="after")
+    def _fit_size(self):
+        check_fit_size(self.fit, self.size)
+        return self
 
 
 class DeliveryChoice(BaseModel):
@@ -44,6 +50,8 @@ class QuoteRequest(BaseModel):
     garment: Garment = "jersey"
     fabric: str = "standard"
     logos: int = Field(0, ge=0, le=4)
+    sleeves: Sleeves = "short"
+    collar: Collar = "crew"
     lines: list[PriceLine] = Field(..., min_length=1, max_length=500)
     delivery: DeliveryChoice = Field(default_factory=DeliveryChoice)
     rush: bool = False
@@ -121,18 +129,33 @@ def quote(store: PlatformStore, req: QuoteRequest, today: date | None = None, pr
         fabric = next(f for f in pb["fabrics"] if req.garment in f["garments"])
     base = pb["garments"][req.garment]["base"]
     logos = req.logos * pb["logo_per_piece"]
+    opts = pb.get("options") or config.defaults.PRICE_BOOK["options"]
+
+    def option(group: str, key: str) -> float:
+        c = opts[group][key]
+        if not c.get("active", True):
+            problems.append(f"{c['name']} is not available right now.")
+        return c["price"]
+
+    garment_options = {}
+    if req.garment != "shorts":
+        garment_options["sleeves"] = option("sleeves", req.sleeves)
+    if req.garment == "jersey":
+        garment_options["collar"] = option("collar", req.collar)
 
     lines, subtotal, pieces = [], 0.0, 0
     for i, ln in enumerate(req.lines, 1):
         parts = {"garment": base, "fabric": fabric["surcharge"], "logos": logos,
+                 **{k: v for k, v in garment_options.items() if v},
+                 **({"fit": f} if (f := option("fit", ln.fit)) else {}),
                  "size": pb["size_surcharge"].get(ln.size, 0),
                  "name": pb["personalisation"]["name"] if ln.player_name.strip() else 0,
                  "number": pb["personalisation"]["number"] if ln.number else 0}
         if adjust:
             parts["seller"] = _money(sum(parts.values()) * adjust)
-        unit = _money(sum(parts.values()))
+        unit = max(0.0, _money(sum(parts.values())))
         total = _money(unit * ln.quantity)
-        lines.append({"line": i, "size": ln.size, "quantity": ln.quantity, "player_name": ln.player_name,
+        lines.append({"line": i, "fit": ln.fit, "size": ln.size, "quantity": ln.quantity, "player_name": ln.player_name,
                       "number": ln.number, "unit_price": unit, "line_total": total, "parts": parts})
         subtotal += total
         pieces += ln.quantity
@@ -207,6 +230,8 @@ def quote(store: PlatformStore, req: QuoteRequest, today: date | None = None, pr
         "price_book_version": version,
         "garment": req.garment,
         "fabric": {"id": fabric["id"], "name": fabric["name"]},
+        "options": {k: {"id": getattr(req, k), "name": opts[k][getattr(req, k)]["name"], "price": v}
+                    for k, v in garment_options.items()},
         "lines": lines,
         "pieces": pieces,
         "subtotal": subtotal,
@@ -223,5 +248,5 @@ def quote(store: PlatformStore, req: QuoteRequest, today: date | None = None, pr
         "tax": {"name": tax_cfg["name"], "rate": rate, "amount": tax_amount, "inclusive": tax_cfg["inclusive"]},
         "total": total,
         "average_per_piece": _money(total / pieces) if pieces else 0,
-        "problems": problems,
+        "problems": list(dict.fromkeys(problems)),
     }

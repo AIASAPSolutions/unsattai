@@ -18,13 +18,23 @@ CHAR_WIDTH = 0.6        # average glyph advance relative to font size
 _NECK_DEPTH = {"front": {"jersey": 90, "vneck": 150}, "back": {"jersey": 28, "vneck": 28}}
 
 
-def safe_zone(garment: str, panel: str) -> list[tuple[float, float]] | None:
+POLO_PLACKET_END = 150     # the button placket runs down the front to here (mm)
+
+
+def safe_zone(garment: str, panel: str, sleeves: str = "short", collar: str = "crew") -> list[tuple[float, float]] | None:
     """Convex polygon for a customer-editable panel, or None when the panel takes no layers."""
     if panel not in ("front", "back"):
         return None
     if garment == "shorts":
         return [(70, 60), (570, 60), (595, 330), (45, 330)]
     top = _NECK_DEPTH[panel][garment] + 20
+    if garment == "jersey" and collar == "polo" and panel == "front":
+        top = max(top, POLO_PLACKET_END + 12)
+    if sleeves == "none":
+        # The deeper sleeveless armhole: stay 20 mm or more inside it and the narrower shoulders.
+        # (Convex, like every zone: is_safe tests each edge.)
+        top = max(top, 62)
+        return [(165, top), (375, top), (500, 400), (500, 690), (40, 690), (40, 400)]
     return [(100, top), (440, top), (500, 270), (500, 690), (40, 690), (40, 270)]
 
 
@@ -77,7 +87,7 @@ def _inside(poly: list[tuple[float, float]], p: tuple[float, float]) -> bool:
 
 
 def is_safe(spec: DesignSpec, el) -> bool:
-    zone = safe_zone(spec.garment, el.panel)
+    zone = safe_zone(spec.garment, el.panel, spec.sleeves, spec.collar)
     if zone is None:
         return False
     w, _ = element_size(spec, el)

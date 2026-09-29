@@ -4,7 +4,7 @@ from __future__ import annotations
 from ..schemas import MAX_LOGOS, Check, DesignSpec, LogoElement, TextElement
 from . import layout
 from .color import contrast_ratio, likely_out_of_gamut, luminance
-from .garments import SIZE_SCALE
+from . import sizing
 
 MIN_FEATURE_MM = 0.5      # below this, detail is lost to dye spread on polyester
 MIN_TEXT_CONTRAST = 3.0   # numbers must be readable by referees / broadcast
@@ -20,8 +20,19 @@ def _label(spec: DesignSpec, el) -> str:
     return f"text '{el.text}'"
 
 
+def _art_scale(spec: DesignSpec, fit_size: str) -> float:
+    """How much artwork grows on a size ("M" = Men's M, or "women:L", "kids:8Y")."""
+    fit, _, size = fit_size.rpartition(":")
+    fit = fit or "men"
+    if not sizing.valid(fit, size):
+        return 1.0
+    kind = "shorts_front" if spec.garment == "shorts" else "front"
+    return sizing.art_scale(*sizing.grade(kind, spec.sleeves, sizing.row(None, fit, size)))
+
+
 def run_checks(spec: DesignSpec, min_feature_mm: float, sizes: list[str] | None = None) -> list[Check]:
-    """sizes: the order sizes to check raster DPI against (largest is the worst case)."""
+    """sizes: the order sizes to check raster DPI against, as "M" (Men's) or "fit:size" such as "kids:8Y".
+    The largest print is the worst case."""
     checks: list[Check] = []
     pal = spec.palette.model_dump()
 
@@ -70,9 +81,14 @@ def run_checks(spec: DesignSpec, min_feature_mm: float, sizes: list[str] | None 
     else:
         checks.append(Check(id="vector", level="pass",
                             message="Artwork is vector: prints sharp at any size; rasterise at 150-300 DPI if the RIP needs it."))
-    pieces = "front, back and both sleeves" if spec.garment != "shorts" else "front and back"
+    pieces = "front and back" if spec.garment == "shorts" or spec.sleeves == "none" else \
+        f"front, back and both {'long ' if spec.sleeves == 'long' else ''}sleeves"
+    extra = " Sleeveless: armholes get a printed binding." if spec.garment != "shorts" and spec.sleeves == "none" else ""
+    if spec.garment == "jersey" and spec.collar != "crew":
+        extra += f" The {spec.collar} collar is knitted separately in the {spec.accents.collar_role} colour."
     checks.append(Check(id="panels", level="pass",
-                        message=f"Artwork is laid out on the {pieces} pattern pieces, graded XS-XXL for cut-and-sew."))
+                        message=f"Artwork is laid out on the {pieces} pattern pieces, graded to the Men, Women and "
+                                f"Kids size charts for cut-and-sew.{extra}"))
     checks.append(Check(id="fabric", level="info",
                         message="Use polyester of 65% or more (100% preferred). Pieces include 10 mm bleed past the magenta cut line."))
     return checks
@@ -99,7 +115,9 @@ def _layer_checks(spec: DesignSpec, sizes: list[str]) -> list[Check]:
                                          f"(minimum {MIN_TEXT_CONTRAST}:1)."))
 
     logos = [e for e in spec.elements if isinstance(e, LogoElement)]
-    worst = max(sizes, key=lambda s: SIZE_SCALE[s]) if sizes else "M"
+    worst = max(sizes, key=lambda s: _art_scale(spec, s)) if sizes else "M"
+    scale = _art_scale(spec, worst)
+    worst_label = worst.replace("men:", "").replace(":", " ")
     for el in logos:
         if el.kind == "vector":
             out.append(Check(id="logo_dpi", level="pass", element_id=el.id,
@@ -109,12 +127,12 @@ def _layer_checks(spec: DesignSpec, sizes: list[str]) -> list[Check]:
             out.append(Check(id="logo_dpi", level="warn", element_id=el.id,
                              message=f"The {_label(spec, el)} has no pixel size, so its print resolution is unknown."))
             continue
-        printed_in = el.width * SIZE_SCALE[worst] / 25.4
+        printed_in = el.width * scale / 25.4
         dpi = el.pixel_width / printed_in
         level = "pass" if dpi >= TARGET_DPI else "warn" if dpi >= MIN_DPI else "fail"
         out.append(Check(id="logo_dpi", level=level, element_id=el.id,
-                         message=f"The {_label(spec, el)} prints at {dpi:.0f} DPI on size {worst} "
-                                 f"({el.width * SIZE_SCALE[worst]:.0f} mm wide); {TARGET_DPI} DPI or more is recommended."
+                         message=f"The {_label(spec, el)} prints at {dpi:.0f} DPI on size {worst_label} "
+                                 f"({el.width * scale:.0f} mm wide); {TARGET_DPI} DPI or more is recommended."
                                  + (f" Below {MIN_DPI} DPI it will pixelate." if level == "fail" else "")))
     if len(logos) > MAX_LOGOS:
         out.append(Check(id="logo_count", level="fail", message=f"At most {MAX_LOGOS} logos per design."))

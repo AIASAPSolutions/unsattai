@@ -200,6 +200,7 @@ def tasks_due(store: PlatformStore, owner: str | None, until: str) -> list[dict]
 def _quote_pricing(store: PlatformStore, body: QuoteIn) -> dict:
     logos = sum(1 for e in body.spec.elements if e.type == "logo")
     pr = quote(store, QuoteRequest(garment=body.spec.garment, fabric=body.fabric, logos=min(logos, 4), lines=body.lines,
+                                   sleeves=body.spec.sleeves, collar=body.spec.collar,
                                    delivery=body.delivery, rush=body.rush, coupon=body.coupon))
     if body.extra_discount:
         d = min(body.extra_discount, pr["total"])

@@ -120,7 +120,8 @@ def _logos(spec: DesignSpec, item: CartItem) -> int:
 
 def _item_request(spec: DesignSpec, item: CartItem, delivery: CartDelivery, rush: bool, payment_method: str) -> QuoteRequest:
     return QuoteRequest(garment=spec.garment, fabric=item.fabric, logos=_logos(spec, item), rush=rush,
-                        lines=[PriceLine(size=ln.size, quantity=ln.quantity, player_name=ln.player_name, number=ln.number)
+                        sleeves=spec.sleeves, collar=spec.collar,
+                        lines=[PriceLine(fit=ln.fit, size=ln.size, quantity=ln.quantity, player_name=ln.player_name, number=ln.number)
                                for ln in item.lines],
                         delivery=DeliveryChoice(method=delivery.method, pincode=delivery.pincode, state=delivery.state),
                         seller_id=item.seller_id, payment_method=payment_method)

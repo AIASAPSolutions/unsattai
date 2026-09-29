@@ -14,7 +14,8 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field, model_validator
 
-from ..schemas import SIZES, Address, DesignSpec
+from ..engine import sizing
+from ..schemas import ALL_SIZES, Address, DesignSpec, Fit, check_fit_size
 from . import accounts, config, crm, lifecycle, planning, security, sellers
 from .db import PlatformStore, new_id, now
 from .pricing import QuoteRequest, find_zone, quote
@@ -63,9 +64,15 @@ class CollectionIn(BaseModel):
 class EntryIn(BaseModel):
     player_name: str = Field("", max_length=16)
     number: str = Field("", pattern=r"^\d{0,3}$")
-    size: str = Field(..., pattern="^(" + "|".join(SIZES) + ")$")
+    fit: Fit = "men"
+    size: str = Field(..., pattern="^(" + "|".join(ALL_SIZES) + ")$")
     quantity: int = Field(1, ge=1, le=20)
     contact: str = Field("", max_length=40)
+
+    @model_validator(mode="after")
+    def _fit_size(self):
+        check_fit_size(self.fit, self.size)
+        return self
 
 
 class EnquiryIn(BaseModel):
@@ -95,6 +102,11 @@ def router(store: PlatformStore, key_dep, create_order) -> APIRouter:
     @r.get("/shop/catalogue")
     def catalogue():
         return config.public_catalogue(store)
+
+    @r.get("/shop/size-guide")
+    def size_guide():
+        """Men, Women and Kids size charts: garment measurements and the body sizes each fits."""
+        return config.size_guide(store)
 
     @r.post("/shop/quote")
     def shop_quote(req: QuoteRequest):
@@ -211,7 +223,7 @@ def router(store: PlatformStore, key_dep, create_order) -> APIRouter:
     def reorder(order_id: str, customer: dict = Depends(security.require_customer)):
         o = _mine(order_id, customer)
         return {"spec": o["spec"], "design_id": o.get("design_id"),
-                "items": [{"player_name": ln["player_name"], "number": ln["number"], "size": ln["size"],
+                "items": [{"player_name": ln["player_name"], "number": ln["number"], "fit": ln.get("fit") or "men", "size": ln["size"],
                            "quantity": ln["quantity"]} for ln in o["lines"]],
                 "fabric": (o.get("pricing") or {}).get("fabric", {}).get("id", "standard"),
                 "delivery": (o.get("delivery") or {})}
@@ -260,7 +272,8 @@ def router(store: PlatformStore, key_dep, create_order) -> APIRouter:
         pb = config.get(store, "price_book")
         return {"id": c["id"], "token": c["token"], "title": c["title"], "spec": c["spec"], "deadline": c["deadline"],
                 "message": c["message"], "status": c["status"], "organiser": c["organiser_name"],
-                "fabric": c["fabric"], "sizes": list(SIZES), "count": sum(e["quantity"] for e in entries),
+                "fabric": c["fabric"], "sizes": list(sizing.FIT_SIZES["men"]),
+                "fit_sizes": {k: list(v) for k, v in sizing.FIT_SIZES.items()}, "count": sum(e["quantity"] for e in entries),
                 "taken_numbers": sorted({e["number"] for e in entries if e["number"]}),
                 "unique_numbers": c["unique_numbers"], "currency": pb["currency"],
                 "base_price": pb["garments"][c["spec"]["garment"]]["base"]}
@@ -365,7 +378,7 @@ def router(store: PlatformStore, key_dep, create_order) -> APIRouter:
         full = store.get("quote", q["id"])
         order = create_order({
             "design_id": full.get("design_id", ""), "spec": full["spec"], "language": "en",
-            "items": [{"player_name": ln["player_name"], "number": ln["number"], "size": ln["size"],
+            "items": [{"player_name": ln["player_name"], "number": ln["number"], "fit": ln.get("fit") or "men", "size": ln["size"],
                        "quantity": ln["quantity"]} for ln in full["lines"]],
             "customer": {"name": full["customer"]["name"] or "Customer", "phone": full["customer"]["phone"],
                          "email": full["customer"].get("email", "")},

@@ -175,6 +175,30 @@ def _sport(t: str, e: _Edit) -> None:
         e.set("sport", m.group(1), f"Sport set to {m.group(1)}")
 
 
+_SLEEVE_LABEL = {"short": "Short sleeves", "long": "Long sleeves", "none": "Sleeveless"}
+_COLLAR_LABEL = {"crew": "Crew neck", "polo": "Polo collar", "mandarin": "Mandarin collar"}
+
+
+def _garment_options(t: str, e: _Edit) -> None:
+    from .understand import extract_collar, extract_sleeves
+    g = e.data["garment"]
+    if g == "shorts":
+        return
+    if re.search(r"\b(remove|no|without|drop|take off) (the )?sleeves?\b", t):
+        sl = "none"
+    elif re.search(r"\badd (long|full)[\s-]?sleeves?\b", t):
+        sl = "long"
+    elif re.search(r"\badd (the )?sleeves?\b", t):
+        sl = "short"
+    else:
+        sl = extract_sleeves(t)
+    if sl:
+        e.set("sleeves", sl, _SLEEVE_LABEL[sl])
+    c = extract_collar(t)
+    if c and g == "jersey":
+        e.set("collar", c, _COLLAR_LABEL[c])
+
+
 def refine(req: RefineRequest) -> dict:
     t = i18n.normalize(req.instruction).lower()
     e = _Edit(req.spec)
@@ -186,6 +210,7 @@ def refine(req: RefineRequest) -> dict:
     _font(t, e)
     _accents(t, e)
     _sport(t, e)
+    _garment_options(t, e)
     if not e.changes:
         return {"spec": req.spec.model_dump(), "changes": [], "understood": False,
                 "message": "No change was made. Try naming a part and a value, for example "

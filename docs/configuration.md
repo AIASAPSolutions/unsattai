@@ -121,6 +121,12 @@ Emails are sent as plain text with a matching HTML version. Codes are shown larg
 | `AI_DAILY_BUDGET` | `2000` | AI calls per day for everyone together (`0` = no cap) |
 | `SLM_BASE_URL`, `SLM_MODEL`, `SLM_TIMEOUT` | `http://localhost:11434/v1`, `sportswear-spec`, `60` | Your own OpenAI-compatible small model server |
 
+### Payments
+
+| Variable | Default | What it does |
+|---|---|---|
+| `DEMO_PAYMENTS` | on locally, off in production | The "Pay (demo)" button marks an order paid without taking money. With it off, customers choose cash on delivery, or staff record a payment (UPI, bank transfer, cash) in the operations app. Set `1` in production only for a closed pilot. Real online payment needs a payment gateway (Razorpay or Cashfree), which is the next step. |
+
 ### Factory
 
 | Variable | What it does |

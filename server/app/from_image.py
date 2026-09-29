@@ -267,7 +267,9 @@ cuffs, text = the colour that would be readable for names and numbers on the bod
 Pick the closest pattern type and 2 alternatives from the allowed list, the area it covers, its angle
 (0 = vertical lines, 90 = horizontal hoops, 45 or -45 = diagonal), scale (0.4 small to 2.5 large), density
 (0.1 sparse to 1 dense) and opacity (0.15 faint to 1 bold). Set is_garment false if the picture is not a
-garment or garment design. text_seen: any words or numbers printed on the garment, exactly as seen.
+garment or garment design. For a top, also return sleeves (short, long, or none for a sleeveless vest) and
+collar (crew for a round neck, polo, or mandarin for a stand-up band) as changes, as seen in the picture.
+text_seen: any words or numbers printed on the garment, exactly as seen.
 notes: one short sentence in the customer's language about what you recognised."""
 
 VISION_SCHEMA = {
@@ -359,7 +361,7 @@ def from_image(store: Store, req: FromImageRequest, device: str) -> dict:
     status = ai_edit.allowance(store, device)
     vision, source, cached = None, "pixels", False
     if status["enabled"] and ai_edit.provider() == "claude":
-        key = "img:" + hashlib.sha256(raw + req.garment.encode() + req.language.encode()
+        key = "img:" + hashlib.sha256(raw + b"v2" + req.garment.encode() + req.language.encode()
                                       + ai_edit.settings.ai_edit_model.encode()).hexdigest()
         vision = store.ai_cache_get(key)
         cached = vision is not None
@@ -430,6 +432,10 @@ def from_image(store: Store, req: FromImageRequest, device: str) -> dict:
         if ptype == "gradient":
             spec_raw["base"] = "gradient"
         specs.append(sanitize(spec_raw, gen_req, seed=len(specs) + 1))
+    # Sleeves and collar: the customer's choice, else what the picture shows, else the defaults.
+    seen_opts = {k: raw_spec.get(k) for k in ("sleeves", "collar")}
+    specs = [service.with_options(sp, "", req.options.sleeves or seen_opts["sleeves"],
+                                  req.options.collar or seen_opts["collar"]) for sp in specs]
 
     request_log = {"kind": "from_image", "image_sha256": hashlib.sha256(raw).hexdigest(), "garment": req.garment,
                    "sport": req.sport, "colours": colours, "structure": structure, "vision": vision}
@@ -437,7 +443,8 @@ def from_image(store: Store, req: FromImageRequest, device: str) -> dict:
     return {
         "generation_id": gid, "provider": f"image:{source}", "source": source,
         "colors": colours, "recognised": {**recognised, "pattern": specs[0].pattern.type,
-                                          "coverage": specs[0].pattern.coverage, "base": specs[0].base},
+                                          "coverage": specs[0].pattern.coverage, "base": specs[0].base,
+                                          "sleeves": specs[0].sleeves, "collar": specs[0].collar},
         "warnings": warnings, "ai": {**status, "cached": cached},
         "designs": [{"id": did, "variant_index": i, "spec": s.model_dump(), **service.render_preview(s, did)}
                     for i, (did, s) in enumerate(zip(ids, specs))],
