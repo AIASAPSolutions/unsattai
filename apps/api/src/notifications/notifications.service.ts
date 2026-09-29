@@ -62,28 +62,41 @@ export class NotificationsService {
       }
     }
 
-    await this.notificationsQueue.add(
-      jobName,
-      {
-        notificationLogId: log.id,
-        tenantId,
-        patientId: dto.patientId,
-        phone: dto.phone,
-        email: dto.email,
-        notificationType: dto.notificationType,
-        payload: dto.payload,
-        // EMAIL jobs: pass subject/html from payload if provided
-        ...(dto.channel === NotificationChannel.EMAIL && {
-          to: dto.email,
-          subject: dto.payload['subject'] ?? 'Notification from Megnim',
-          html: dto.payload['html'] ?? '',
-          text: dto.payload['text'],
-        }),
-      },
-      jobOptions,
-    );
-
-    this.logger.log(`Enqueued ${jobName} job for notification ${log.id}`);
+    // A notification is a side effect of whatever the caller is really doing
+    // (enrolling a patient, booking an appointment, ...) — if the queue/Redis
+    // is unreachable, that primary action must still succeed. Every caller
+    // of create() was letting this throw uncaught, so a Bull/Redis hiccup
+    // made patient enrollment (and everything else that sends a
+    // notification) report "failed" even though the actual record had
+    // already been committed moments earlier.
+    try {
+      await this.notificationsQueue.add(
+        jobName,
+        {
+          notificationLogId: log.id,
+          tenantId,
+          patientId: dto.patientId,
+          phone: dto.phone,
+          email: dto.email,
+          notificationType: dto.notificationType,
+          payload: dto.payload,
+          // EMAIL jobs: pass subject/html from payload if provided
+          ...(dto.channel === NotificationChannel.EMAIL && {
+            to: dto.email,
+            subject: dto.payload['subject'] ?? 'Notification from Megnim',
+            html: dto.payload['html'] ?? '',
+            text: dto.payload['text'],
+          }),
+        },
+        jobOptions,
+      );
+      this.logger.log(`Enqueued ${jobName} job for notification ${log.id}`);
+    } catch (err: any) {
+      this.logger.error(
+        `Failed to enqueue ${jobName} job for notification ${log.id}: ${err.message}`,
+      );
+      await this.markFailed(log.id, err.message ?? 'Failed to enqueue job');
+    }
     return log;
   }
 
