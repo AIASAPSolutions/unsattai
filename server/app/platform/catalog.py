@@ -14,10 +14,10 @@ import math
 import re
 
 from fastapi import HTTPException
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ..engine.color import to_lab
-from ..schemas import GARMENTS, SPORTS, DesignSpec, Garment, GenerateRequest
+from ..schemas import GARMENTS, SPORTS, DesignSpec, Garment, GenerateRequest, Palette
 from . import config, sellers
 from .db import PlatformStore, new_id, now
 
@@ -39,9 +39,31 @@ def colour_family(hex_colour: str) -> str:
     return min(COLOUR_FAMILIES, key=lambda k: math.dist(lab, to_lab(COLOUR_FAMILIES[k])))
 
 
-def colours_of(spec: dict) -> list[str]:
-    pal = spec.get("palette") or {}
-    return list(dict.fromkeys(colour_family(pal[r]) for r in ("primary", "secondary") if pal.get(r)))
+def colours_of(spec: dict, colourways: list[dict] | None = None) -> list[str]:
+    """Colour families for search and filters, from the product's palette and every colourway."""
+    pals = [spec.get("palette") or {}] + [c["palette"] for c in colourways or []]
+    return list(dict.fromkeys(colour_family(pal[r]) for pal in pals for r in ("primary", "secondary") if pal.get(r)))
+
+
+def colourway_list(p: dict) -> list[dict]:
+    """The colour choices customers see; "original" is the product's own palette."""
+    return [{"id": "original", "name": "Original", "palette": (p.get("spec") or {}).get("palette")}] + \
+        [dict(c) for c in p.get("colourways") or []]
+
+
+def apply_choice(p: dict, colourway: str = "", sleeves: str | None = None, collar: str | None = None) -> dict:
+    """The product's spec with a colourway and garment options applied (raises 422 for an unknown colourway)."""
+    spec = dict(p["spec"])
+    if colourway and colourway != "original":
+        cw = next((c for c in p.get("colourways") or [] if c["id"] == colourway), None)
+        if cw is None:
+            raise HTTPException(422, f"This product has no colourway {colourway!r}.")
+        spec["palette"] = {**spec.get("palette", {}), **cw["palette"]}
+    if sleeves and spec.get("garment") != "shorts":
+        spec["sleeves"] = sleeves
+    if collar and spec.get("garment") == "jersey":
+        spec["collar"] = collar
+    return spec
 
 
 def slugify(text: str) -> str:
@@ -58,6 +80,25 @@ class Brief(BaseModel):
     seed: int | None = Field(None, ge=0, le=2**31 - 1)
 
 
+class Colourway(BaseModel):
+    """Another colour choice for a product: the same design with a different palette."""
+    id: str = Field(..., pattern=r"^[a-z0-9][a-z0-9-]{1,30}$")
+    name: str = Field(..., min_length=1, max_length=40)
+    palette: Palette
+
+    @model_validator(mode="after")
+    def _not_original(self):
+        if self.id == "original":
+            raise ValueError('"original" is the product\'s own colours; choose another id')
+        return self
+
+
+def _unique_ids(v: list[Colourway] | None) -> list[Colourway] | None:
+    if v and len({c.id for c in v}) != len(v):
+        raise ValueError("colourway ids must be unique")
+    return v
+
+
 class ProductIn(BaseModel):
     """Exactly one source: a spec, a brief to design from, a past order, or a sales quote."""
     title: str = Field(..., min_length=2, max_length=80)
@@ -72,6 +113,12 @@ class ProductIn(BaseModel):
     brief: Brief | None = None
     order_id: str = Field("", max_length=40)
     quote_id: str = Field("", max_length=40)
+    colourways: list[Colourway] = Field(default_factory=list, max_length=8)
+
+    @field_validator("colourways")
+    @classmethod
+    def _cw(cls, v):
+        return _unique_ids(v)
 
     @model_validator(mode="after")
     def _one_source(self):
@@ -92,6 +139,12 @@ class ProductPatch(BaseModel):
     featured: bool | None = None
     status: str | None = Field(None, pattern="^(draft|published)$")
     spec: DesignSpec | None = None
+    colourways: list[Colourway] | None = Field(None, max_length=8)
+
+    @field_validator("colourways")
+    @classmethod
+    def _cw(cls, v):
+        return _unique_ids(v)
 
 
 class ReviewIn(BaseModel):
@@ -148,7 +201,9 @@ def create_product(store: PlatformStore, body: ProductIn, actor: str) -> dict:
     _check_fabric(store, body.fabric, spec["garment"])
     p = {"id": new_id("prd"), "slug": _unique_slug(store, body.slug or slugify(body.title)), "title": body.title,
          "description": body.description, "sport": body.sport or spec.get("sport") or "football",
-         "garment": spec["garment"], "spec": spec, "tags": body.tags, "colours": colours_of(spec), "fabric": body.fabric,
+         "garment": spec["garment"], "spec": spec, "tags": body.tags, "fabric": body.fabric,
+         "colourways": [c.model_dump() for c in body.colourways],
+         "colours": colours_of(spec, [c.model_dump() for c in body.colourways]),
          "featured": body.featured, "status": body.status, "orders_count": 0,
          "rating": {"average": None, "count": 0}, "source": source,
          "published_at": now() if body.status == "published" else None}
@@ -170,8 +225,8 @@ def update_product(store: PlatformStore, pid: str, body: ProductPatch, actor: st
         raise HTTPException(422, f"sport must be one of {', '.join(SPORTS)}")
     if "spec" in patch:
         patch["garment"] = patch["spec"]["garment"]
-        patch["colours"] = colours_of(patch["spec"])
     p.update(patch)
+    p["colours"] = colours_of(p["spec"], p.get("colourways"))
     _check_fabric(store, p["fabric"], p["garment"])
     if patch.get("status") == "published" and not p.get("published_at"):
         p["published_at"] = now()
@@ -208,8 +263,12 @@ def public_product(p: dict, price: float | None, currency: str, detail: bool = F
                                  "featured", "rating", "orders_count", "published_at")}
     out.update(price_from=price, currency=currency, image_url=f"/api/v1/shop/products/{p['slug']}/mockup.svg",
                style_name=(p.get("spec") or {}).get("style_name"))
+    out["colourways"] = [{"id": c["id"], "name": c["name"], "swatch": [(c["palette"] or {}).get("primary"),
+                                                                     (c["palette"] or {}).get("secondary")]}
+                         for c in colourway_list(p)]
     if detail:
         out["spec"] = p["spec"]
+        out["colourways"] = colourway_list(p)
     return out
 
 
@@ -297,6 +356,18 @@ SEED = [
 ]
 
 
+def _seed_colourways(spec: dict, i: int) -> list[dict]:
+    """Two other curated palettes for a seeded product, so every starter product has colour choices."""
+    from ..engine.vocab import PALETTES
+    own = (spec.get("palette") or {}).get("primary")
+    picks = [pal for pal in PALETTES if pal[1] != own]
+    out = []
+    for name, primary, secondary, accent, trim, text, _ in (picks[(i * 3) % len(picks)], picks[(i * 3 + 7) % len(picks)]):
+        out.append({"id": slugify(name), "name": name, "palette": {"primary": primary, "secondary": secondary,
+                                                                    "accent": accent, "trim": trim, "text": text}})
+    return out
+
+
 def seed_products(store: PlatformStore) -> int:
     """First start only (a marker record stops it re-running after staff delete products).
     Uses the rule engine with fixed seeds, so every install gets the same, fast result."""
@@ -307,11 +378,13 @@ def seed_products(store: PlatformStore) -> int:
     for i, (title, sport, garment, prompt) in enumerate(SEED):
         req = GenerateRequest(prompt=prompt, sport=sport, garment=garment, team_name=title, variants=1)
         spec = PROVIDERS["rule"].generate(req, 1, 7001 + i)[0].model_dump()
+        colourways = _seed_colourways(spec, i)
         p = {"id": f"prd_seed{i + 1:02d}", "slug": slugify(title), "title": title,
              "description": f"{spec.get('style_name', title)}: a ready-made {sport} "
                             f"{'shorts' if garment == 'shorts' else 'jersey'} design. Order it as it is or change "
                             "the colours, names and numbers in the designer.",
-             "sport": sport, "garment": garment, "spec": spec, "tags": [sport, garment], "colours": colours_of(spec),
+             "sport": sport, "garment": garment, "spec": spec, "tags": [sport, garment],
+             "colourways": colourways, "colours": colours_of(spec, colourways),
              "fabric": "standard", "featured": i < 4, "status": "published", "orders_count": 0,
              "rating": {"average": None, "count": 0}, "source": {"kind": "seed"}, "published_at": now()}
         _save(store, p)

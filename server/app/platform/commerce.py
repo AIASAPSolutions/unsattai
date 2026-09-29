@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from .. import orders as order_mod
 from ..config import env_int
-from ..schemas import Customer, DesignSpec, Garment, OrderDelivery, OrderItem, OrderRequest
+from ..schemas import Collar, Customer, DesignSpec, Garment, OrderDelivery, OrderItem, OrderRequest, Sleeves
 from . import config, lifecycle, notify, planning, sellers
 from .db import PlatformStore, new_id, now
 from .pricing import DeliveryChoice, find_zone, PriceLine, QuoteRequest, _money, cart_coupon, quote
@@ -34,6 +34,9 @@ class CartItem(BaseModel):
     logos: int = Field(0, ge=0, le=4, description="used for pricing when the spec has no logo layers")
     lines: list[OrderItem] = Field(..., min_length=1, max_length=200)
     seller_id: str = Field("", max_length=40)
+    colourway: str = Field("", max_length=31, description="products only: a colourway id")
+    sleeves: Sleeves | None = Field(None, description="products only: overrides the product's sleeves")
+    collar: Collar | None = Field(None, description="products only: overrides the product's collar")
 
     @model_validator(mode="after")
     def _one(self):
@@ -105,12 +108,20 @@ def resolve_item(store: PlatformStore, item: CartItem) -> tuple[DesignSpec, dict
         product = store.get("product", item.product_id)
         if not product or product["status"] != "published":
             raise HTTPException(404, f"product {item.product_id} is not available")
-        data = product["spec"]
+        from .catalog import apply_choice
+        data = apply_choice(product, item.colourway, item.sleeves, item.collar)
     else:
         data = item.spec.model_dump()
     if item.garment:
         data = {**data, "garment": item.garment}
     return DesignSpec.model_validate(data), product
+
+
+def _image_url(slug: str, item: CartItem) -> str:
+    from urllib.parse import urlencode
+    q = urlencode({k: v for k, v in (("colourway", item.colourway), ("sleeves", item.sleeves),
+                                     ("collar", item.collar)) if v})
+    return f"/api/v1/shop/products/{slug}/mockup.svg" + (f"?{q}" if q else "")
 
 
 def _logos(spec: DesignSpec, item: CartItem) -> int:
@@ -192,7 +203,9 @@ def cart_quote(store: PlatformStore, body: CartQuoteIn, today: date | None = Non
         slug = (product or {}).get("slug")
         items.append({"index": i, "product_id": it.product_id or None, "title": (product or {}).get("title")
                       or spec.style_name, "slug": slug,
-                      "image_url": f"/api/v1/shop/products/{slug}/mockup.svg" if slug else None, "garment": spec.garment, "seller": q.get("seller"), "quote": q,
+                      "image_url": _image_url(slug, it) if slug else None, "garment": spec.garment,
+                      "options": {"sleeves": spec.sleeves, "collar": spec.collar, "colourway": it.colourway or None},
+                      "seller": q.get("seller"), "quote": q,
                       "coupon_share": share, "charges": charges[i], "delivery_date": (est or {}).get("delivery_date"),
                       "problems": q["problems"]})
         problems += [f"Item {i + 1}: {p}" for p in q["problems"]]

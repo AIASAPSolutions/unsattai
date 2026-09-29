@@ -212,3 +212,33 @@ def test_demo_payments_are_off_in_production(tmp_path, monkeypatch):
     r = c.post(f"/api/v1/orders/{o['id']}/payment-confirmed", json={"demo": True})
     assert r.status_code == 403 and "not available" in r.text
     assert c.get(f"/api/v1/orders/{o['id']}").json()["status"] == "awaiting_payment"
+
+
+def test_products_offer_colourways_and_options(c):
+    items = c.get("/api/v1/shop/products", params={"garment": "jersey"}).json()["items"]
+    p = items[0]
+    assert p["colourways"][0]["id"] == "original" and len(p["colourways"]) == 3
+    detail = c.get(f"/api/v1/shop/products/{p['slug']}").json()
+    cw = detail["colourways"][1]
+    assert cw["palette"]["primary"].startswith("#")
+    pic = c.get(f"/api/v1/shop/products/{p['slug']}/mockup.svg", params={"colourway": cw["id"], "sleeves": "none"})
+    assert pic.status_code == 200 and cw["palette"]["primary"] in pic.text
+    assert c.get(f"/api/v1/shop/products/{p['slug']}/mockup.svg", params={"colourway": "nope"}).status_code == 422
+    q = c.post("/api/v1/shop/cart/quote", json={
+        "items": [{"product_id": p["id"], "colourway": cw["id"], "sleeves": "long", "collar": "polo",
+                   "lines": [{"fit": "kids", "size": "10Y", "quantity": 2}]}],
+        "delivery": {"method": "ship", "pincode": "600028"}}).json()
+    item = q["items"][0]
+    assert item["options"] == {"sleeves": "long", "collar": "polo", "colourway": cw["id"]}
+    assert "colourway=" in item["image_url"] and "sleeves=long" in item["image_url"]
+    parts = item["quote"]["lines"][0]["parts"]
+    assert parts["sleeves"] == 60 and parts["collar"] == 90 and parts["fit"] == -60
+    h = {"Authorization": "Bearer " + c.post("/api/v1/ops/auth/login", json={"email": ADMIN[0], "password": ADMIN[1]})
+         .json()["token"]}
+    bad = c.patch(f"/api/v1/ops/products/{p['id']}", headers=h,
+                  json={"colourways": [{"id": "red", "name": "Red", "palette": cw["palette"]}] * 2})
+    assert bad.status_code == 422
+    ok = c.patch(f"/api/v1/ops/products/{p['id']}", headers=h,
+                 json={"colourways": [{"id": "red", "name": "Red", "palette": dict(cw["palette"], primary="#d62828")}]})
+    assert ok.status_code == 200, ok.text
+    assert [x["id"] for x in c.get(f"/api/v1/shop/products/{p['slug']}").json()["colourways"]] == ["original", "red"]

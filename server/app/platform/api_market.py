@@ -107,16 +107,20 @@ def router(store: PlatformStore, key_dep, place_order) -> APIRouter:
     mockups: dict[tuple[str, str], str] = {}
 
     @r.get("/shop/products/{slug}/mockup.svg")
-    def product_mockup(slug: str):
-        """The product's picture. Rendered once per product version and kept in memory."""
+    def product_mockup(slug: str, colourway: str = Query("", max_length=31),
+                       sleeves: str | None = Query(None, pattern="^(short|long|none)$"),
+                       collar: str | None = Query(None, pattern="^(crew|polo|mandarin)$")):
+        """The product's picture, in a colourway and with sleeve and collar choices. Rendered once per product
+        version and choice, and kept in memory."""
         from .. import service
         from ..schemas import DesignSpec
         p = catalog.by_slug(store, slug)
-        key = (p["id"], p["updated_at"])
+        key = (p["id"], p["updated_at"], colourway, sleeves, collar)
         if key not in mockups:
-            if len(mockups) > 200:
+            if len(mockups) > 300:
                 mockups.clear()
-            mockups[key] = service.render_preview(DesignSpec.model_validate(p["spec"]), f"p{p['id'][-6:]}")["mockup_svg"]
+            spec = DesignSpec.model_validate(catalog.apply_choice(p, colourway, sleeves, collar))
+            mockups[key] = service.render_preview(spec, f"p{p['id'][-6:]}")["mockup_svg"]
         return Response(mockups[key], media_type="image/svg+xml", headers={"Cache-Control": "public, max-age=3600"})
 
     @r.get("/shop/products/{slug}/reviews")
