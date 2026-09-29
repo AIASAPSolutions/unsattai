@@ -151,10 +151,16 @@ def router(store: PlatformStore) -> APIRouter:
     @r.get("/reviews")
     def reviews(status: str | None = Query(None, pattern="^(visible|hidden)$"), product_id: str | None = None,
                 seller_id: str | None = None, q: str | None = None, page: int = Query(1, ge=1),
+                min_rating: int = Query(1, ge=1, le=5), max_rating: int = Query(5, ge=1, le=5),
                 s: dict = Depends(need("read"))):
-        rows, total = store.find("review", status=status, parent=product_id, owner=seller_id, q=q,
-                                 order="created_at DESC", limit=50, offset=(page - 1) * 50)
-        return _page(rows, total, page, 50)
+        if (min_rating, max_rating) == (1, 5):
+            rows, total = store.find("review", status=status, parent=product_id, owner=seller_id, q=q,
+                                     order="created_at DESC", limit=50, offset=(page - 1) * 50)
+            return _page(rows, total, page, 50)
+        rows, _ = store.find("review", status=status, parent=product_id, owner=seller_id, q=q,
+                             order="created_at DESC", limit=5000)
+        rows = [x for x in rows if min_rating <= int(x.get("rating") or 0) <= max_rating]
+        return _page(rows[(page - 1) * 50: page * 50], len(rows), page, 50)
 
     @r.post("/reviews/{rid}/moderate")
     def moderate(rid: str, body: ReviewModeration, s: dict = Depends(need("crm"))):

@@ -1,7 +1,9 @@
 # UrJersey Ops
 
 UrJersey Ops is the back office for UrJersey staff. It covers orders, production planning,
-delivery, CRM and quotes, settings, staff and reports. It is a single-page app (React 19,
+delivery, the marketplace (sellers, products, returns, reviews, messages, cash on delivery), CRM
+and quotes, settings, staff and reports. Partner sellers use the same app with a seller login
+and see only their own work (the "seller portal"). It is a single-page app (React 19,
 TypeScript, Vite, React Router) that talks to the UrJersey API under `/api/v1/ops/*`.
 It has two runtime dependencies besides React: `react-router-dom`, and `recharts`, which is used
 only by Reports and loaded only when that screen opens.
@@ -29,7 +31,7 @@ ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD='Str0ngPassword' .venv/bin/uvicorn 
 | `npm run dev` | Dev server with hot reload |
 | `npm run build` | Type-checks (`tsc -b`), then builds to `dist/` |
 | `npm run preview` | Serves `dist/` locally |
-| `npm test` | Unit tests (vitest): error mapping, permissions, settings form conversion, quote roster parsing, formatting |
+| `npm test` | Unit tests (vitest): error mapping, permissions and seller menu scoping, settings and seller form conversion, seller validation mapping, the service-area editor rules, quote roster parsing, formatting |
 | `npm run e2e` | Browser flow against a running API and ops app (see below) |
 | `npm run e2e:full` | Starts a throw-away API on :8200 with its own database, builds and serves the app on :5200, runs the flow, then stops both |
 
@@ -37,7 +39,9 @@ ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD='Str0ngPassword' .venv/bin/uvicorn 
 
 `e2e/ops-flow.mjs` uses the globally installed Playwright (`NODE_PATH=$(npm root -g)`) and the
 Chromium in `PLAYWRIGHT_BROWSERS_PATH` (for example `/opt/pw-browsers`). It seeds data through the
-public shop API, then works through the app as an admin and as a production user. Screenshots go to
+public shop API, then works through the app as an admin, a seller and a production user
+(30 steps: the original 18 plus 12 marketplace steps covering sellers, PIN tests, seller logins,
+COD, products, returns, reviews, messages and the new settings). Screenshots go to
 `e2e/shots/`, which is git-ignored. Environment: `API_URL`, `OPS_URL`, `ADMIN_EMAIL`,
 `ADMIN_PASSWORD`. Every run uses unique names, so it can be repeated against the same database.
 
@@ -71,6 +75,7 @@ current role is.
 | **production** | Production board and stage updates; edit production settings; read-only elsewhere |
 | **dispatch** | Shipments and labels; edit delivery settings; read-only elsewhere |
 | **viewer** | Read-only everywhere |
+| **seller** | A partner seller's login, tied to one seller. Sees only that seller's orders, production, delivery, returns, cash on delivery and its own profile (read-only). Every other menu is hidden; opening another screen by URL shows a short notice, and any 403 is explained |
 
 Each settings section is writable with its own permission: price book needs `pricing`,
 production needs `production`, delivery needs `delivery`, and company and CRM need `settings`.
@@ -99,11 +104,14 @@ bottom of the sidebar.
 
 **Dashboard.** Orders and revenue for today, 7 and 30 days, and orders by status. Late orders are
 listed with their promised dates. Also shows 7-day stage utilisation with the bottleneck marked,
-open leads and pipeline value, open tickets, and tasks due. It refreshes every minute.
+open leads and pipeline value, open tickets, and tasks due, returns awaiting action, cash on
+delivery to collect, and open orders by seller. It refreshes every minute.
 
-**Orders.** A searchable, paged list with status filter chips, hold and rush flags, and CSV export.
-Order detail shows the design preview, the roster, the pricing breakdown, payments, production
-stages and the timeline.
+**Orders.** A searchable, paged list with status filter chips, a seller filter, hold and rush
+flags, the payment method, and CSV export. Order detail shows the design preview, the roster, the
+pricing breakdown, payments, production stages and the timeline, plus the seller, the checkout
+number with links to the other orders placed in the same checkout, any refunds and returns, and
+for cash on delivery whether the cash is collected, with **Mark cash collected**.
 
 Actions on an order:
 - Record a payment (method, amount, reference).
@@ -114,6 +122,9 @@ Actions on an order:
 - Mark a production stage done, or undo it.
 - Open a printable invoice.
 - Download print files (SVG).
+
+The Production, Delivery and Orders screens share a **seller filter**. It lives in the URL
+(`?seller=`) and is kept when you move between tabs.
 
 **Production.**
 - **Plan** is a Gantt chart of every active order across the configured stages. Late orders are
@@ -131,9 +142,32 @@ Actions on an order:
 - **Shipments** lists shipments by status. You can move one through planned → packed →
   dispatched → delivered (or returned/cancelled) and print a label.
 
+**Marketplace.**
+- **Sellers**: a list with status, a coverage summary, capacity, rating and open orders. The
+  editor covers name, legal name, GSTIN, contact and address, active, garments and fabrics, the
+  delivery-coverage table (PIN prefix, state code or `*`; transit days; COD), blocked PIN codes,
+  capacity factor, holidays, handling days, minimum and maximum pieces and the price adjustment.
+  Server validation errors are shown next to the field. The side panel has a **PIN code test**
+  (serviceable, matched area, dates), the seller's logins with **Create login**, and its orders.
+- **Products**: list and search; create from a brief (with a choice of four generated designs),
+  from a past order or from a quote; edit title, description, sport, garment, tags; publish,
+  unpublish and feature; a mock-up preview and the computed "from" price.
+- **Returns**: a queue with status, seller and search filters. The drawer shows the order, items
+  and history, and moves the return along (approve or reject, picked up, resolved) with a resolution
+  (replacement or refund, with the refund amount) and notes.
+- **Reviews**: filter by product, seller, visibility and a rating range (filtered on the server); hide (with a reason) or show.
+- **Messages**: the SMS and email outbox with channel, template, recipient, status and time,
+  filtered by channel, status or search.
+- **Cash on delivery**: COD orders to collect and collected, by seller, with **Mark collected**.
+
+**Seller portal.** A seller login gets a short menu: Home (its queued and in-production work),
+Orders, Production, Delivery, Returns, Cash on delivery and its Seller profile. It downloads the print files for its
+own orders from the order screen and picks the carrier from the list when it creates a shipment.
+
 **CRM.**
 - **Customers** and **Organisations**: lists, profiles, members, the activity feed, orders and
-  lifetime value.
+  lifetime value. Customers show whether the phone and email are verified, and the orders list
+  shows each order's checkout and seller.
 - **Leads**: a drag-and-drop pipeline board with win rate and pipeline value. Each lead has
   detail, activities and follow-up tasks.
 - **Quotes**: the quote editor. Pick a customer and take the design from one of their earlier
@@ -151,11 +185,15 @@ they belong to. If someone else saved in the meantime (409), you can reload thei
 
 Each section also has a version history (the last 20 saves). You can view an old version and
 load it into the editor, and nothing changes until you save.
-The price book has a **Try it** panel that prices a sample order against your unsaved changes.
+The price book has a **Try it** panel that prices a sample order against your unsaved changes,
+including a cash-on-delivery example. Marketplace settings: the price book has **Cash on
+delivery** (on or off, fee per checkout, largest order total) and each coupon can be **public**
+with a title shown in the offers list; CRM lists has **Returns** (the return window in days and
+the returnable reasons).
 Sections your role can't edit are shown read-only.
 
 **Staff** (admin only). Add staff with a role, change roles, reset passwords, and deactivate or
-reactivate accounts.
+reactivate accounts. A seller login is created with the seller role and a seller.
 
 **Reports.**
 - **Sales**: revenue, orders and pieces per day over a date range, as a chart or a table, with

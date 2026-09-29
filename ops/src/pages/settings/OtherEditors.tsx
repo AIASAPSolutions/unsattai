@@ -243,6 +243,16 @@ export function CrmEditor() {
               <Card title="Lead sources"><TagInput value={f.lead_sources} onChange={(v) => set('lead_sources', v)} normalise={toCode} /><CellErr errors={e.err('lead_sources', true)} /></Card>
               <Card title="Organisation kinds"><TagInput value={f.organisation_kinds} onChange={(v) => set('organisation_kinds', v)} normalise={toCode} /><CellErr errors={e.err('organisation_kinds', true)} /></Card>
               <Card title="Ticket categories"><TagInput value={f.ticket_categories} onChange={(v) => set('ticket_categories', v)} normalise={toCode} /><CellErr errors={e.err('ticket_categories', true)} /></Card>
+              <Card title="Returns">
+                <div className="stack" data-testid="returns-settings">
+                  <F label="Return window" errors={e.err('return_window_days')} hint="Days after delivery a customer can ask for a return. 0 turns returns off.">
+                    <NumInput value={f.return_window_days} onChange={(v) => set('return_window_days', v)} errors={e.err('return_window_days')} suffix="days" testId="return-window" />
+                  </F>
+                  <F label="Returnable reasons" errors={e.err('returnable_reasons', true)} hint="Short ids such as damaged or print_quality. Printed goods are usually returnable only for defects.">
+                    <TagInput value={f.returnable_reasons} onChange={(v) => set('returnable_reasons', v)} normalise={toCode} testId="return-reason-new" />
+                  </F>
+                </div>
+              </Card>
               <Card title="Reorder reminders">
                 <F label="Remind after" errors={e.err('reorder_reminder_days')} hint="Days since a customer's last order. 0 turns reminders off.">
                   <NumInput value={f.reorder_reminder_days} onChange={(v) => set('reorder_reminder_days', v)} errors={e.err('reorder_reminder_days')} suffix="days" />

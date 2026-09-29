@@ -26,6 +26,14 @@ const Settings = lazy(() => import('./pages/settings/Settings'));
 const StaffPage = lazy(() => import('./pages/Staff'));
 const Reports = lazy(() => import('./pages/reports/Reports'));
 const Account = lazy(() => import('./pages/Account'));
+const SellersList = lazy(() => import('./pages/sellers/SellersList'));
+const SellerEditor = lazy(() => import('./pages/sellers/SellerEditor'));
+const Products = lazy(() => import('./pages/products/Products'));
+const ProductDetail = lazy(() => import('./pages/products/ProductDetail'));
+const Returns = lazy(() => import('./pages/marketplace/Returns'));
+const Reviews = lazy(() => import('./pages/marketplace/Reviews'));
+const Messages = lazy(() => import('./pages/marketplace/Messages'));
+const Cod = lazy(() => import('./pages/marketplace/Cod'));
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { me, ready, signedOut } = useAuth();
@@ -49,6 +57,15 @@ export function App() {
               <Route path="/orders/:id" element={<S><OrderDetail /></S>} />
               <Route path="/production/*" element={<S><Production /></S>} />
               <Route path="/delivery/*" element={<S><Delivery /></S>} />
+              <Route path="/sellers" element={<S><SellersList /></S>} />
+              <Route path="/sellers/:id" element={<S><SellerEditor /></S>} />
+              <Route path="/products" element={<S><Products /></S>} />
+              <Route path="/products/:id" element={<S><ProductDetail /></S>} />
+              <Route path="/returns" element={<S><Returns /></S>} />
+              <Route path="/returns/:id" element={<S><Returns /></S>} />
+              <Route path="/reviews" element={<S><Reviews /></S>} />
+              <Route path="/messages" element={<S><Messages /></S>} />
+              <Route path="/cod" element={<S><Cod /></S>} />
               <Route path="/crm" element={<Navigate to="/crm/customers" replace />} />
               <Route path="/crm/customers" element={<S><Customers /></S>} />
               <Route path="/crm/customers/:id" element={<S><CustomerDetail /></S>} />

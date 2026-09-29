@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { get, getToken, post, setToken, setUnauthorizedHandler } from './api';
-import { can as canP, canEditSection, type Permission, type SettingsSection } from './permissions';
+import { can as canP, canEditSection, isSellerLogin, type Permission, type SettingsSection } from './permissions';
 import type { Me, Staff } from './types';
 
 interface AuthState {
@@ -15,6 +15,10 @@ interface AuthState {
   can: (p: Permission) => boolean;
   canEdit: (s: SettingsSection) => boolean;
   staff: Staff | null;
+  /** A partner seller's own login: sees only that seller's work. */
+  isSeller: boolean;
+  /** The seller a seller login belongs to. */
+  sellerId: string | null;
 }
 
 const Ctx = createContext<AuthState | null>(null);
@@ -55,6 +59,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AuthState>(() => ({
     me, ready, notice, signedOut, login, logout, staff: me?.staff ?? null,
+    isSeller: isSellerLogin(me?.permissions),
+    sellerId: isSellerLogin(me?.permissions) ? me?.staff.seller_id ?? null : null,
     can: (p) => canP(me?.permissions, p),
     canEdit: (s) => canEditSection(me?.permissions, s),
   }), [me, ready, notice, signedOut, login, logout]);

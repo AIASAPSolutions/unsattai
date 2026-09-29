@@ -1,23 +1,29 @@
 import { useMemo, useState } from 'react';
 import { Link, Navigate, Route, Routes, useNavigate, useSearchParams } from 'react-router-dom';
 import { OrderFlags, stageColor } from '../../components/domain';
+import { SellerFilter, useSellerParam, withSeller } from '../../components/marketplace';
 import { IconPrint, IconRefresh } from '../../components/icons';
 import { Alert, Badge, Button, Card, Empty, ErrorBox, Loading, PageHeader, Tabs, useToast } from '../../components/ui';
 import { get, post } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { addDays, day, num, shortDay, weekday } from '../../lib/format';
 import { useAction, useLoad } from '../../lib/hooks';
+import { useRefData } from '../../lib/refdata';
 import type { Order, Plan } from '../../lib/types';
 
 interface StageCfg { id: string; name: string; capacity_per_day: number; fixed_days: number }
 
 export default function Production() {
+  const [seller, setSeller] = useSellerParam();
+  const { isSeller } = useAuth();
   return (
     <>
-      <PageHeader title="Production" subtitle="Finite-capacity plan: express orders first, then earliest promise, then payment time." />
+      <PageHeader title="Production" subtitle={isSeller ? 'Your plan, board, capacity and daily worklists. Express orders first, then earliest promise.'
+        : 'Finite-capacity plan per seller: express orders first, then earliest promise, then payment time.'}
+        actions={<SellerFilter value={seller} onChange={setSeller} />} />
       <Tabs tabs={[
-        { to: '/production/plan', label: 'Plan' }, { to: '/production/board', label: 'Board' },
-        { to: '/production/capacity', label: 'Capacity' }, { to: '/production/worklist', label: 'Worklist' },
+        { to: withSeller('/production/plan', seller), label: 'Plan' }, { to: withSeller('/production/board', seller), label: 'Board' },
+        { to: withSeller('/production/capacity', seller), label: 'Capacity' }, { to: withSeller('/production/worklist', seller), label: 'Worklist' },
       ]} />
       <Routes>
         <Route index element={<Navigate to="plan" replace />} />
@@ -33,7 +39,10 @@ export default function Production() {
 // ------------------------------------------------------------------ plan (Gantt)
 
 function PlanView() {
-  const d = useLoad(() => get<{ today: string; stages: StageCfg[]; orders: Plan[] }>('/ops/production/plan'), [], { poll: 60_000 });
+  const [seller] = useSellerParam();
+  const { isSeller } = useAuth();
+  const { sellerName } = useRefData();
+  const d = useLoad(() => get<{ today: string; stages: StageCfg[]; orders: (Plan & { seller_id?: string })[] }>('/ops/production/plan', { seller_id: seller || undefined }), [seller], { poll: 60_000 });
   const [lateOnly, setLateOnly] = useState(false);
   const data = d.data;
   const days = useMemo(() => {
@@ -81,7 +90,7 @@ function PlanView() {
                         <OrderFlags o={{ rush: p.rush, hold: false }} />
                         {p.late && <Badge tone="bad">Late</Badge>}
                       </div>
-                      <div className="muted small ellipsis">{s?.customer_name} · {num(p.pieces)} pcs · promised {day(p.promised_delivery_date)}</div>
+                      <div className="muted small ellipsis">{s?.customer_name} · {num(p.pieces)} pcs · promised {day(p.promised_delivery_date)}{!seller && !isSeller && p.seller_id ? ` · ${sellerName(p.seller_id)}` : ''}</div>
                     </td>
                     {days.map((x) => {
                       const st = p.stages.filter((st) => st.start <= x && x <= st.end);
@@ -110,13 +119,16 @@ function PlanView() {
 // ------------------------------------------------------------------ board (kanban)
 
 interface BoardCard { id: string; number?: string; customer: string; pieces: number; garment: string; rush?: boolean; hold?: boolean;
-  promised_delivery_date?: string | null; plan?: Plan | null; style_name?: string }
+  promised_delivery_date?: string | null; plan?: Plan | null; style_name?: string; seller_id?: string }
 interface Column { stage: string; name: string; orders: BoardCard[] }
 
 function Board() {
   const { can } = useAuth();
   const toast = useToast();
-  const d = useLoad(() => get<{ columns: Column[] }>('/ops/production/board'), [], { poll: 30_000 });
+  const [seller] = useSellerParam();
+  const { sellerName } = useRefData();
+  const { isSeller } = useAuth();
+  const d = useLoad(() => get<{ columns: Column[] }>('/ops/production/board', { seller_id: seller || undefined }), [seller], { poll: 30_000 });
   const { busy, run } = useAction();
   const canDo = can('production');
   if (d.error && !d.data) return <ErrorBox error={d.error} onRetry={d.reload} />;
@@ -150,6 +162,7 @@ function Board() {
                   <div className="t"><Link to={`/orders/${o.id}`}>{o.number}</Link><OrderFlags o={o} />{o.plan?.late && <Badge tone="bad">Late</Badge>}</div>
                   <div className="ellipsis">{o.customer}</div>
                   <div className="muted small">{num(o.pieces)} pcs · promised {day(o.promised_delivery_date)}</div>
+                  {!seller && !isSeller && o.seller_id && <div className="muted small ellipsis">{sellerName(o.seller_id)}</div>}
                   {canDo && c.stage !== 'ready' && (
                     <div className="row tight" style={{ marginTop: 4 }}>
                       <Button size="xs" variant="primary" busy={busy === o.id} disabled={!!busy} onClick={() => done(o, c.stage)} data-testid="stage-done">Done</Button>
@@ -158,7 +171,7 @@ function Board() {
                   )}
                   {canDo && c.stage === 'ready' && ci > 0 && (
                     <div className="row tight" style={{ marginTop: 4 }}>
-                      <Link to="/delivery/ready" className="small">Ship it</Link>
+                      <Link to={withSeller('/delivery/ready', seller)} className="small">Ship it</Link>
                       <Button size="xs" variant="ghost" disabled={!!busy} onClick={() => undo(o, cols, ci)}>Back</Button>
                     </div>
                   )}
@@ -188,7 +201,10 @@ function heat(p: number): string {
 
 function Capacity() {
   const [days, setDays] = useState(14);
-  const d = useLoad(() => get<Util>('/ops/production/utilisation', { days }), [days]);
+  const [seller] = useSellerParam();
+  const { isSeller } = useAuth();
+  const { sellerName } = useRefData();
+  const d = useLoad(() => get<Util>('/ops/production/utilisation', { days, seller_id: seller || undefined }), [days, seller]);
   if (d.error && !d.data) return <ErrorBox error={d.error} onRetry={d.reload} />;
   if (!d.data) return <Loading />;
   const u = d.data;
@@ -201,9 +217,10 @@ function Capacity() {
         <Alert tone="warn">
           <b>Bottleneck: {b.name}.</b> {num(bLoad)} pieces planned over {u.dates.length} working days against {num(b.days[0].capacity)} per day
           ({Math.round((100 * bLoad) / (b.days[0].capacity * u.dates.length))}% average). Adding capacity here shortens every promise.
-          {' '}<Link to="/settings/production">Change capacity</Link>
+          {!isSeller && <>{' '}{seller ? <Link to={`/sellers/${seller}`}>Change {sellerName(seller)}'s capacity factor</Link> : <Link to="/settings/production">Change capacity</Link>}</>}
         </Alert>
       )}
+      {!seller && !isSeller && <Alert tone="info">All sellers added together: each seller's capacity counts only on its own working days. Pick a seller to see one unit.</Alert>}
       <Card title="Load against capacity, per stage and working day" actions={
         <select className="sm" style={{ width: 'auto' }} value={days} onChange={(e) => setDays(Number(e.target.value))} aria-label="Days">
           {[7, 14, 21, 30].map((n) => <option key={n} value={n}>{n} working days</option>)}
@@ -250,11 +267,12 @@ interface Work { stage: string; day: string; items: { order_id: string; number?:
 function Worklist() {
   const nav = useNavigate();
   const [params, setParams] = useSearchParams();
-  const plan = useLoad(() => get<{ today: string; stages: StageCfg[] }>('/ops/production/plan'), []);
+  const [seller] = useSellerParam();
+  const plan = useLoad(() => get<{ today: string; stages: StageCfg[] }>('/ops/production/plan', { seller_id: seller || undefined }), [seller]);
   const stages = plan.data?.stages ?? [];
   const stage = params.get('stage') || stages[0]?.id || '';
   const dayIso = params.get('day') || plan.data?.today || '';
-  const d = useLoad(() => (stage ? get<Work>('/ops/production/worklist', { stage, day: dayIso || undefined }) : Promise.resolve(null)), [stage, dayIso]);
+  const d = useLoad(() => (stage ? get<Work>('/ops/production/worklist', { stage, day: dayIso || undefined, seller_id: seller || undefined }) : Promise.resolve(null)), [stage, dayIso, seller]);
   const set = (k: string, v: string) => { const p = new URLSearchParams(params); p.set(k, v); setParams(p, { replace: true }); };
   if (plan.error) return <ErrorBox error={plan.error} onRetry={plan.reload} />;
   if (!plan.data) return <Loading />;

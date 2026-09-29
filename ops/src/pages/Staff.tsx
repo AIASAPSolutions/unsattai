@@ -6,11 +6,14 @@ import { useAuth } from '../lib/auth';
 import { ApiError, errorText } from '../lib/errors';
 import { dateTime } from '../lib/format';
 import { useAction, useLoad } from '../lib/hooks';
-import { ROLE_HELP, ROLE_LABEL, type Role } from '../lib/permissions';
+import { ROLE_HELP, ROLE_LABEL, STAFF_ROLES, type Role } from '../lib/permissions';
+import { SellerLink } from '../components/marketplace';
 import { useRefData } from '../lib/refdata';
 import type { Staff } from '../lib/types';
 
-const ROLES: Role[] = ['admin', 'manager', 'sales', 'production', 'dispatch', 'viewer'];
+const ROLES: Role[] = STAFF_ROLES;
+/** Roles a staff member can be switched to in the table (a seller login is tied to one seller, so it is set up on creation). */
+const SWITCHABLE: Role[] = STAFF_ROLES.filter((r) => r !== 'seller');
 
 export default function StaffPage() {
   const { can, staff: me } = useAuth();
@@ -37,10 +40,11 @@ export default function StaffPage() {
         <DataTable rows={d.data.items} rowKey={(s) => s.id} testId="staff-table" columns={[
           { key: 'n', header: 'Name', sort: (s) => s.name, render: (s) => <div><b>{s.name || '—'}</b> {s.id === me?.id && <Badge tone="accent">You</Badge>}<div className="muted small">{s.email}</div></div> },
           { key: 'r', header: 'Role', sort: (s) => s.role, render: (s) => (
+            s.role === 'seller' ? <div><b>Seller</b><div className="small"><SellerLink id={s.seller_id} /></div></div> : (
             <select className="sm" style={{ width: 'auto' }} value={s.role} disabled={s.id === me?.id || busy === s.id} aria-label={`Role of ${s.email}`}
               onChange={(e) => change(s, { role: e.target.value }, `${s.email} is now ${ROLE_LABEL[e.target.value as Role]}.`)} data-testid={`role-${s.email}`}>
-              {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
-            </select>) },
+              {SWITCHABLE.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+            </select>)) },
           { key: 'a', header: 'Status', sort: (s) => String(s.active), render: (s) => <StatusBadge status={s.active ? 'active' : 'inactive'} /> },
           { key: 'c', header: 'Added', sort: (s) => s.created_at, render: (s) => <span className="small muted">{dateTime(s.created_at)}</span> },
           { key: 'x', header: '', render: (s) => s.id !== me?.id && (
@@ -63,18 +67,20 @@ export default function StaffPage() {
 
 function NewStaff({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const toast = useToast();
-  const [v, setV] = useState({ name: '', email: '', role: 'sales' as Role, password: '' });
+  const { sellers } = useRefData();
+  const [v, setV] = useState({ name: '', email: '', role: 'sales' as Role, password: '', seller_id: '' });
   const [err, setErr] = useState<string | null>(null);
   const { busy, run } = useAction();
   const submit = () => run('c', async () => {
     setErr(null);
-    await post('/ops/staff', { ...v, email: v.email.trim(), name: v.name.trim() });
+    const { seller_id, ...rest } = v;
+    await post('/ops/staff', { ...rest, email: v.email.trim(), name: v.name.trim(), ...(v.role === 'seller' ? { seller_id } : {}) });
     toast.success(`${v.email} can now sign in. Share the password securely; they should change it.`);
     onDone();
   }, (e) => setErr(e instanceof ApiError && e.fields.length ? e.fields.map((f) => `${f.path}: ${f.message}`).join(' ') : errorText(e)));
   return (
     <Modal open title="Add staff" onClose={onClose} testId="staff-dialog"
-      footer={<><Button onClick={onClose}>Close</Button><Button variant="primary" busy={!!busy} disabled={!v.name.trim() || !v.email.trim() || !v.password} onClick={submit} data-testid="staff-submit">Add staff</Button></>}>
+      footer={<><Button onClick={onClose}>Close</Button><Button variant="primary" busy={!!busy} disabled={!v.name.trim() || !v.email.trim() || !v.password || (v.role === 'seller' && !v.seller_id)} onClick={submit} data-testid="staff-submit">Add staff</Button></>}>
       {err && <Alert tone="error">{err}</Alert>}
       <div className="form-grid">
         <Field label="Name"><input value={v.name} maxLength={80} onChange={(e) => setV({ ...v, name: e.target.value })} data-testid="staff-name" /></Field>
@@ -82,6 +88,14 @@ function NewStaff({ onClose, onDone }: { onClose: () => void; onDone: () => void
         <Field label="Role" hint={ROLE_HELP[v.role]}>
           <select value={v.role} onChange={(e) => setV({ ...v, role: e.target.value as Role })} data-testid="staff-role">{ROLES.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select>
         </Field>
+        {v.role === 'seller' && (
+          <Field label="Seller" hint="This login sees only this seller's work.">
+            <select value={v.seller_id} onChange={(e) => setV({ ...v, seller_id: e.target.value })} data-testid="staff-seller">
+              <option value="">Choose a seller…</option>
+              {sellers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+            </select>
+          </Field>
+        )}
         <Field label="Initial password" hint="10+ characters with upper and lower case and a digit.">
           <input type="text" autoComplete="new-password" value={v.password} onChange={(e) => setV({ ...v, password: e.target.value })} data-testid="staff-password" />
         </Field>
@@ -105,7 +119,7 @@ function ResetPassword({ s, onClose }: { s: Staff; onClose: () => void }) {
       }, (e) => setErr(errorText(e)))}>Reset password</Button></>}>
       {err && <Alert tone="error">{err}</Alert>}
       <Field label="New password" hint="10+ characters with upper and lower case and a digit."><input type="text" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} /></Field>
-      <Alert tone="warn">Existing sessions stay signed in until they expire (one day). Deactivate the account to lock someone out at once.</Alert>
+      <Alert tone="info">Their current sessions end at once; they sign in again with the new password.</Alert>
     </Modal>
   );
 }

@@ -114,6 +114,14 @@ function Body({ e }: { e: E }) {
               <F label="Label" errors={err('rush.label')}><input value={f.rush.label} maxLength={60} onChange={(v) => set(['rush', 'label'], v.target.value)} /></F>
             </div>
           </Card>
+          <Card title="Cash on delivery">
+            <div className="form-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }} data-testid="cod-settings">
+              <label className="check wide"><input type="checkbox" checked={f.cod.enabled} onChange={(v) => set(['cod', 'enabled'], v.target.checked)} data-testid="cod-enabled" /> Offer cash on delivery</label>
+              <F label="Fee per checkout" errors={err('cod.fee')} hint="Charged once per cart, on top of delivery."><NumInput value={f.cod.fee} onChange={(v) => set(['cod', 'fee'], v)} errors={err('cod.fee')} suffix={cur} testId="cod-fee" /></F>
+              <F label="Largest order total" errors={err('cod.max_order_value')} hint="Empty for no limit."><NumInput value={f.cod.max_order_value} placeholder="No limit" onChange={(v) => set(['cod', 'max_order_value'], v)} errors={err('cod.max_order_value')} suffix={cur} testId="cod-max" /></F>
+            </div>
+            <p className="muted small" style={{ margin: '8px 0 0' }}>Each seller also turns COD on or off per delivery area. COD orders go straight to production.</p>
+          </Card>
           <Card title="Tax">
             <div className="form-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
               <F label="Name" errors={err('tax.name')}><input value={f.tax.name} maxLength={20} onChange={(v) => set(['tax', 'name'], v.target.value)} /></F>
@@ -126,7 +134,7 @@ function Body({ e }: { e: E }) {
         </div>
       </div>
 
-      <Card title="Coupons" actions={<Button size="sm" icon={<IconPlus />} onClick={() => set(['coupons'], [...f.coupons, { code: '', kind: 'percent', value: '10', max_discount: '', min_subtotal: '0', active: true, expires: '', note: '' }])}>Add coupon</Button>} flush>
+      <Card title="Coupons" actions={<Button size="sm" icon={<IconPlus />} onClick={() => set(['coupons'], [...f.coupons, { code: '', kind: 'percent', value: '10', max_discount: '', min_subtotal: '0', active: true, expires: '', note: '', public: false, title: '' }])}>Add coupon</Button>} flush>
         <div className="card-body stack">
           {f.coupons.map((c, i) => (
             <div key={i} className="coupon-row" data-testid={`coupon-${i}`}>
@@ -138,16 +146,20 @@ function Body({ e }: { e: E }) {
                 <F label="Minimum order" errors={err(`coupons.${i}.min_subtotal`)}><NumInput value={c.min_subtotal} onChange={(v) => set(['coupons', i, 'min_subtotal'], v)} errors={err(`coupons.${i}.min_subtotal`)} suffix={cur} /></F>
                 <F label="Expires" errors={err(`coupons.${i}.expires`)}><input type="date" value={c.expires} onChange={(v) => set(['coupons', i, 'expires'], v.target.value)} /></F>
                 <F label="Note" className="wide"><input value={c.note} maxLength={120} placeholder="Internal note" onChange={(v) => set(['coupons', i, 'note'], v.target.value)} /></F>
+                <F label="Title in the offers list" className="wide" errors={err(`coupons.${i}.title`)} hint={c.public ? 'Customers see this at checkout under Available offers.' : 'Needed only when listed publicly.'}>
+                  <input value={c.title} maxLength={80} placeholder="10% off orders above 1000" onChange={(v) => set(['coupons', i, 'title'], v.target.value)} className={err(`coupons.${i}.title`) ? 'invalid' : ''} data-testid={`coupon-title-${i}`} />
+                </F>
               </div>
               <div className="stack tight" style={{ alignItems: 'center' }}>
                 <label className="check small"><input type="checkbox" checked={c.active} onChange={(v) => set(['coupons', i, 'active'], v.target.checked)} /> Active</label>
+                <label className="check small" title="Listed at checkout under Available offers"><input type="checkbox" checked={c.public} onChange={(v) => set(['coupons', i, 'public'], v.target.checked)} data-testid={`coupon-public-${i}`} /> Public</label>
                 <button type="button" className="icon-btn" aria-label="Remove coupon" onClick={() => set(['coupons'], f.coupons.filter((_, j) => j !== i))}><IconTrash /></button>
               </div>
             </div>
           ))}
           {!f.coupons.length && <div className="muted">No coupons.</div>}
         </div>
-        <div className="card-body" style={{ paddingTop: 6 }}><span className="muted small">Codes: A–Z, 0–9, - and _, 3 to 24 characters. Percent coupons are at most 90%.</span></div>
+        <div className="card-body" style={{ paddingTop: 6 }}><span className="muted small">Codes: A–Z, 0–9, - and _, 3 to 24 characters. Percent coupons are at most 90%. Public coupons are listed at checkout; others work only when typed.</span></div>
       </Card>
     </>
   );
@@ -155,10 +167,10 @@ function Body({ e }: { e: E }) {
 
 // ------------------------------------------------------------------ Try it: draft vs current
 
-interface Example { garment: Garment; fabric: string; size: Size; quantity: string; xxl: string; names: boolean; numbers: boolean; logos: string; rush: boolean; coupon: string; pincode: string }
+interface Example { garment: Garment; fabric: string; size: Size; quantity: string; xxl: string; names: boolean; numbers: boolean; logos: string; rush: boolean; coupon: string; pincode: string; cod: boolean }
 
 function TryIt({ e }: { e: E }) {
-  const [ex, setEx] = useState<Example>({ garment: 'jersey', fabric: 'standard', size: 'M', quantity: '15', xxl: '0', names: true, numbers: true, logos: '1', rush: false, coupon: '', pincode: '600001' });
+  const [ex, setEx] = useState<Example>({ garment: 'jersey', fabric: 'standard', size: 'M', quantity: '15', xxl: '0', names: true, numbers: true, logos: '1', rush: false, coupon: '', pincode: '600001', cod: false });
   const setX = <K extends keyof Example>(k: K, v: Example[K]) => setEx((c) => ({ ...c, [k]: v }));
   const fabrics = e.draft.value.fabrics.filter((x) => x.garments.includes(ex.garment));
   const fabric = fabrics.some((x) => x.id === ex.fabric) ? ex.fabric : fabrics[0]?.id ?? 'standard';
@@ -168,7 +180,8 @@ function TryIt({ e }: { e: E }) {
     const line = (size: Size, quantity: number) => ({ size, quantity, player_name: ex.names ? 'PLAYER' : '', number: ex.numbers ? '10' : '' });
     const lines = [...(q ? [line(ex.size, q)] : []), ...(x ? [line('XXL', x)] : [])];
     return { garment: ex.garment, fabric, logos: Math.min(4, Math.max(0, Math.round(Number(ex.logos) || 0))), lines: lines.length ? lines : [line(ex.size, 1)],
-      rush: ex.rush, coupon: ex.coupon.trim().toUpperCase(), delivery: { method: 'ship', pincode: /^\d{6}$/.test(ex.pincode) ? ex.pincode : '', state: '' } };
+      rush: ex.rush, coupon: ex.coupon.trim().toUpperCase(), delivery: { method: 'ship', pincode: /^\d{6}$/.test(ex.pincode) ? ex.pincode : '', state: '' },
+      payment_method: ex.cod ? 'cod' : 'online' };
   }, [ex, fabric]);
   const body = useDebounced({ price_book: e.draft.value, request, ok: !e.draft.errors.length }, 450);
   const sim = useLoad(() => (body.ok ? post<{ draft: Pricing; current: Pricing }>('/ops/pricing/simulate', { price_book: body.price_book, request: body.request }, undefined) : Promise.resolve(null)),
@@ -181,6 +194,7 @@ function TryIt({ e }: { e: E }) {
     ['Express', (p) => p.rush.amount],
     ['Coupon', (p) => -(p.coupon?.amount ?? 0)],
     ['Delivery', (p) => p.shipping.amount],
+    ['Cash on delivery fee', (p) => (p.cod?.selected ? p.cod.fee : 0)],
     ['Tax', (p) => p.tax.amount],
   ];
   const delta = r ? r.draft.total - r.current.total : 0;
@@ -200,6 +214,7 @@ function TryIt({ e }: { e: E }) {
           <label className="check small"><input type="checkbox" checked={ex.names} onChange={(v) => setX('names', v.target.checked)} /> Names</label>
           <label className="check small"><input type="checkbox" checked={ex.numbers} onChange={(v) => setX('numbers', v.target.checked)} /> Numbers</label>
           <label className="check small"><input type="checkbox" checked={ex.rush} onChange={(v) => setX('rush', v.target.checked)} /> Express</label>
+          <label className="check small"><input type="checkbox" checked={ex.cod} onChange={(v) => setX('cod', v.target.checked)} data-testid="try-cod" /> Cash on delivery</label>
         </div>
         {!body.ok && <Alert tone="warn">Fix the marked values to see the draft price.</Alert>}
         {sim.error ? (sim.error instanceof ApiError && sim.error.status === 422 ? <Alert tone="warn">The draft is not valid yet: {sim.error.message}</Alert> : <ErrorBox error={sim.error} onRetry={sim.reload} />) : null}
@@ -224,7 +239,9 @@ function TryIt({ e }: { e: E }) {
             <span className="muted small">{r.draft.pieces} pieces · tax {pct(r.draft.tax.rate)}</span>
           </div>
         )}
-        {r && [...r.draft.problems, ...(r.draft.coupon?.error ? [r.draft.coupon.error] : [])].map((p) => <div key={p} className="small warn-text">{p}</div>)}
+        {r && [...r.draft.problems, ...(r.draft.coupon?.error ? [r.draft.coupon.error] : []),
+          ...(ex.cod && r.draft.cod && !r.draft.cod.available ? ['Cash on delivery is not available for this example with the draft (switched off, not allowed in this area, or above the limit).'] : [])]
+          .map((p) => <div key={p} className="small warn-text">{p}</div>)}
       </div>
     </Card>
   );

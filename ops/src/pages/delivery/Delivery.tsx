@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import { OrderFlags } from '../../components/domain';
+import { PaymentBadge, SellerFilter, SellerLink, useSellerParam, withSeller } from '../../components/marketplace';
 import { IconPrint, IconTruck } from '../../components/icons';
 import {
   Alert, Badge, Button, Card, Chips, DataTable, Empty, ErrorBox, Field, Loading, Modal, PageHeader, Pager, SearchInput, StatusBadge, Tabs, useToast,
@@ -13,10 +14,11 @@ import { useRefData } from '../../lib/refdata';
 import { SHIPMENT_STATUSES, type OrderSummary, type Page, type Shipment } from '../../lib/types';
 
 export default function Delivery() {
+  const [seller, setSeller] = useSellerParam();
   return (
     <>
-      <PageHeader title="Delivery" subtitle="Dispatch plan, shipments and labels." />
-      <Tabs tabs={[{ to: '/delivery/plan', label: 'Dispatch plan' }, { to: '/delivery/ready', label: 'Ready to ship' }, { to: '/delivery/shipments', label: 'Shipments' }]} />
+      <PageHeader title="Delivery" subtitle="Dispatch plan, shipments and labels." actions={<SellerFilter value={seller} onChange={setSeller} />} />
+      <Tabs tabs={[{ to: withSeller('/delivery/plan', seller), label: 'Dispatch plan' }, { to: withSeller('/delivery/ready', seller), label: 'Ready to ship' }, { to: withSeller('/delivery/shipments', seller), label: 'Shipments' }]} />
       <Routes>
         <Route index element={<Navigate to="plan" replace />} />
         <Route path="plan" element={<DispatchPlan />} />
@@ -30,11 +32,13 @@ export default function Delivery() {
 // ------------------------------------------------------------------ dispatch plan
 
 interface DPlan { today: string; days: { date: string; pieces: number; zones: Record<string, number>; orders: { id: string; number?: string; customer: string; pieces: number; zone: string;
-  method?: string; ready: boolean; rush?: boolean; promised_delivery_date?: string | null; city?: string }[] }[] }
+  method?: string; ready: boolean; rush?: boolean; promised_delivery_date?: string | null; city?: string; seller_id?: string; payment_method?: 'online' | 'cod' }[] }[] }
 
 function DispatchPlan() {
   const [days, setDays] = useState(7);
-  const d = useLoad(() => get<DPlan>('/ops/delivery/plan', { days }), [days]);
+  const [seller] = useSellerParam();
+  const { isSeller } = useAuth();
+  const d = useLoad(() => get<DPlan>('/ops/delivery/plan', { days, seller_id: seller || undefined }), [days, seller]);
   const { settings } = useRefData();
   const zoneName = (z: string) => (z === 'pickup' ? 'Pickup' : settings?.delivery.value.zones.find((x) => x.id === z)?.name ?? z);
   if (d.error && !d.data) return <ErrorBox error={d.error} onRetry={d.reload} />;
@@ -58,10 +62,12 @@ function DispatchPlan() {
           <DataTable rows={x.orders} rowKey={(o) => o.id} compact columns={[
             { key: 'n', header: 'Order', render: (o) => <span className="row tight"><Link to={`/orders/${o.id}`}>{o.number}</Link><OrderFlags o={{ rush: o.rush }} /></span> },
             { key: 'c', header: 'Customer', render: (o) => o.customer },
+            ...(seller || isSeller ? [] : [{ key: 'sel', header: 'Seller', render: (o: DPlan['days'][number]['orders'][number]) => <SellerLink id={o.seller_id} /> }]),
             { key: 'z', header: 'Zone', render: (o) => zoneName(o.zone) },
             { key: 'city', header: 'City', render: (o) => o.city || '—' },
             { key: 'p', header: 'Pieces', num: true, render: (o) => num(o.pieces) },
             { key: 'prom', header: 'Promised', render: (o) => day(o.promised_delivery_date) },
+            { key: 'pay', header: 'Payment', render: (o) => (o.payment_method === 'cod' ? <Badge tone="warn">Collect cash</Badge> : <span className="muted small">Prepaid</span>) },
             { key: 's', header: 'State', render: (o) => (o.ready ? <Badge tone="good">Ready</Badge> : <Badge>In production</Badge>) },
           ]} />
         </Card>
@@ -75,14 +81,15 @@ function DispatchPlan() {
 function ReadyToShip() {
   const toast = useToast();
   const nav = useNavigate();
-  const { can } = useAuth();
+  const { can, isSeller } = useAuth();
+  const [seller] = useSellerParam();
   const d = useLoad(async () => {
     const [orders, ships] = await Promise.all([
-      get<Page<OrderSummary>>('/ops/orders', { status: 'ready', size: 200 }),
-      get<Page<Shipment>>('/ops/shipments', { status: 'planned,packed' }),
+      get<Page<OrderSummary>>('/ops/orders', { status: 'ready', size: 200, seller_id: seller || undefined }),
+      get<Page<Shipment>>('/ops/shipments', { status: 'planned,packed', seller_id: seller || undefined }),
     ]);
     return { orders: orders.items, open: new Map(ships.items.map((s) => [s.order_id, s])) };
-  }, []);
+  }, [seller]);
   const [target, setTarget] = useState<OrderSummary | null>(null);
   if (d.error && !d.data) return <ErrorBox error={d.error} onRetry={d.reload} />;
   if (!d.data) return <Loading />;
@@ -94,11 +101,13 @@ function ReadyToShip() {
         <DataTable rows={d.data.orders} rowKey={(o) => o.id} testId="ready-table" columns={[
           { key: 'n', header: 'Order', render: (o) => <span className="row tight"><Link to={`/orders/${o.id}`} className="strong">{o.number}</Link><OrderFlags o={o} /></span> },
           { key: 'c', header: 'Customer', render: (o) => o.customer_name },
+          ...(seller || isSeller ? [] : [{ key: 'sel', header: 'Seller', render: (o: OrderSummary) => <SellerLink id={o.seller_id} name={o.seller_name} /> }]),
           { key: 'p', header: 'Pieces', num: true, render: (o) => num(o.pieces) },
+          { key: 'pay', header: 'Payment', render: (o) => <PaymentBadge o={o} /> },
           { key: 'prom', header: 'Promised', sort: (o) => o.promised_delivery_date, render: (o) => day(o.promised_delivery_date) },
           { key: 's', header: 'Shipment', render: (o) => {
             const s = d.data!.open.get(o.id);
-            return s ? <span className="row tight"><StatusBadge status={s.status} /><button className="linklike small" onClick={() => nav('/delivery/shipments')}>{s.carrier_name} {s.tracking_no}</button></span>
+            return s ? <span className="row tight"><StatusBadge status={s.status} /><button className="linklike small" onClick={() => nav(withSeller('/delivery/shipments', seller))}>{s.carrier_name} {s.tracking_no}</button></span>
               : <Button size="sm" variant="primary" icon={<IconTruck />} disabled={!canShip} onClick={() => setTarget(o)} data-testid="create-shipment">Create shipment</Button>;
           } },
         ]} empty="No orders are ready. Orders arrive here when every production stage is done." />
@@ -108,11 +117,19 @@ function ReadyToShip() {
   );
 }
 
-function ShipmentDialog({ order, onClose, onDone }: { order: OrderSummary; onClose: () => void; onDone: () => void }) {
+/** Active carriers from /ops/carriers, which staff and seller logins can both read. Staff also see the tracking link template from settings. */
+function useCarriers(): { carriers: { id: string; name: string; tracking_url?: string }[]; loading: boolean; error: unknown } {
   const { settings } = useRefData();
+  const d = useLoad(() => get<{ items: { id: string; name: string }[] }>('/ops/carriers').then((r) => r.items), []);
+  const urls = new Map((settings?.delivery.value.carriers ?? []).map((c) => [c.id, c.tracking_url]));
+  return { carriers: (d.data ?? []).map((c) => ({ ...c, tracking_url: urls.get(c.id) || undefined })), loading: d.loading, error: d.error };
+}
+
+function ShipmentDialog({ order, onClose, onDone }: { order: OrderSummary; onClose: () => void; onDone: () => void }) {
   const toast = useToast();
-  const carriers = (settings?.delivery.value.carriers ?? []).filter((c) => c.active);
-  const [carrier, setCarrier] = useState(carriers[0]?.id ?? '');
+  const { carriers, loading: carriersLoading, error: carriersError } = useCarriers();
+  const [carrier, setCarrier] = useState('');
+  useEffect(() => { if (!carrier && carriers[0]) setCarrier(carriers[0].id); }, [carriers, carrier]);
   const [tracking, setTracking] = useState('');
   const [planned, setPlanned] = useState(isoDate());
   const { busy, run } = useAction();
@@ -123,10 +140,12 @@ function ShipmentDialog({ order, onClose, onDone }: { order: OrderSummary; onClo
         <Button variant="primary" busy={!!busy} disabled={!carrier} data-testid="shipment-submit"
           onClick={() => run('s', async () => { await post(`/ops/orders/${order.id}/shipments`, { carrier, tracking_no: tracking.trim(), planned_date: planned || null }); onDone(); }, toast.error)}>Create shipment</Button></>}>
       <div className="muted">{order.customer_name} · {num(order.pieces)} pieces</div>
-      {!carriers.length && <Alert tone="warn">No active carriers. Add one in Settings → Delivery.</Alert>}
+      {carriersError ? <Alert tone="error">Could not load the carriers. Close and try again.</Alert>
+        : !carriersLoading && !carriers.length && <Alert tone="warn">No active carriers. An admin adds them in Settings → Delivery.</Alert>}
       <div className="form-grid">
         <Field label="Carrier">
-          <select value={carrier} onChange={(e) => setCarrier(e.target.value)} data-testid="shipment-carrier">
+          <select value={carrier} onChange={(e) => setCarrier(e.target.value)} disabled={carriersLoading || !carriers.length} data-testid="shipment-carrier">
+            {carriersLoading && <option value="">Loading…</option>}
             {carriers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </Field>
@@ -150,7 +169,9 @@ function Shipments() {
   const [q, setQ] = useState('');
   const dq = useDebounced(q);
   const [page, setPage] = useState(1);
-  const d = useLoad(() => get<Page<Shipment>>('/ops/shipments', { status: status.join(',') || undefined, q: dq || undefined, page }), [status.join(','), dq, page]);
+  const [seller] = useSellerParam();
+  const { isSeller } = useAuth();
+  const d = useLoad(() => get<Page<Shipment>>('/ops/shipments', { status: status.join(',') || undefined, q: dq || undefined, page, seller_id: seller || undefined }), [status.join(','), dq, page, seller]);
   const { busy, run } = useAction();
   const [edit, setEdit] = useState<Shipment | null>(null);
   const canShip = can('delivery');
@@ -174,6 +195,7 @@ function Shipments() {
         <DataTable rows={rows} rowKey={(s) => s.id} testId="shipments-table" empty={d.loading ? 'Loading…' : 'No shipments.'} columns={[
           { key: 'o', header: 'Order', sort: (s) => s.order_number, render: (s) => <Link to={`/orders/${s.order_id}`} className="strong">{s.order_number}</Link> },
           { key: 'c', header: 'Customer', sort: (s) => s.customer_name, render: (s) => <div>{s.customer_name}<div className="muted small">{s.address ? `${s.address.city}, ${s.address.state} ${s.address.pincode}` : label(s.method)}</div></div> },
+          ...(seller || isSeller ? [] : [{ key: 'sel', header: 'Seller', render: (s: Shipment) => <SellerLink id={s.seller_id} /> }]),
           { key: 'carrier', header: 'Carrier', render: (s) => <div>{s.carrier_name}<div className="small">{s.tracking_url ? <a href={s.tracking_url} target="_blank" rel="noreferrer">{s.tracking_no}</a> : s.tracking_no || <span className="muted">No tracking</span>}</div></div> },
           { key: 'p', header: 'Pieces', num: true, render: (s) => num(s.pieces) },
           { key: 'st', header: 'Status', sort: (s) => s.status, render: (s) => <StatusBadge status={s.status} /> },
@@ -203,7 +225,7 @@ function UpdateDialog({ s, onClose, onSave, busy }: { s: Shipment; busy: boolean
         <Field label="Tracking number"><input value={tracking} maxLength={60} onChange={(e) => setTracking(e.target.value)} /></Field>
       </div>
       {status === 'dispatched' && <Alert tone="info">Dispatching needs every production stage done. The customer sees "Dispatched with {s.carrier_name}".</Alert>}
-      {(status === 'returned' || status === 'cancelled') && <Alert tone="warn">This changes the shipment only; the order keeps its status. Add an order note to explain.</Alert>}
+      {(status === 'returned' || status === 'cancelled') && <Alert tone="warn">A dispatched order goes back to Ready to ship, with a note on its timeline. Add an order note to explain why.</Alert>}
     </Modal>
   );
 }

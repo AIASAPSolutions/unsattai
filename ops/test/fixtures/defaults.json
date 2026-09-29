@@ -103,9 +103,16 @@
     "min_subtotal": 1000,
     "active": true,
     "expires": null,
-    "note": "First order"
+    "note": "First order",
+    "public": true,
+    "title": "10% off orders above 1000 (up to 500)"
    }
-  ]
+  ],
+  "cod": {
+   "enabled": true,
+   "fee": 49,
+   "max_order_value": 20000
+  }
  },
  "production": {
   "timezone": "Asia/Kolkata",
@@ -323,6 +330,12 @@
    "design",
    "other"
   ],
-  "reorder_reminder_days": 300
+  "reorder_reminder_days": 300,
+  "return_window_days": 7,
+  "returnable_reasons": [
+   "damaged",
+   "wrong_item",
+   "print_quality"
+  ]
  }
 }

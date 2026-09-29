@@ -358,6 +358,20 @@ def router(store: PlatformStore, key_dep) -> APIRouter:
             raise HTTPException(404, "order not found")
         return security.check_seller_order(s, o) if s else o
 
+    @r.get("/carriers")
+    def carriers(s: dict = Depends(need("read", seller=True))):
+        """Carrier names for the shipment form; sellers can't read the delivery settings."""
+        return {"items": [{"id": c["id"], "name": c["name"]} for c in config.get(store, "delivery")["carriers"]
+                          if c.get("active", True)]}
+
+    @r.get("/orders/{order_id}/print-files/{name}")
+    def print_file(order_id: str, name: str, s: dict = Depends(need("production", seller=True))):
+        """The artwork a seller (or the production team) prints for this order."""
+        o = _order(order_id, s)
+        svg = order_mod.production_file(o, name)
+        return PlainTextResponse(svg, media_type="image/svg+xml",
+                                 headers={"Content-Disposition": f'attachment; filename="{order_id}_{name}"'})
+
     @r.get("/orders/{order_id}")
     def get_order(order_id: str, s: dict = Depends(need("read", seller=True))):
         o = _order(order_id, s)

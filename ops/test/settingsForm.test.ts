@@ -72,9 +72,9 @@ describe('price book', () => {
   });
   it('empty cap and expiry become null; codes are upper-cased', () => {
     const f = priceBookToForm(pb());
-    f.coupons.push({ code: 'team25', kind: 'amount', value: '250', max_discount: '', min_subtotal: '', active: true, expires: '', note: ' x ' });
+    f.coupons.push({ code: 'team25', kind: 'amount', value: '250', max_discount: '', min_subtotal: '', active: true, expires: '', note: ' x ', public: false, title: '' });
     const c = formToPriceBook(f).value.coupons[1];
-    expect(c).toEqual({ code: 'TEAM25', kind: 'amount', value: 250, max_discount: null, min_subtotal: 0, active: true, expires: null, note: 'x' });
+    expect(c).toEqual({ code: 'TEAM25', kind: 'amount', value: 250, max_discount: null, min_subtotal: 0, active: true, expires: null, note: 'x', public: false, title: '' });
   });
   it('reports errors at the same paths the server uses', () => {
     const f = priceBookToForm(pb());
@@ -166,5 +166,46 @@ describe('company and CRM', () => {
     const r = formToCrm(f);
     expect(r.value.lead_stages).toEqual(['new', 'sample_sent', 'won']);
     expect(r.errors.map((e) => e.path)).toEqual(['lead_stages']);
+  });
+});
+
+describe('marketplace settings', () => {
+  it('edits cash on delivery: fee, empty limit means none, 0 is refused', () => {
+    const f = priceBookToForm(pb());
+    expect(f.cod).toEqual({ enabled: true, fee: '49', max_order_value: '20000' });
+    f.cod = { enabled: false, fee: '', max_order_value: '' };
+    let r = formToPriceBook(f, pb());
+    expect(r.errors).toEqual([]);
+    expect(r.value.cod).toEqual({ enabled: false, fee: 0, max_order_value: null });
+    f.cod = { enabled: true, fee: '20000', max_order_value: '0' };
+    r = formToPriceBook(f, pb());
+    expect(r.errors.map((e) => e.path)).toEqual(['cod.fee', 'cod.max_order_value']);
+  });
+  it('keeps coupon public and title, and a public coupon needs a title', () => {
+    const f = priceBookToForm(pb());
+    expect(f.coupons[0]).toMatchObject({ public: true, title: '10% off orders above 1000 (up to 500)' });
+    f.coupons[0].title = '  ';
+    expect(formToPriceBook(f, pb()).errors).toEqual([{ path: 'coupons.0.title', message: 'A public coupon needs a title customers can read.' }]);
+    f.coupons[0].public = false;
+    expect(formToPriceBook(f, pb()).value.coupons[0]).toMatchObject({ public: false, title: '' });
+  });
+  it('reads an older price book without cod as switched off', () => {
+    const old = pb();
+    delete (old as Partial<PriceBook>).cod;
+    expect(priceBookToForm(old).cod).toEqual({ enabled: false, fee: '0', max_order_value: '' });
+  });
+  it('edits the return window and reasons', () => {
+    const x = clone(defaults.crm) as CrmConfig;
+    const f = crmToForm(x);
+    expect(f.return_window_days).toBe('7');
+    expect(f.returnable_reasons).toEqual(['damaged', 'wrong_item', 'print_quality']);
+    f.returnable_reasons = ['Damaged', 'Wrong size', 'x'];
+    f.return_window_days = '61';
+    const r = formToCrm(f, x);
+    expect(r.value.returnable_reasons).toEqual(['damaged', 'wrong_size', 'x']);
+    expect(r.errors.map((e) => e.path)).toEqual(['return_window_days', 'returnable_reasons']);
+    f.returnable_reasons = [];
+    f.return_window_days = '0';
+    expect(formToCrm(f, x).errors).toEqual([]);
   });
 });

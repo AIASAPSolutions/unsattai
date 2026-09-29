@@ -1,6 +1,9 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { DesignPreview, OrderFlags } from '../../components/domain';
+import { SellerLink } from '../../components/marketplace';
+import { CollectDialog } from '../marketplace/Cod';
+import { ReturnBadge } from '../marketplace/Returns';
 import { IconBolt, IconDoc, IconDownload, IconPause, IconX } from '../../components/icons';
 import { PricingBreakdown } from '../../components/Pricing';
 import {
@@ -11,17 +14,24 @@ import { useAuth } from '../../lib/auth';
 import { dateTime, day, GARMENT_LABEL, label, money } from '../../lib/format';
 import { useAction, useLoad } from '../../lib/hooks';
 import { useRefData } from '../../lib/refdata';
-import { PAYMENT_METHODS, type Activity, type AuditRow, type Order, type Plan, type Shipment } from '../../lib/types';
+import {
+  PAYMENT_METHODS, type Activity, type AuditRow, type CheckoutRef, type Order, type OrderSummary, type Page, type Plan, type ReturnRec, type Seller, type Shipment,
+} from '../../lib/types';
 
-interface Detail { order: Order; plan: Plan | null; shipments: Shipment[]; activities: Activity[]; audit: AuditRow[] }
-type Dialog = null | 'payment' | 'hold' | 'cancel' | 'priority' | 'note';
+interface Detail {
+  order: Order; plan: Plan | null; shipments: Shipment[]; activities: Activity[]; audit: AuditRow[];
+  checkout?: CheckoutRef | null; returns?: ReturnRec[]; seller?: Seller | null;
+}
+type Dialog = null | 'payment' | 'hold' | 'cancel' | 'priority' | 'note' | 'cod';
 
 export default function OrderDetail() {
   const { id = '' } = useParams();
-  const { can } = useAuth();
+  const { can, isSeller } = useAuth();
   const { who } = useRefData();
   const toast = useToast();
   const d = useLoad(() => get<Detail>(`/ops/orders/${id}`), [id]);
+  const ckId = d.data?.checkout?.id;
+  const siblings = useLoad(() => (ckId ? get<Page<OrderSummary>>('/ops/orders', { checkout_id: ckId }).then((r) => r.items) : Promise.resolve([] as OrderSummary[])), [ckId]);
   const { busy, run } = useAction();
   const [dialog, setDialog] = useState<Dialog>(null);
 
@@ -38,6 +48,9 @@ export default function OrderDetail() {
   const inProd = ['queued', 'in_production', 'ready'].includes(status);
   const canOrders = can('orders');
   const canProd = can('production');
+  const cod = o.payment_method === 'cod';
+  const codCollected = cod && !!o.payment?.collected;
+  const { checkout, returns = [], seller } = d.data;
 
   const act = async (key: string, fn: () => Promise<unknown>, ok: string) => {
     await run(key, async () => { await fn(); toast.success(ok); setDialog(null); await d.reload(); }, toast.error);
@@ -53,7 +66,9 @@ export default function OrderDetail() {
         crumbs={<><Link to="/orders">Orders</Link> / {o.number}</>}
         title={<span className="row">Order {o.number ?? o.id} <StatusBadge status={status} /><OrderFlags o={{ rush: f?.rush, hold: f?.hold }} /></span>}
         subtitle={<>Placed {dateTime(o.created_at)} via {label(o.channel ?? 'app')} · <code>{o.id}</code></>}
-        actions={<>
+        actions={isSeller ? <>
+          <Button icon={<IconDoc />} onClick={() => run('inv', () => openHtml(`/ops/orders/${o.id}/invoice`, `Invoice ${o.number}`), toast.error)} busy={busy === 'inv'} data-testid="open-invoice">Invoice</Button>
+        </> : <>
           {!o.payment && status !== 'cancelled' && <Button variant="primary" onClick={() => setDialog('payment')} disabled={!canOrders} title={canOrders ? '' : 'Your role cannot record payments'} data-testid="record-payment">Record payment</Button>}
           {open && status !== 'awaiting_payment' && <Button icon={<IconPause />} onClick={() => setDialog('hold')} disabled={!canOrders} data-testid="hold-toggle">{f?.hold ? 'Resume' : 'Hold'}</Button>}
           {open && <Button icon={<IconBolt />} onClick={() => setDialog('priority')} disabled={!canOrders} data-testid="priority">Priority &amp; date</Button>}
@@ -64,7 +79,8 @@ export default function OrderDetail() {
       />
       {f?.hold && <div style={{ marginBottom: 16 }}><Alert tone="warn"><b>On hold.</b> {f.hold_reason || 'No reason given.'} Held orders are left out of the production plan.</Alert></div>}
       {status === 'cancelled' && <div style={{ marginBottom: 16 }}><Alert tone="error"><b>Cancelled.</b> {f?.cancel_reason}</Alert></div>}
-      {!canOrders && <div style={{ marginBottom: 16 }}><Alert tone="info">Your role can view this order but not change payments, holds or priority.</Alert></div>}
+      {!canOrders && !isSeller && <div style={{ marginBottom: 16 }}><Alert tone="info">Your role can view this order but not change payments, holds or priority.</Alert></div>}
+      {isSeller && <div style={{ marginBottom: 16 }}><Alert tone="info">Mark production stages as you finish them. Ship it from Delivery when every stage is done.</Alert></div>}
 
       <div className="grid grid-main">
         <div className="stack" style={{ gap: 16 }}>
@@ -108,7 +124,7 @@ export default function OrderDetail() {
             )}
           </Card>
 
-          <Card title="Timeline" actions={<span className="muted small"><Badge tone="warn">Internal</Badge> not shown to the customer</span>}>
+          {!isSeller && <Card title="Timeline" actions={<span className="muted small"><Badge tone="warn">Internal</Badge> not shown to the customer</span>}>
             <ul className="timeline" data-testid="timeline">
               {events.map((e, i) => (
                 <li key={i} className={e.public ? '' : 'internal'}>
@@ -117,24 +133,49 @@ export default function OrderDetail() {
                 </li>
               ))}
             </ul>
-          </Card>
+          </Card>}
 
-          <Card title="Audit trail" flush>
+          {!isSeller && <Card title="Audit trail" flush>
             <DataTable rows={audit} rowKey={(a) => String(a.id)} compact pageSize={10} columns={[
               { key: 'at', header: 'When', render: (a) => <span className="nowrap">{dateTime(a.at)}</span> },
               { key: 'who', header: 'Who', render: (a) => who(a.actor) },
               { key: 'action', header: 'Action', render: (a) => <code>{a.action}</code> },
               { key: 'detail', header: 'Detail', render: (a) => <span className="muted small">{Object.entries(a.detail).map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`).join(' · ')}</span> },
             ]} empty="No changes recorded." />
-          </Card>
+          </Card>}
         </div>
 
         <div className="stack" style={{ gap: 16 }}>
+          <Card title="Seller">
+            <dl className="kv" data-testid="order-seller">
+              <dt>Sold by</dt><dd className="strong"><SellerLink id={o.seller?.id ?? seller?.id} name={o.seller?.name ?? seller?.name} /></dd>
+              {seller?.gstin && <><dt>GSTIN</dt><dd>{seller.gstin}</dd></>}
+              {!isSeller && seller?.phone && <><dt>Contact</dt><dd>{seller.phone}{seller.email && ` · ${seller.email}`}</dd></>}
+            </dl>
+          </Card>
+
+          {checkout && (
+            <Card title={<>Checkout {checkout.number}</>} actions={!isSeller && <Link to={`/orders?checkout=${checkout.id}`}>List</Link>}>
+              <div className="stack tight" data-testid="order-checkout">
+                <div className="small muted">{checkout.order_ids.length} order{checkout.order_ids.length === 1 ? '' : 's'} placed together · {checkout.payment_method === 'cod' ? 'cash on delivery' : 'paid online'} · {label(checkout.status)}</div>
+                <div className="checkout-sibs">
+                  {checkout.order_ids.map((oid) => {
+                    const row = siblings.data?.find((x) => x.id === oid);
+                    if (oid === o.id) return <span key={oid} className="cur">{o.number} (this)</span>;
+                    if (!row) return isSeller ? <span key={oid} className="muted" title="Made by another seller">Another seller</span> : <span key={oid} className="muted">…</span>;
+                    return <Link key={oid} to={`/orders/${oid}`} data-testid="checkout-sibling">{row.number}{!isSeller && row.seller_name ? ` · ${row.seller_name}` : ''}</Link>;
+                  })}
+                </div>
+              </div>
+            </Card>
+          )}
+
           <Card title="Customer">
             <dl className="kv">
-              <dt>Name</dt><dd>{o.customer_id ? <Link to={`/crm/customers/${o.customer_id}`} data-testid="customer-link">{o.customer.name}</Link> : o.customer.name}</dd>
+              <dt>Name</dt><dd>{o.customer_id && !isSeller ? <Link to={`/crm/customers/${o.customer_id}`} data-testid="customer-link">{o.customer.name}</Link> : o.customer.name}</dd>
               <dt>Phone</dt><dd><a href={`tel:${o.customer.phone}`}>{o.customer.phone}</a></dd>
               {o.customer.email && <><dt>Email</dt><dd>{o.customer.email}</dd></>}
+              {!isSeller && <><dt>Messages</dt><dd><Link to={`/messages?order=${o.id}`}>SMS and email sent</Link></dd></>}
             </dl>
           </Card>
 
@@ -168,8 +209,18 @@ export default function OrderDetail() {
             ) : <span className="muted">No delivery details (older app version).</span>}
           </Card>
 
-          <Card title="Payment">
-            {o.payment ? (
+          <Card title="Payment" actions={<Badge tone={cod ? 'warn' : 'info'}>{cod ? 'Cash on delivery' : 'Online'}</Badge>}>
+            {cod ? (
+              <dl className="kv" data-testid="payment-info">
+                <dt>Due on delivery</dt><dd className="strong">{money(o.payment?.amount ?? o.pricing?.total, cur)}</dd>
+                <dt>Cash</dt><dd data-testid="cod-status">{codCollected ? <Badge tone="good" dot>Collected</Badge> : status === 'cancelled' ? <Badge>Not due (cancelled)</Badge> : <Badge tone="warn" dot>To collect</Badge>}</dd>
+                {codCollected && <><dt>Collected</dt><dd>{dateTime(o.payment?.collected_at)}{o.payment?.collected_by ? ` by ${who(o.payment.collected_by)}` : ''}</dd></>}
+                {o.payment?.reference && <><dt>Reference</dt><dd>{o.payment.reference}</dd></>}
+                {!codCollected && status !== 'cancelled' && can('delivery') && (
+                  <><dt /><dd><Button size="sm" variant="primary" onClick={() => setDialog('cod')} data-testid="cod-collect">Mark cash collected</Button></dd></>
+                )}
+              </dl>
+            ) : o.payment ? (
               <dl className="kv" data-testid="payment-info">
                 <dt>Method</dt><dd>{label(o.payment.method)} {o.payment.demo && <Badge tone="warn">Demo, no money taken</Badge>}</dd>
                 <dt>Reference</dt><dd>{o.payment.reference || '—'}</dd>
@@ -178,7 +229,23 @@ export default function OrderDetail() {
                 {o.payment.recorded_by && <><dt>Recorded by</dt><dd>{who(o.payment.recorded_by)}</dd></>}
               </dl>
             ) : <div className="muted">Not paid yet. {canOrders && 'Record cash, UPI, bank transfer, card or cheque payments here.'}</div>}
+            {(o.refunds ?? []).map((r) => (
+              <div key={r.id} className="small" style={{ marginTop: 8 }}><Badge tone="bad">Refund</Badge> {money(r.amount, cur)} · {dateTime(r.at)} · {r.method === 'demo' ? 'recorded, no money moved' : 'paid back by hand'}{r.note && ` · ${r.note}`}</div>
+            ))}
           </Card>
+
+          {returns.length > 0 && (
+            <Card title={`Returns (${returns.length})`}>
+              <div className="stack tight">
+                {returns.map((r) => (
+                  <div key={r.id} className="row" style={{ justifyContent: 'space-between' }}>
+                    <span><Link to={`/returns/${r.id}`}>{r.number}</Link> <span className="muted small">{label(r.reason)}</span></span>
+                    <ReturnBadge status={r.status} />
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
 
           <Card title="Shipments" actions={<Link to="/delivery/shipments">Delivery</Link>}>
             {shipments.length ? (
@@ -198,10 +265,14 @@ export default function OrderDetail() {
               {o.files.map((fl) => (
                 <div key={fl.name} className="row" style={{ justifyContent: 'space-between', flexWrap: 'nowrap' }}>
                   <span className="ellipsis small" title={fl.name}>Line {fl.line} · {fl.size} · {label(fl.panel)}{fl.player_name && ` · ${fl.player_name}`}{fl.number && ` #${fl.number}`}</span>
-                  <Button size="xs" icon={<IconDownload />} busy={busy === fl.name}
-                    onClick={() => run(fl.name, () => download(`/orders/${o.id}/files/${encodeURIComponent(fl.name)}`, fl.name, { method: 'POST' }), toast.error)}>SVG</Button>
+                  <Button size="xs" icon={<IconDownload />} busy={busy === fl.name} data-testid="print-file-download"
+                    onClick={() => run(fl.name, () => (canProd
+                      // Production staff and seller logins use the ops route; other roles keep the design route.
+                      ? download(`/ops/orders/${o.id}/print-files/${encodeURIComponent(fl.name)}`, fl.name)
+                      : download(`/orders/${o.id}/files/${encodeURIComponent(fl.name)}`, fl.name, { method: 'POST' })), toast.error)}>SVG</Button>
                 </div>
               ))}
+              {!o.files.length && <span className="muted small">No print files for this order.</span>}
             </div>
           </Card>
         </div>
@@ -219,6 +290,8 @@ export default function OrderDetail() {
       </ReasonDialog>
       <PriorityDialog key={`r-${dialog}`} open={dialog === 'priority'} rush={!!f?.rush} promised={f?.promised_delivery_date ?? ''} busy={busy === 'prio'} onClose={() => setDialog(null)}
         onSubmit={(body) => act('prio', () => post(`/ops/orders/${o.id}/priority`, body), 'Priority updated.')} />
+      {dialog === 'cod' && <CollectDialog order={{ id: o.id, number: o.number, total: o.payment?.amount ?? o.pricing?.total, currency: cur }} onClose={() => setDialog(null)}
+        onDone={async () => { setDialog(null); await d.reload(); }} />}
       <NoteDialog key={`n-${dialog}`} open={dialog === 'note'} busy={busy === 'note'} onClose={() => setDialog(null)}
         onSubmit={(body) => act('note', () => post(`/ops/orders/${o.id}/notes`, body), body.public ? 'Note added to the customer timeline.' : 'Internal note added.')} />
     </>

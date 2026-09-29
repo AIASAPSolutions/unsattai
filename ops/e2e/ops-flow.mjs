@@ -89,6 +89,7 @@ try {
     const gen = await api('/designs/generate', { body: { prompt: 'navy and gold cricket jersey with bold stripes', team_name: 'STRIKERS', variants: 2 } });
     const d = gen.designs[0];
     seed.spec = d.spec;
+    seed.designId = d.id;
     const order = (key, name, phone, items) => api('/orders', { body: {
       design_id: d.id, spec: d.spec, items, customer: { name, phone }, idempotency_key: `e2e_${RUN}_${key}`, channel: 'web',
       delivery: { method: 'ship', address: address(name, phone) },
@@ -364,6 +365,308 @@ try {
     await page.goto(`${OPS}/reports/audit`);
     await tid('audit-table').waitFor();
     await shot('24-audit');
+  });
+
+  // ---------------------------------------------------------------- marketplace
+  const sellerName = `Kerala Kits ${RUN}`;
+  const sellerEmail = `unit.${RUN}@partner.test`;
+  const sellerPassword = 'Partn3rPassword';
+  const phoneC = `95${String(Date.now() + 3).slice(-8)}`;
+  const kerala = (name, phone, pincode = '682001') => ({ name, phone, line1: '7 Marine Drive', line2: '', city: 'Kochi', state: 'KL', pincode });
+
+  await step('sellers: create a seller covering one state, with a blocked PIN code and COD', async () => {
+    await page.goto(`${OPS}/sellers`);
+    await tid('sellers-table').getByText('UrJersey').first().waitFor();
+    await shot('27-sellers');
+    await tid('new-seller').click();
+    await page.waitForURL(/\/sellers\/new/);
+    // A bad value first: the server-side rule for GSTIN is also checked in the browser, next to the field.
+    await tid('seller-name').fill(sellerName);
+    await tid('seller-gstin').fill('BAD');
+    await tid('area-match-0').fill('KL');
+    await tid('area-days-0').fill('2');
+    assert(await tid('area-cod-0').isChecked(), 'COD allowed in the Kerala area');
+    await tid('seller-blocked').fill('682002');
+    await tid('seller-save').click();
+    await page.locator('.field.invalid', { hasText: 'A GSTIN has 15 letters' }).waitFor();
+    await tid('seller-gstin').fill('32ABCDE1234F1Z5');
+    await tid('seller-save').click();
+    await toast();
+    await page.waitForURL(/\/sellers\/sel_/);
+    seed.sellerId = page.url().split('/sellers/')[1].split(/[?#]/)[0];
+    const s = await api(`/ops/sellers/${seed.sellerId}`, { token: seed.admin });
+    assert(s.seller.service_areas.length === 1 && s.seller.service_areas[0].match === 'KL' && s.seller.service_areas[0].cod === true, 'one KL area with COD');
+    assert(s.seller.blocked_pincodes[0] === '682002', 'blocked PIN saved');
+  });
+
+  await step('sellers: PIN code test', async () => {
+    await tid('pin-test-input').fill('682001');
+    await tid('pin-test-run').click();
+    await page.locator('[data-testid="pin-test-result"][data-serviceable="true"]').waitFor();
+    assert((await tid('pin-test-result').innerText()).includes('Kerala'), 'place shown');
+    await page.locator('tr.hit[data-area="KL"]').waitFor();
+    await shot('28-seller-pincode-test');
+    await tid('pin-test-input').fill('682002');
+    await tid('pin-test-run').click();
+    await page.locator('[data-testid="pin-test-result"][data-serviceable="false"]').waitFor();
+    assert((await tid('pin-test-result').innerText()).includes('blocked'), 'blocked PIN explained');
+    await tid('pin-test-input').fill('600001');
+    await tid('pin-test-run').click();
+    await page.locator('[data-testid="pin-test-result"][data-serviceable="false"]', { hasText: '600001' }).waitFor();
+  });
+
+  await step('sellers: create a login for the seller', async () => {
+    await tid('seller-login-new').click();
+    await tid('seller-login-name').fill('Anil (Kerala Kits)');
+    await tid('seller-login-email').fill(sellerEmail);
+    await tid('seller-login-password').fill('weak');
+    await tid('seller-login-submit').click();
+    await tid('seller-login-dialog').locator('.field.invalid').waitFor();
+    await tid('seller-login-password').fill(sellerPassword);
+    await tid('seller-login-submit').click();
+    await toast();
+    await tid('seller-logins').getByText(sellerEmail).waitFor();
+    await shot('29-seller-editor');
+    const staff = await api('/ops/staff', { token: seed.admin });
+    const st = staff.items.find((x) => x.email === sellerEmail);
+    assert(st?.role === 'seller' && st.seller_id === seed.sellerId, 'seller login linked to the seller');
+  });
+
+  await step('seed: a customer COD order that lands on the new seller', async () => {
+    seed.sellerOrder = await api('/orders', { body: {
+      design_id: seed.designId, spec: seed.spec, items: [{ player_name: 'ANU', number: '4', size: 'M', quantity: 8 }],
+      customer: { name: `Anu Joseph ${RUN}`, phone: phoneC }, idempotency_key: `e2e_${RUN}_seller`, channel: 'web',
+      delivery: { method: 'ship', address: kerala(`Anu Joseph ${RUN}`, phoneC) }, seller_id: seed.sellerId, payment_method: 'cod',
+    } });
+    assert(seed.sellerOrder.seller?.id === seed.sellerId, `order sold by the new seller (${seed.sellerOrder.seller?.id})`);
+    assert(seed.sellerOrder.payment_method === 'cod', 'cash on delivery');
+    // A blocked PIN code is refused for this seller.
+    let status = 0;
+    try {
+      await api('/orders', { body: { design_id: seed.designId, spec: seed.spec, items: [{ size: 'M', quantity: 5 }], customer: { name: 'Blocked', phone: phoneC },
+        idempotency_key: `e2e_${RUN}_blocked`, channel: 'web', delivery: { method: 'ship', address: kerala('Blocked', phoneC, '682002') }, seller_id: seed.sellerId } });
+    } catch (e) { status = Number(String(e.message).match(/-> (\d+)/)?.[1]); }
+    assert(status === 422, `blocked PIN code refused (${status})`);
+    // The admin sees it with the seller filter and the order page shows seller and payment.
+    await page.goto(`${OPS}/orders?seller=${seed.sellerId}`);
+    await tid('orders-table').getByText(seed.sellerOrder.number).waitFor();
+    assert(await tid('orders-table').getByText(seed.paid.number).count() === 0, 'seller filter hides house orders');
+    await page.goto(`${OPS}/orders/${seed.sellerOrder.id}`);
+    await tid('order-seller').getByText(sellerName).waitFor();
+    await tid('cod-status').getByText('To collect').waitFor();
+    await shot('30-order-seller-cod');
+  });
+
+  await step('as the seller: only its own order, no settings', async () => {
+    await tid('sign-out').click();
+    await page.waitForURL(/\/login/);
+    await login(sellerEmail, sellerPassword);
+    await tid('seller-scope').getByText(sellerName).waitFor();
+    await tid('kpi-seller-queued').waitFor();
+    await shot('31-seller-home');
+    assert(await page.locator('nav a[href="/settings"]').count() === 0, 'no Settings menu');
+    assert(await page.locator('nav a[href="/crm/customers"]').count() === 0, 'no CRM menu');
+    await page.click('nav a[href="/orders"]');
+    await tid('orders-table').getByText(seed.sellerOrder.number).waitFor();
+    const rows = await tid('orders-table').locator('tbody tr').count();
+    assert(rows === 1, `seller sees exactly its one order (${rows})`);
+    await shot('32-seller-orders');
+    await page.goto(`${OPS}/settings/price-book`);
+    await tid('not-for-seller').waitFor();
+    await shot('33-seller-no-settings');
+    const tok = await staffToken(sellerEmail, sellerPassword);
+    let status = 0;
+    try { await api('/ops/settings', { token: tok }); } catch (e) { status = Number(String(e.message).match(/-> (\d+)/)?.[1]); }
+    assert(status === 403, `server refuses settings to the seller (${status})`);
+    status = 0;
+    try { await api(`/ops/orders/${seed.paid.id}`, { token: tok }); } catch (e) { status = Number(String(e.message).match(/-> (\d+)/)?.[1]); }
+    assert(status === 404, `another seller's order is hidden (${status})`);
+  });
+
+  await step('as the seller: print file download, production stages, shipment from the carrier list, delivery (cash collected on delivery)', async () => {
+    await page.goto(`${OPS}/orders/${seed.sellerOrder.id}`);
+    const dl = tid('print-files').getByTestId('print-file-download').first();
+    await dl.waitFor();
+    const [file] = await Promise.all([page.waitForEvent('download'), dl.click()]);
+    const svgPath = await file.path();
+    const svg = (await import('node:fs')).readFileSync(svgPath, 'utf8');
+    assert(file.suggestedFilename().endsWith('.svg') && svg.includes('<svg'), `seller downloaded a print file (${file.suggestedFilename()}, ${svg.length} bytes)`);
+    await page.goto(`${OPS}/production/board`);
+    await tid('board').waitFor();
+    for (let i = 0; i < 8; i++) {
+      const card = page.locator(`.kcard[data-order="${seed.sellerOrder.number}"]`);
+      await card.waitFor();
+      const col = await card.evaluate((el) => el.closest('[data-column]').getAttribute('data-column'));
+      if (col === 'ready') break;
+      await card.getByTestId('stage-done').click();
+      await toast();
+      await page.locator(`[data-column="${col}"] .kcard[data-order="${seed.sellerOrder.number}"]`).waitFor({ state: 'detached' });
+    }
+    await shot('34-seller-board');
+    await page.goto(`${OPS}/delivery/ready`);
+    const row = tid('ready-table').locator('tr', { hasText: seed.sellerOrder.number });
+    await row.getByTestId('create-shipment').click();
+    const carrier = tid('shipment-carrier');
+    await carrier.locator('option[value="surface"]').waitFor({ state: 'attached' });
+    await carrier.selectOption('surface');
+    await tid('shipment-tracking').fill(`KL${RUN}`);
+    await tid('shipment-submit').click();
+    await toast();
+    await page.goto(`${OPS}/delivery/shipments`);
+    const srow = () => tid('shipments-table').locator('tr', { hasText: seed.sellerOrder.number });
+    for (const next of ['packed', 'dispatched', 'delivered']) {
+      await srow().getByTestId(`ship-${next}`).click();
+      await toast();
+      await srow().getByText(next.charAt(0).toUpperCase() + next.slice(1), { exact: true }).waitFor();
+    }
+    await shot('35-seller-shipments');
+    const tok = await staffToken(sellerEmail, sellerPassword);
+    const o = await api(`/ops/orders/${seed.sellerOrder.id}`, { token: tok });
+    assert(o.order.fulfilment.status === 'delivered', `seller order delivered (${o.order.fulfilment.status})`);
+    assert(o.order.payment.collected === true, 'COD marked collected on delivery');
+    await tid('sign-out').click();
+    await page.waitForURL(/\/login/);
+    await login(ADMIN.email, ADMIN.password);
+  });
+
+  await step('COD: mark a cash on delivery order collected by hand', async () => {
+    seed.codOrder = await api('/orders', { body: {
+      design_id: seed.designId, spec: seed.spec, items: [{ size: 'L', quantity: 6 }], customer: { name: `Cash Customer ${RUN}`, phone: phoneC },
+      idempotency_key: `e2e_${RUN}_cod`, channel: 'web', delivery: { method: 'ship', address: address(`Cash Customer ${RUN}`, phoneC) }, payment_method: 'cod',
+    } });
+    await page.goto(`${OPS}/cod`);
+    await tid('kpi-cod-outstanding').waitFor();
+    const row = tid('cod-table').locator('tr', { hasText: seed.codOrder.number });
+    await row.waitFor();
+    await shot('36-cod');
+    await row.getByTestId('cod-mark').click();
+    await tid('cod-reference').fill(`RCPT-${RUN}`);
+    await tid('cod-submit').click();
+    await toast();
+    await row.waitFor({ state: 'detached' });
+    const o = await api(`/ops/orders/${seed.codOrder.id}`, { token: seed.admin });
+    assert(o.order.payment.collected === true && o.order.payment.reference === `RCPT-${RUN}`, 'COD collected with reference');
+  });
+
+  await step('products: create from a brief, publish, see it in the store', async () => {
+    const title = `Monsoon Strikers ${RUN}`;
+    await page.goto(`${OPS}/products`);
+    await tid('products-table').waitFor();
+    await tid('new-product').click();
+    await tid('product-title').fill(title);
+    await tid('product-sport').selectOption('cricket');
+    await tid('product-brief').fill('Teal and orange cricket jersey with diagonal stripes');
+    await tid('product-generate').click();
+    await tid('product-pick').first().waitFor({ timeout: 30000 });
+    await tid('product-pick').nth(1).click();
+    await shot('37-product-new');
+    await tid('product-create').click();
+    await toast();
+    await page.waitForURL(/\/products\/prd_/);
+    await tid('design-preview').locator('img').waitFor();
+    await tid('product-edit-description').fill('Ready-made cricket kit with bold diagonal stripes.');
+    await tid('product-save').click();
+    await toast();
+    await tid('product-publish').click();
+    await toast();
+    await tid('product-unpublish').waitFor();
+    await tid('product-store').getByText('per piece').waitFor();
+    await shot('38-product-detail');
+    const shop = await api(`/shop/products?q=${encodeURIComponent(RUN)}`);
+    const p = shop.items.find((x) => x.title === title);
+    assert(p && p.description.startsWith('Ready-made cricket'), `published product in /shop/products (${shop.items.length} found)`);
+  });
+
+  await step('returns: a customer return on a delivered order is approved and resolved', async () => {
+    const otp = await api('/auth/otp/request', { body: { phone: phoneA } });
+    const ver = await api('/auth/otp/verify', { body: { phone: phoneA, code: otp.dev_code } });
+    seed.custA = ver.token;
+    seed.review = (await api(`/me/orders/${seed.paid.id}/review`, { token: ver.token, body: { rating: 2, title: `Colours faded ${RUN}`, body: 'The gold looks dull.' } })).review;
+    const r = await api(`/me/orders/${seed.paid.id}/returns`, { token: ver.token, body: { reason: 'print_quality', details: 'Number 7 is peeling on two shirts.', lines: [{ line: 1, quantity: 2 }] } });
+    seed.ret = r.return;
+    await page.goto(`${OPS}/returns`);
+    await tid('kpi-returns-waiting').waitFor();
+    await tid('returns-table').getByText(seed.ret.number).click();
+    await tid('return-drawer').getByText('Number 7 is peeling').waitFor();
+    await shot('39-return-requested');
+    await tid('return-to-approved').click();
+    await tid('return-note').fill('Our courier will pick them up on Monday.');
+    await tid('return-submit').click();
+    await toast();
+    await tid('return-to-picked_up').click();
+    await tid('return-submit').click();
+    await toast();
+    await tid('return-to-resolved').click();
+    await tid('return-submit').click();
+    await tid('return-form').getByText('Choose replacement or refund.').waitFor();
+    await tid('return-resolution').selectOption('refund');
+    await tid('return-refund').fill('500');
+    await tid('return-note').fill('Refunded 500 to your UPI.');
+    await tid('return-submit').click();
+    await toast();
+    await tid('return-history').getByText('Resolved').waitFor();
+    await shot('40-return-resolved');
+    const got = await api(`/ops/returns/${seed.ret.id}`, { token: seed.admin });
+    assert(got.return.status === 'resolved' && got.return.resolution === 'refund' && got.return.refund_amount === 500, `return resolved (${got.return.status})`);
+    await page.keyboard.press('Escape');
+  });
+
+  await step('reviews: hide a review', async () => {
+    await page.goto(`${OPS}/reviews`);
+    const row = tid('reviews-table').locator('tr', { hasText: `Colours faded ${RUN}` });
+    await row.waitFor();
+    await row.getByTestId('review-hide').click();
+    await tid('review-hide-reason').fill('Test of moderation');
+    await tid('review-hide-submit').click();
+    await toast();
+    await row.getByText('Hidden', { exact: true }).waitFor();
+    await shot('41-reviews');
+    // Rating range is filtered on the server: the 2-star review is outside 4–5 and inside 1–2.
+    await tid('reviews-min-rating').selectOption('4');
+    await row.waitFor({ state: 'detached' });
+    await tid('reviews-min-rating').selectOption('1');
+    await tid('reviews-max-rating').selectOption('2');
+    await row.waitFor();
+    const list = await api(`/ops/reviews?status=hidden`, { token: seed.admin });
+    assert(list.items.some((x) => x.id === seed.review.id && x.hidden), 'review hidden on the server');
+  });
+
+  await step('messages: the outbox lists SMS and email for the orders', async () => {
+    await page.goto(`${OPS}/messages`);
+    const real = tid('messages-table').locator('tbody tr', { has: page.locator('code') });
+    await real.first().waitFor();
+    const rows = await real.count();
+    assert(rows >= 3, `outbox has entries (${rows})`);
+    await tid('messages-search').fill(seed.sellerOrder.number);
+    await tid('messages-table').locator('tbody tr', { hasText: seed.sellerOrder.number }).first().waitFor();
+    await shot('42-messages');
+  });
+
+  await step('settings: COD fee saves, coupons and returns show their new fields', async () => {
+    await page.goto(`${OPS}/settings/price-book`);
+    await tid('cod-fee').waitFor();
+    const v0 = Number((await tid('settings-version').innerText()).replace(/\D/g, ''));
+    await tid('cod-fee').fill('59');
+    await tid('cod-max').fill('25000');
+    await tid('try-cod').check();
+    await tid('try-table').getByText('Cash on delivery fee').waitFor();
+    await tid('try-table').locator('tr', { hasText: 'Cash on delivery fee' }).getByText(/59\.00/).waitFor();
+    await tid('coupon-public-0').waitFor();
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await shot('43-cod-settings');
+    await tid('settings-save').click();
+    await toast();
+    await page.waitForFunction((v) => document.querySelector('[data-testid="settings-version"]')?.textContent?.includes(`version ${v + 1}`), v0);
+    const pb = await api('/ops/settings/price_book', { token: seed.admin });
+    assert(pb.value.cod.fee === 59 && pb.value.cod.max_order_value === 25000 && pb.value.cod.enabled, `COD saved (${JSON.stringify(pb.value.cod)})`);
+    assert(pb.value.coupons[0].public === true && pb.value.coupons[0].title, 'coupon public and title kept');
+    await page.goto(`${OPS}/settings/crm`);
+    await tid('return-window').waitFor();
+    await shot('44-crm-returns-settings');
+    await page.goto(`${OPS}/dashboard`);
+    await tid('kpi-returns').waitFor();
+    await tid('orders-by-seller').getByText(sellerName).waitFor();
+    await shot('45-dashboard-marketplace');
   });
 
   const prodEmail = `prod.${RUN}@urjersey.test`;

@@ -578,6 +578,8 @@ def test_review_after_delivery_and_seller_rating(env):
     assert store.get("seller", "sel_house")["rating"] == {"average": None, "count": 0}
     assert c.get(f"/api/v1/shop/products/{slug}").json()["reviews"] == []
     assert c.get("/api/v1/ops/reviews", headers=h, params={"status": "hidden"}).json()["total"] == 1
+    assert c.get("/api/v1/ops/reviews", headers=h, params={"min_rating": 4, "max_rating": 4}).json()["total"] == 1
+    assert c.get("/api/v1/ops/reviews", headers=h, params={"min_rating": 5}).json()["total"] == 0
 
 
 # ------------------------------------------------------------------ notifications
@@ -629,6 +631,13 @@ def test_seller_login_is_scoped_to_its_own_seller(env):
     assert c.post(f"/api/v1/ops/orders/{house['id']}/shipments", headers=sh, json={"carrier": "air"}).status_code == 404
     plan = c.get("/api/v1/ops/production/plan", headers=sh).json()
     assert [p["order_id"] for p in plan["orders"]] == [mine["id"]] and plan["seller_id"] == b["id"]
+    # a partner can read carrier names and download the artwork for its own orders only
+    assert any(x["id"] == "air" for x in c.get("/api/v1/ops/carriers", headers=sh).json()["items"])
+    fname = c.get(f"/api/v1/ops/orders/{mine['id']}", headers=sh).json()["order"]["files"][0]["name"]
+    art = c.get(f"/api/v1/ops/orders/{mine['id']}/print-files/{fname}", headers=sh)
+    assert art.status_code == 200 and art.text.lstrip().startswith("<")
+    hname = c.get(f"/api/v1/ops/orders/{house['id']}", headers=h).json()["order"]["files"][0]["name"]
+    assert c.get(f"/api/v1/ops/orders/{house['id']}/print-files/{hname}", headers=sh).status_code == 404
     board = c.get("/api/v1/ops/production/board", headers=sh, params={"seller_id": "sel_house"}).json()
     assert [o["id"] for col in board["columns"] for o in col["orders"]] == [mine["id"]]
     assert c.get("/api/v1/ops/production/utilisation", headers=sh).json()["seller_id"] == b["id"]

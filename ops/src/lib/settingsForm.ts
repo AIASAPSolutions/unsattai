@@ -23,7 +23,9 @@ export interface PriceBook {
   minimum_pieces: number;
   rush: { enabled: boolean; fee_rate: number; label: string };
   tax: { name: string; rate: number; rate_above: number; threshold_per_piece: number; inclusive: boolean };
-  coupons: { code: string; kind: 'percent' | 'amount'; value: number; max_discount: number | null; min_subtotal: number; active: boolean; expires: string | null; note: string }[];
+  coupons: { code: string; kind: 'percent' | 'amount'; value: number; max_discount: number | null; min_subtotal: number; active: boolean; expires: string | null; note: string; public?: boolean; title?: string }[];
+  /** Cash on delivery. Missing on servers from before the marketplace. */
+  cod?: { enabled: boolean; fee: number; max_order_value: number | null };
 }
 export interface Production {
   timezone: string; working_days: number[]; holidays: string[]; daily_cutoff_hour: number;
@@ -41,6 +43,8 @@ export interface Company {
 }
 export interface CrmConfig {
   lead_stages: string[]; lead_sources: string[]; organisation_kinds: string[]; ticket_categories: string[]; reorder_reminder_days: number;
+  /** Returns (marketplace). 0 days turns returns off. */
+  return_window_days?: number; returnable_reasons?: string[];
 }
 
 // ------------------------------------------------------------------ primitive conversions
@@ -112,7 +116,8 @@ export interface PriceBookForm {
   minimum_pieces: string;
   rush: { enabled: boolean; fee_rate: string; label: string };
   tax: { name: string; rate: string; rate_above: string; threshold_per_piece: string; inclusive: boolean };
-  coupons: { code: string; kind: 'percent' | 'amount'; value: string; max_discount: string; min_subtotal: string; active: boolean; expires: string; note: string }[];
+  coupons: { code: string; kind: 'percent' | 'amount'; value: string; max_discount: string; min_subtotal: string; active: boolean; expires: string; note: string; public: boolean; title: string }[];
+  cod: { enabled: boolean; fee: string; max_order_value: string };
 }
 
 export function priceBookToForm(pb: PriceBook): PriceBookForm {
@@ -133,7 +138,9 @@ export function priceBookToForm(pb: PriceBook): PriceBookForm {
     tax: { name: pb.tax.name, rate: pctText(pb.tax.rate), rate_above: pctText(pb.tax.rate_above),
       threshold_per_piece: numText(pb.tax.threshold_per_piece), inclusive: pb.tax.inclusive },
     coupons: pb.coupons.map((c) => ({ code: c.code, kind: c.kind, value: numText(c.value), max_discount: numText(c.max_discount),
-      min_subtotal: numText(c.min_subtotal), active: c.active, expires: c.expires ?? '', note: c.note ?? '' })),
+      min_subtotal: numText(c.min_subtotal), active: c.active, expires: c.expires ?? '', note: c.note ?? '',
+      public: !!c.public, title: c.title ?? '' })),
+    cod: { enabled: pb.cod?.enabled ?? false, fee: numText(pb.cod?.fee ?? 0), max_order_value: numText(pb.cod?.max_order_value) },
   };
 }
 
@@ -167,8 +174,19 @@ export function formToPriceBook(f: PriceBookForm, base: Partial<PriceBook> = {})
     coupons: f.coupons.map((x, i) => ({ code: x.code.trim().toUpperCase(), kind: x.kind,
       value: c.num(`coupons.${i}.value`, x.value, { min: 0 }), max_discount: c.optNum(`coupons.${i}.max_discount`, x.max_discount, { min: 0 }),
       min_subtotal: x.min_subtotal.trim() === '' ? 0 : c.num(`coupons.${i}.min_subtotal`, x.min_subtotal, { min: 0 }),
-      active: x.active, expires: c.date(`coupons.${i}.expires`, x.expires), note: x.note.trim() })),
+      active: x.active, expires: c.date(`coupons.${i}.expires`, x.expires), note: x.note.trim(),
+      public: !!x.public, title: (x.title ?? '').trim() })),
+    cod: {
+      enabled: f.cod.enabled,
+      fee: f.cod.fee.trim() === '' ? 0 : c.num('cod.fee', f.cod.fee, { min: 0, max: 10000 }),
+      max_order_value: c.optNum('cod.max_order_value', f.cod.max_order_value, { min: 0 }),
+    },
   };
+  if (value.cod!.max_order_value === 0) c.add('cod.max_order_value', 'Leave empty for no limit, or enter an amount above 0.');
+  value.coupons.forEach((x, i) => {
+    if (x.public && !x.title) c.add(`coupons.${i}.title`, 'A public coupon needs a title customers can read.');
+    if ((x.title ?? '').length > 80) c.add(`coupons.${i}.title`, 'At most 80 characters.');
+  });
   const codes = value.coupons.map((x) => x.code);
   codes.forEach((code, i) => { if (codes.indexOf(code) !== i) c.add(`coupons.${i}.code`, 'This code is used twice.'); });
   value.coupons.forEach((x, i) => { if (x.kind === 'percent' && x.value > 90) c.add(`coupons.${i}.value`, 'A percent coupon can be at most 90.'); });
@@ -268,10 +286,15 @@ export function formToCompany(f: CompanyForm, base: Partial<Company> = {}): Conv
   return { value: out, errors: c.errors };
 }
 
-export type CrmForm = Omit<CrmConfig, 'reorder_reminder_days'> & { reorder_reminder_days: string };
+export type CrmForm = Omit<CrmConfig, 'reorder_reminder_days' | 'return_window_days' | 'returnable_reasons'> & {
+  reorder_reminder_days: string; return_window_days: string; returnable_reasons: string[];
+};
+/** The server's defaults, used when an older server has no returns settings yet. */
+export const DEFAULT_RETURN_REASONS = ['damaged', 'wrong_item', 'print_quality'];
 export function crmToForm(x: CrmConfig): CrmForm {
   return { lead_stages: [...x.lead_stages], lead_sources: [...x.lead_sources], organisation_kinds: [...x.organisation_kinds],
-    ticket_categories: [...x.ticket_categories], reorder_reminder_days: numText(x.reorder_reminder_days) };
+    ticket_categories: [...x.ticket_categories], reorder_reminder_days: numText(x.reorder_reminder_days),
+    return_window_days: numText(x.return_window_days ?? 7), returnable_reasons: [...(x.returnable_reasons ?? DEFAULT_RETURN_REASONS)] };
 }
 /** CRM codes are lower_snake: "Design shared" -> "design_shared". */
 export function toCode(s: string): string {
@@ -282,7 +305,12 @@ export function formToCrm(f: CrmForm, base: Partial<CrmConfig> = {}): Converted<
   const list = (xs: string[]) => [...new Set(xs.map(toCode).filter(Boolean))];
   const out: CrmConfig = { ...(base as CrmConfig), lead_stages: list(f.lead_stages), lead_sources: list(f.lead_sources),
     organisation_kinds: list(f.organisation_kinds), ticket_categories: list(f.ticket_categories),
-    reorder_reminder_days: c.num('reorder_reminder_days', f.reorder_reminder_days, { int: true, min: 0, max: 2000 }) };
+    reorder_reminder_days: c.num('reorder_reminder_days', f.reorder_reminder_days, { int: true, min: 0, max: 2000 }),
+    return_window_days: c.num('return_window_days', f.return_window_days, { int: true, min: 0, max: 60 }),
+    returnable_reasons: list(f.returnable_reasons) };
+  out.returnable_reasons!.forEach((r) => { if (!/^[a-z0-9_]{2,30}$/.test(r)) c.add('returnable_reasons', `"${r}" is not a short id like print_quality (2 to 30 of a-z, 0-9, _).`); });
+  if (out.returnable_reasons!.length > 20) c.add('returnable_reasons', 'At most 20 reasons.');
+  if (out.return_window_days! > 0 && !out.returnable_reasons!.length) c.add('returnable_reasons', 'Keep at least one reason, or set the window to 0 to turn returns off.');
   if (out.lead_stages.length < 3) c.add('lead_stages', 'Keep at least three stages.');
   if (!out.lead_stages.includes('won') || !out.lead_stages.includes('lost')) c.add('lead_stages', 'Lead stages must include "won" and "lost".');
   for (const k of ['lead_sources', 'organisation_kinds', 'ticket_categories'] as const) if (!out[k].length) c.add(k, 'Keep at least one.');

@@ -1,11 +1,37 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { OrderStatus } from '../components/domain';
+import { PaymentBadge, Stars } from '../components/marketplace';
 import { IconRefresh } from '../components/icons';
 import { Badge, Button, Card, DataTable, ErrorBox, Kpi, Loading, PageHeader } from '../components/ui';
 import { get } from '../lib/api';
+import { useAuth } from '../lib/auth';
+import { useRefData } from '../lib/refdata';
 import { day, money0, num, pct, ago } from '../lib/format';
 import { useLoad } from '../lib/hooks';
-import type { OrderSummary, Plan } from '../lib/types';
+import type { OrderSummary, Page, Plan, ReturnRec, Seller, SellerDetail } from '../lib/types';
+
+const OPEN = 'awaiting_payment,queued,in_production,ready';
+
+/** Marketplace numbers the dashboard endpoint does not have yet (BACKEND_REQUESTS 13), from the list endpoints. */
+function useMarketplace(sellers: Seller[], sellerId?: string) {
+  const ids = sellers.map((x) => x.id).join(',');
+  return useLoad(async () => {
+    const q = sellerId ? { seller_id: sellerId } : {};
+    const [waiting, open, cod, bySeller] = await Promise.all([
+      get<Page<ReturnRec>>('/ops/returns', { ...q, status: 'requested' }).then((r) => r.total).catch(() => null),
+      get<Page<ReturnRec>>('/ops/returns', { ...q, status: 'requested,approved,picked_up' }).then((r) => r.total).catch(() => null),
+      get<Page<OrderSummary> & { outstanding: number }>('/ops/cod', { ...q, collected: false }).catch(() => null),
+      sellerId ? Promise.resolve([]) : Promise.all(sellers.map(async (x) => {
+        const [o, all] = await Promise.all([
+          get<Page<OrderSummary>>('/ops/orders', { seller_id: x.id, status: OPEN, size: 1 }).then((r) => r.total).catch(() => null),
+          get<Page<OrderSummary>>('/ops/orders', { seller_id: x.id, size: 1 }).then((r) => r.total).catch(() => null),
+        ]);
+        return { seller: x, open: o, all };
+      })),
+    ]);
+    return { waiting, open, cod, bySeller };
+  }, [ids, sellerId], { poll: 60_000 });
+}
 
 interface Dash {
   currency: string;
@@ -19,7 +45,14 @@ interface Dash {
 }
 
 export default function Dashboard() {
+  const { isSeller } = useAuth();
+  return isSeller ? <SellerHome /> : <StaffDashboard />;
+}
+
+function StaffDashboard() {
   const nav = useNavigate();
+  const { sellers } = useRefData();
+  const m = useMarketplace(sellers);
   const d = useLoad(async () => {
     const [dash, plan] = await Promise.all([get<Dash>('/ops/dashboard'), get<{ orders: Plan[] }>('/ops/production/plan').catch(() => ({ orders: [] as Plan[] }))]);
     return { dash, summaries: Object.fromEntries(plan.orders.map((p) => [p.order_id, p.summary])) as Record<string, OrderSummary | undefined> };
@@ -49,7 +82,23 @@ export default function Dashboard() {
           <Kpi k="Open tickets" v={num(x.crm.open_tickets)} s="Open or pending" to="/crm/tickets" testId="kpi-tickets" />
           <Kpi k="Tasks due" v={num(x.crm.tasks_due_today)} s="Today or overdue" alert={x.crm.tasks_due_today > 0} to="/crm/tasks" testId="kpi-tasks" />
           <Kpi k="Reorder reminders" v={num(x.crm.reorder_candidates)} s="Customers due to reorder" to="/crm/reorders" />
+          <Kpi k="Returns awaiting action" v={m.data?.waiting == null ? '…' : num(m.data.waiting)} s={m.data?.open == null ? 'Requested, not decided' : `${num(m.data.open)} open in all`}
+            alert={!!m.data?.waiting} to="/returns" testId="kpi-returns" />
+          <Kpi k="Cash on delivery to collect" v={m.data?.cod ? money0(m.data.cod.outstanding, c) : '…'} s={m.data?.cod ? `${num(m.data.cod.total)} order${m.data.cod.total === 1 ? '' : 's'}` : 'COD orders not yet paid'} to="/cod" testId="kpi-cod" />
         </div>
+
+        {(m.data?.bySeller.length ?? 0) > 1 && (
+          <Card title="Orders by seller" flush actions={<Link to="/sellers">Sellers</Link>}>
+            <DataTable rows={m.data!.bySeller} rowKey={(r) => r.seller.id} compact testId="orders-by-seller" onRowClick={(r) => nav(`/orders?seller=${r.seller.id}`)}
+              initialSort={{ key: 'open', dir: 'desc' }} columns={[
+                { key: 'n', header: 'Seller', sort: (r) => r.seller.name, render: (r) => <Link to={`/sellers/${r.seller.id}`}>{r.seller.name}</Link> },
+                { key: 'st', header: '', render: (r) => (!r.seller.active ? <Badge>Switched off</Badge> : null) },
+                { key: 'open', header: 'Open orders', num: true, sort: (r) => r.open ?? -1, render: (r) => <Link to={`/orders?seller=${r.seller.id}&status=${OPEN}`}>{num(r.open)}</Link> },
+                { key: 'all', header: 'All orders', num: true, sort: (r) => r.all ?? -1, render: (r) => num(r.all) },
+                { key: 'r', header: 'Rating', render: (r) => <Stars rating={r.seller.rating} /> },
+              ]} />
+          </Card>
+        )}
 
         <div className="grid grid-main">
           <Card title="Recent orders" flush actions={<Link to="/orders">All orders</Link>}>
@@ -95,6 +144,54 @@ export default function Dashboard() {
               { key: 'ship', header: 'Ship', render: (p) => day(p.ship_date) },
               { key: 'rush', header: '', render: (p) => p.rush && <Badge tone="warn">Rush</Badge> },
             ]} empty="No late orders. Everything is planned to arrive on time." />
+        </Card>
+      </div>
+    </>
+  );
+}
+
+// ------------------------------------------------------------------ a seller login's home
+
+function SellerHome() {
+  const nav = useNavigate();
+  const { sellerId } = useAuth();
+  const { sellers, currency } = useRefData();
+  const me = sellers.find((x) => x.id === sellerId);
+  const m = useMarketplace(me ? [me] : [], sellerId ?? undefined);
+  const d = useLoad(async () => {
+    const [det, work, plan] = await Promise.all([
+      get<SellerDetail>(`/ops/sellers/${sellerId}`),
+      get<Page<OrderSummary>>('/ops/orders', { status: 'queued,in_production,ready', size: 50 }),
+      get<{ orders: Plan[] }>('/ops/production/plan').catch(() => ({ orders: [] as Plan[] })),
+    ]);
+    return { det, work: work.items, late: plan.orders.filter((p) => p.late) };
+  }, [sellerId], { poll: 60_000 });
+  if (d.error && !d.data) return <ErrorBox error={d.error} onRetry={d.reload} />;
+  if (!d.data) return <Loading />;
+  const by = d.data.det.orders_by_status;
+  return (
+    <>
+      <PageHeader title={`Welcome, ${d.data.det.seller.name}`} subtitle="Your orders, what to make next and what to ship. Refreshes every minute."
+        actions={<Button icon={<IconRefresh />} onClick={() => { void d.reload(); void m.reload(); }} busy={d.loading}>Refresh</Button>} />
+      <div className="stack" style={{ gap: 16 }}>
+        <div className="kpis" data-testid="kpis">
+          <Kpi k="To start" v={num(by.queued ?? 0)} s="Paid, waiting for production" to="/production/board" testId="kpi-seller-queued" />
+          <Kpi k="In production" v={num(by.in_production ?? 0)} to="/production/board" />
+          <Kpi k="Ready to ship" v={num(by.ready ?? 0)} to="/delivery/ready" />
+          <Kpi k="Late" v={num(d.data.late.length)} s="Planned after the promise" alert={d.data.late.length > 0} to="/production/plan" />
+          <Kpi k="Returns to handle" v={m.data?.open == null ? '…' : num(m.data.open)} s={m.data?.waiting ? `${num(m.data.waiting)} waiting for a decision` : 'Open returns'} alert={!!m.data?.waiting} to="/returns" />
+          <Kpi k="Cash to collect" v={m.data?.cod ? money0(m.data.cod.outstanding, currency) : '…'} s="Cash on delivery" to="/cod" />
+          <Kpi k="Delivered" v={num(by.delivered ?? 0)} s="All time" />
+        </div>
+        <Card title="Orders to work on" flush actions={<Link to="/orders">All orders</Link>}>
+          <DataTable rows={d.data.work} rowKey={(o) => o.id} onRowClick={(o) => nav(`/orders/${o.id}`)} compact testId="seller-work"
+            initialSort={{ key: 'prom', dir: 'asc' }} columns={[
+              { key: 'n', header: 'Order', render: (o) => <Link to={`/orders/${o.id}`}>{o.number}</Link> },
+              { key: 'c', header: 'Customer', render: (o) => <>{o.customer_name}{o.team_name && <span className="muted"> · {o.team_name}</span>}</> },
+              { key: 's', header: 'Status', render: (o) => <span className="row tight"><OrderStatus o={o} /><PaymentBadge o={o} /></span> },
+              { key: 'p', header: 'Pieces', num: true, render: (o) => num(o.pieces) },
+              { key: 'prom', header: 'Promised', sort: (o) => o.promised_delivery_date, render: (o) => day(o.promised_delivery_date) },
+            ]} empty="Nothing to make right now." />
         </Card>
       </div>
     </>
