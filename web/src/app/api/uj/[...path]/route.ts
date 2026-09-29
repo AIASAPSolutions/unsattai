@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { cookieSecure } from '@/lib/server/cookie';
 import {
   apiBase, DEVICE_COOKIE, sameOrigin, downstreamHeaders, isValidDeviceId, newDeviceId, upstreamHeaders, upstreamUrl,
 } from '@/lib/proxy';
@@ -47,7 +48,7 @@ async function forward(req: NextRequest, ctx: Ctx): Promise<Response> {
   const res = new NextResponse(upstream.body, { status: upstream.status, headers: downstreamHeaders(upstream.headers) });
   if (mintDevice) {
     res.cookies.set(DEVICE_COOKIE, device!, {
-      httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/', maxAge: 60 * 60 * 24 * 400,
+      httpOnly: true, sameSite: 'lax', secure: cookieSecure(), path: '/', maxAge: 60 * 60 * 24 * 400,
     });
   }
   return res;

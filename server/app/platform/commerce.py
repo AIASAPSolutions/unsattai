@@ -15,12 +15,13 @@ from fastapi import HTTPException
 from pydantic import BaseModel, Field, model_validator
 
 from .. import orders as order_mod
+from ..config import env_int
 from ..schemas import Customer, DesignSpec, Garment, OrderDelivery, OrderItem, OrderRequest
 from . import config, lifecycle, notify, planning, sellers
 from .db import PlatformStore, new_id, now
 from .pricing import DeliveryChoice, find_zone, PriceLine, QuoteRequest, _money, cart_coupon, quote
 
-MAX_CART_ITEMS = 20
+MAX_CART_ITEMS = env_int("MAX_CART_ITEMS", 20)
 
 
 class CartItem(BaseModel):

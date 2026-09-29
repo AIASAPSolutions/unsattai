@@ -4,3 +4,4 @@ e2e/shots
 .env
 .env.local
 *.tsbuildinfo
+.env.*

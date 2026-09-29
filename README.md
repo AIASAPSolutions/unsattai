@@ -15,7 +15,9 @@ How prices, planning, order states and roles work is explained in [docs/platform
 
 **Marketplace.** The customer apps work like an online marketplace: delivery is checked by PIN code against the partner sellers who can serve it, customers sign in with mobile or email (code or password), and they get search, product pages, wishlist, a cart across sellers, cash on delivery, offers, cancel, returns, reviews and notifications. The plan is in [docs/marketplace.md](docs/marketplace.md) and the API in [docs/marketplace-api.md](docs/marketplace-api.md).
 
-**Hosting.** `deploy/` runs all of it on one small server with Docker and automatic HTTPS (free on Oracle Cloud's Always Free tier). Installation, database upgrades, backups and restores are in [docs/deploy.md](docs/deploy.md).
+**Hosting.** `deploy/` runs all of it on one small server with Docker and automatic HTTPS (free on Oracle Cloud's Always Free tier). Installation, database upgrades, backups and restores are in [docs/deploy.md](docs/deploy.md). Other hosting options (Railway, Render, Fly.io, AWS) are compared in [docs/hosting-options.md](docs/hosting-options.md).
+
+**Configuration.** Every address, key and limit is an environment variable, with an example file in each app (`server/.env.example`, `web/.env.example`, `ops/.env.example`, `app/.env.example`, `deploy/.env.example`). SMS (MSG91, Twilio) and email (SMTP, Resend) sending for sign-in codes and order updates is built into the API. See [docs/configuration.md](docs/configuration.md).
 
 ```
  mobile app ──┐
@@ -53,7 +55,7 @@ Optional environment variables:
 | `AI_EDITS_PER_MINUTE` | `4` | Per-phone burst limit. |
 | `AI_DAILY_BUDGET` | `2000` | Most AI edits per day across all phones together; `0` means no cap. |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | empty | Creates the first operations admin at start-up when there is none. Use a strong password and change it after the first sign-in. |
-| `OTP_DEV_ECHO` | `1` | Returns customers' sign-in codes in the API response for testing. **Set to `0` in production** once an SMS provider is connected. |
+| `OTP_DEV_ECHO` | `1` | Returns customers' sign-in codes in the API response for testing. Always off when `APP_ENV=production`. |
 
 ### 2. Start the web store and the operations app
 
@@ -167,7 +169,7 @@ Last full run: 119 server tests; mobile app 59 unit tests plus a 13-step browser
 - The 3D preview is an approximation built from the flat pattern pieces, for checking placement, not a fitted garment simulation.
 - Print files are prototype-grade: simplified pattern pieces with uniform grading, 10 mm bleed and magenta CutContour lines. Proof colours with the printer's ICC profile. Sublimation has no white ink, so white areas are the white polyester fabric.
 - **Payment is demo only.** Customers can use a demo payment that takes no money, and staff can record cash, UPI or bank payments by hand. Connect a payment gateway before selling online.
-- **No SMS provider.** Sign-in codes are only logged (and returned while `OTP_DEV_ECHO=1`). Connect SMS or WhatsApp at the hook in `server/app/platform/security.py`.
+- **SMS and email need your own account.** Sending through MSG91, Twilio, SMTP or Resend is built in; until you set `SMS_PROVIDER` or `EMAIL_PROVIDER`, codes and messages are only logged. See [docs/configuration.md](docs/configuration.md).
 - **No factory or carrier connection.** Without `FACTORY_URL` paid orders go to a TEST queue. Tracking numbers are typed in by staff.
 - **SQLite** suits a single server. Move to a managed database before running more than one.
 - **The shipped prices, capacities and delivery zones are examples.** Set your own in the operations app.

@@ -13,26 +13,49 @@ def _list(name: str, default: str = "") -> tuple[str, ...]:
     return tuple(v.strip() for v in os.getenv(name, default).split(",") if v.strip())
 
 
+def env_str(name: str, default: str = "") -> str:
+    """A text setting; blank counts as not set, so the default applies."""
+    return os.getenv(name, "").strip() or default
+
+
+def env_int(name: str, default: int) -> int:
+    """An integer setting; a blank or broken value falls back to the default."""
+    try:
+        return int(os.getenv(name, "").strip() or default)
+    except ValueError:
+        return default
+
+
+def is_production() -> bool:
+    """APP_ENV=production turns off every development shortcut (such as showing sign-in codes)."""
+    return os.getenv("APP_ENV", "development").strip().lower() in ("production", "prod")
+
+
+def env_bool(name: str, default: bool) -> bool:
+    v = os.getenv(name, "").strip().lower()
+    return default if not v else v not in ("0", "false", "no", "off")
+
+
 @dataclass(frozen=True)
 class Settings:
-    provider: str = os.getenv("DESIGN_PROVIDER", "auto")            # auto | rule | claude | slm
-    claude_model: str = os.getenv("CLAUDE_MODEL", "claude-opus-5")
-    claude_effort: str = os.getenv("CLAUDE_EFFORT", "medium")
-    slm_base_url: str = os.getenv("SLM_BASE_URL", "http://localhost:11434/v1").rstrip("/")
-    slm_model: str = os.getenv("SLM_MODEL", "sportswear-spec")
-    slm_timeout: float = float(os.getenv("SLM_TIMEOUT", "60"))
-    db_path: Path = Path(os.getenv("DB_PATH", _DEFAULT_DB))
+    provider: str = env_str("DESIGN_PROVIDER", "auto")            # auto | rule | claude | slm
+    claude_model: str = env_str("CLAUDE_MODEL", "claude-opus-5")
+    claude_effort: str = env_str("CLAUDE_EFFORT", "medium")
+    slm_base_url: str = env_str("SLM_BASE_URL", "http://localhost:11434/v1").rstrip("/")
+    slm_model: str = env_str("SLM_MODEL", "sportswear-spec")
+    slm_timeout: float = float(env_int("SLM_TIMEOUT", 60))
+    db_path: Path = Path(env_str("DB_PATH", _DEFAULT_DB))
     api_keys: tuple[str, ...] = field(default_factory=lambda: _list("API_KEYS"))
-    factory_url: str = os.getenv("FACTORY_URL", "").rstrip("/")        # empty: jobs go to the TEST queue
-    factory_token: str = os.getenv("FACTORY_TOKEN", "")
-    cors_origins: tuple[str, ...] = field(default_factory=lambda: _list("CORS_ORIGINS", "*"))
+    factory_url: str = env_str("FACTORY_URL").rstrip("/")        # empty: jobs go to the TEST queue
+    factory_token: str = env_str("FACTORY_TOKEN")
+    cors_origins: tuple[str, ...] = field(default_factory=lambda: _list("CORS_ORIGINS") or ("*",))
     # "Ask" tab: rules first, a small model only for what the rules don't understand.
-    ai_edits: str = os.getenv("AI_EDITS", "auto")                    # auto | claude | slm | off
-    ai_edit_model: str = os.getenv("AI_EDIT_MODEL", "claude-haiku-4-5")
-    ai_free_edits_per_day: int = int(os.getenv("AI_FREE_EDITS_PER_DAY", "10"))
-    ai_bonus_edits_per_order: int = int(os.getenv("AI_BONUS_EDITS_PER_ORDER", "20"))
-    ai_edits_per_minute: int = int(os.getenv("AI_EDITS_PER_MINUTE", "4"))
-    ai_daily_budget: int = int(os.getenv("AI_DAILY_BUDGET", "2000"))  # all phones together; 0 = no cap
+    ai_edits: str = env_str("AI_EDITS", "auto")                    # auto | claude | slm | off
+    ai_edit_model: str = env_str("AI_EDIT_MODEL", "claude-haiku-4-5")
+    ai_free_edits_per_day: int = env_int("AI_FREE_EDITS_PER_DAY", 10)
+    ai_bonus_edits_per_order: int = env_int("AI_BONUS_EDITS_PER_ORDER", 20)
+    ai_edits_per_minute: int = env_int("AI_EDITS_PER_MINUTE", 4)
+    ai_daily_budget: int = env_int("AI_DAILY_BUDGET", 2000)  # all phones together; 0 = no cap
 
 
 settings = Settings()

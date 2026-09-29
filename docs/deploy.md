@@ -16,6 +16,8 @@ Everything runs in Docker. There are three containers:
 
 The files are in `deploy/`. The stack was built and run end to end (HTTPS, sign-in, store to API, operations sign-in, backup, restore and upgrading an old database) before this guide was written.
 
+Other ways to host it (managed platforms such as Railway, Render or Fly.io, or a big cloud) are compared in [hosting-options.md](hosting-options.md). Every setting is listed in [configuration.md](configuration.md).
+
 ## 1. The cheapest options
 
 All three apps together use about 200 MB of memory while running. Building the web store needs about 1 to 1.5 GB for a minute, so pick 2 GB of memory or add swap (step 4).
@@ -133,10 +135,10 @@ Fill in at least these:
 | `SHOP_DOMAIN`, `API_DOMAIN`, `OPS_DOMAIN` | `shop.yourdomain`, `api.yourdomain`, `ops.yourdomain` |
 | `ACME_EMAIL` | Your email, for certificate notices |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | The first operations admin. Use a long password with upper and lower case letters and a digit. It is created only on the very first start, when there is no staff account yet. A weak password is refused and no admin is made (`docker compose logs api` says why). |
-| `OTP_DEV_ECHO` | Keep it at `0`. With `1`, anyone could read sign-in codes from the API. |
-| `SMS_WEBHOOK_URL`, `EMAIL_WEBHOOK_URL` | See step 9. Without them, customers cannot receive their sign-in codes. |
+| `BRAND_NAME` | Your shop's name, used in SMS, emails and sign-in codes |
+| `SMS_PROVIDER` and its keys, `EMAIL_PROVIDER` and its keys | See step 9. Without at least one of them, customers cannot receive their sign-in codes. |
 
-Everything else can stay as it is. **Never commit `.env`**: it is already listed in `deploy/.gitignore`. Keep a copy of it in your password manager.
+Everything else can stay as it is. Every setting is explained in [configuration.md](configuration.md). The stack always runs with `APP_ENV=production`, so sign-in codes are never shown in API answers. **Never commit `.env`**: it is already listed in `deploy/.gitignore`. Keep a copy of it in your password manager.
 
 ## 7. Start everything
 
@@ -169,23 +171,50 @@ Open `https://shop.yourdomain` and `https://ops.yourdomain` in a browser.
 5. **Products:** the store starts with 12 sample designs. Edit them, unpublish them or add your own.
 6. Carriers, and the factory connection (`FACTORY_URL`) when you have one.
 
-## 9. Sign-in codes by SMS and email
+## 9. Sign-in codes and order messages by SMS and email
 
-Customers sign in with a one-time code sent to their phone or email. The server doesn't lock you into a provider. For each code or order message it sends a `POST` with JSON to the address you set:
+Sending is built into the API. Pick a service for each channel in `deploy/.env`, then run `docker compose up -d` so the API restarts with the new settings.
 
-- SMS: `{"to": "+919876543210", "text": "..."}` to `SMS_WEBHOOK_URL`
-- Email: `{"to": "a@b.com", "subject": "...", "text": "..."}` to `EMAIL_WEBHOOK_URL`
+**Email**, the quickest to set up. Any service with SMTP works: Google Workspace or Gmail (with an app password), Zoho Mail, Brevo, Amazon SES, Resend, Postmark or Mailgun.
 
-If you set `SMS_WEBHOOK_TOKEN` or `EMAIL_WEBHOOK_TOKEN`, it is sent as `Authorization: Bearer <token>`.
+```
+EMAIL_PROVIDER=smtp
+EMAIL_FROM=UrJersey <no-reply@yourdomain>
+SMTP_HOST=smtp-relay.brevo.com
+SMTP_PORT=587
+SMTP_SECURITY=starttls
+SMTP_USERNAME=...
+SMTP_PASSWORD=...
+```
 
-Most providers expect their own format, so the usual setup is a tiny adapter that reshapes the message and calls the provider:
+Using Resend? Its HTTP API also works without SMTP: set `EMAIL_PROVIDER=resend` and `RESEND_API_KEY`. Whichever service you use, verify your domain with it (it gives you DNS records to add) so emails don't land in spam.
 
-- **SMS in India:** MSG91, Fast2SMS or Twilio. Indian SMS needs DLT registration of your sender ID and message template, which the provider helps with and which takes a few days.
-- **Email:** Resend, Brevo, Amazon SES or Postmark.
+**SMS in India: MSG91.** Indian SMS needs DLT registration of your business, sender ID and message templates. MSG91 guides you through it, and it takes a few days.
 
-The adapter can be a free serverless function, for example on Cloudflare Workers.
+1. In MSG91, create two SMS templates, one for sign-in codes and one for order updates, and get them approved on DLT.
+   - The code template must contain the variable `##otp##`, and can also use `##minutes##` and `##brand##`. For example: `##otp## is your ##brand## code. It expires in ##minutes## minutes.`
+   - The order template uses `##message##` (the full update text) and can use `##number##` (the order number).
+2. Set these in `.env`:
 
-Until a provider is connected, codes are only written to the server log. You can read one with `docker compose logs api | grep "SMS to"`, which is fine for testing but not for customers. Order messages also appear in the operations app's outbox.
+```
+SMS_PROVIDER=msg91
+MSG91_AUTH_KEY=...
+MSG91_OTP_TEMPLATE_ID=...
+# leave the next one empty to send order updates by email and in-app only
+MSG91_ORDER_TEMPLATE_ID=...
+MSG91_SENDER_ID=...
+```
+
+**Twilio** (worldwide) works without templates: set `SMS_PROVIDER=twilio`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` and `TWILIO_FROM`. Indian numbers still need DLT.
+
+**Any other service** (Fast2SMS, 2Factor, WhatsApp through a partner, and so on): set `SMS_PROVIDER=webhook` and `SMS_WEBHOOK_URL`.
+- For SMS, the API posts `{"to", "text", "otp"}` for codes and `{"to", "text", "number", "message"}` for order updates.
+- Email works the same way with `EMAIL_PROVIDER=webhook`, and the API posts `{"to", "subject", "text", "html"}`.
+- Add `*_WEBHOOK_TOKEN` to have it sent as a bearer token.
+
+**Check it works:** in the operations app, open **Messages**. The top panel shows which services are connected and any missing settings, and **Send test** sends a real SMS or email. `https://api.yourdomain/api/v1/health` also shows the connected services, never the keys.
+
+**Until a service is connected**, codes are only written to the server log, and `docker compose logs api | grep "SMS to"` shows them. That's fine for your own testing, not for customers. Order messages are listed in the **Messages** outbox either way.
 
 ## 10. Database migrations and upgrades
 
@@ -277,7 +306,8 @@ docker image prune -f                  # remove old images after upgrades
 
 ## 14. Security checklist
 
-- `OTP_DEV_ECHO=0`, a long `ADMIN_PASSWORD`, and the admin password changed after the first sign-in.
+- A long `ADMIN_PASSWORD`, changed after the first sign-in. The stack runs with `APP_ENV=production`, so sign-in codes are never shown in API answers.
+- `deploy/.env` holds your keys. It is readable only by you (`chmod 600 deploy/.env`) and is never committed.
 - Only ports 22, 80 and 443 are open. The API and web containers are not reachable from outside except through Caddy.
 - The web store talks to the API over the server's internal network (`http://api:8000`). Customer tokens stay in httpOnly cookies and never reach the browser's JavaScript.
 - No secrets in the apps or in git. `.env` stays on the server.
@@ -297,7 +327,7 @@ One server comfortably handles a small business: thousands of orders a month. SQ
 | File | What it does |
 |---|---|
 | `docker-compose.yml` | The three containers, volumes and ports |
-| `api.Dockerfile`, `web.Dockerfile`, `caddy.Dockerfile` | How each image is built. The Caddy image also builds the operations app. |
+| `server/Dockerfile`, `web/Dockerfile`, `deploy/caddy.Dockerfile` | How each image is built. The Caddy image also builds the operations app. |
 | `Caddyfile` | HTTPS and routing for the three addresses |
 | `.env.example` | All settings with explanations |
 | `backup.sh`, `restore.sh` | Backups and restores |

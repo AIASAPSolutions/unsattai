@@ -6,12 +6,14 @@ services:
   api:
     build:
       context: ../server
-      dockerfile: ../deploy/api.Dockerfile
+      dockerfile: Dockerfile
     restart: unless-stopped
     env_file: .env
     environment:
+      APP_ENV: production
       DB_PATH: /data/urjersey.db
       CORS_ORIGINS: https://${OPS_DOMAIN},https://${SHOP_DOMAIN}
+      PUBLIC_SHOP_URL: https://${SHOP_DOMAIN}
     volumes:
       - api-data:/data
     expose: ["8000"]
@@ -19,7 +21,7 @@ services:
   web:
     build:
       context: ../web
-      dockerfile: ../deploy/web.Dockerfile
+      dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_SITE_URL: https://${SHOP_DOMAIN}
     restart: unless-stopped

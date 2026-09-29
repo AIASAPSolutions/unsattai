@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 
 from . import ai_edit, from_image, logos, orders, service
 from .background import remove_background
-from .config import settings
+from .config import env_int, env_str, settings
 from .engine.garments import GARMENT_PANELS
 from .engine.i18n import LANGUAGE_NAMES
 from .engine.renderer import render_print_sheet
@@ -28,15 +28,16 @@ from .schemas import (COLOR_ROLES, COVERAGES, FONTS, GARMENTS, LOGO_MIME, MAX_LO
                       SPORTS, TEXT_LIMITS, DesignSpec, FeedbackRequest, FromImageRequest, GenerateRequest, LogoSuggestRequest,
                       OrderRequest, PanelsRequest, PaymentConfirmation, PrintRequest, RefineRequest, RenderRequest,
                       UnderstandRequest)
+from .platform import notify
 from .platform import api_market, api_ops, api_ops_market, api_shop, catalog, lifecycle, pricing, security, sellers
 from .platform.config import ConfigInvalid
 from .platform.db import PlatformStore
 from .understand import understand as understand_brief
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=env_str("LOG_LEVEL", "INFO").upper())
 
 VERSION = "1.0.0"
-MAX_BODY_BYTES = 12_000_000   # four 1.5 MB logos as base64 plus the spec
+MAX_BODY_BYTES = env_int("MAX_UPLOAD_MB", 12) * 1_000_000   # four 1.5 MB logos as base64 plus the spec
 
 app = FastAPI(title="UrJersey API", version=VERSION)
 app.add_middleware(CORSMiddleware, allow_origins=list(settings.cors_origins), allow_methods=["*"],
@@ -46,6 +47,11 @@ security.bind(store)
 security.bootstrap_admin(store)
 sellers.ensure_house(store)
 catalog.seed_products(store)
+for _problem in notify.check_config():
+    logging.getLogger("urjersey").warning("Messaging settings: %s", _problem)
+if security.otp_echo():
+    logging.getLogger("urjersey").warning("OTP_DEV_ECHO is on: sign-in codes are returned by the API. "
+                                          "Set APP_ENV=production on a real server.")
 
 
 @app.middleware("http")
@@ -89,7 +95,7 @@ def health():
     return {"status": "ok", "app": "UrJersey API", "version": VERSION, "default_provider": settings.provider,
             "providers": {name: p.available() for name, p in PROVIDERS.items()},
             "factory_connected": bool(settings.factory_url), "auth_required": bool(settings.api_keys),
-            "ai_edits": ai_edit.provider()}
+            "ai_edits": ai_edit.provider(), "messaging": notify.status()}
 
 
 @app.get("/api/v1/meta")

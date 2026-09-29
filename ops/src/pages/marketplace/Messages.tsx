@@ -4,7 +4,9 @@ import { Alert, Badge, Card, Chips, DataTable, Drawer, ErrorBox, PageHeader, Pag
 import { get } from '../../lib/api';
 import { dateTime, label } from '../../lib/format';
 import { useDebounced, useLoad } from '../../lib/hooks';
+import { useAuth } from '../../lib/auth';
 import type { Message, Page } from '../../lib/types';
+import { MessagingSetup } from './MessagingSetup';
 
 const STATUS_TONE = { logged: 'info', sent: 'good', failed: 'bad' } as const;
 
@@ -20,10 +22,12 @@ export default function Messages() {
   const d = useLoad(() => get<Page<Message>>('/ops/messages', { channel: channel[0], status: status[0], order_id: orderId || undefined, q: dq || undefined, page }),
     [channel.join(','), status.join(','), orderId, dq, page]);
   const logged = (d.data?.items ?? []).some((m) => m.status === 'logged');
+  const { can } = useAuth();
 
   return (
     <>
       <PageHeader title="Messages" subtitle="SMS and email sent to customers for order events: placed, confirmed, dispatched, delivered, cancellations and returns. One-time codes are never listed." />
+      {can('settings') && <MessagingSetup />}
       <Card flush>
         <div className="card-body stack">
           <div className="row">

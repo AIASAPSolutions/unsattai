@@ -2,6 +2,7 @@ import 'server-only';
 import { NextResponse, type NextRequest } from 'next/server';
 import { apiBase, DEVICE_COOKIE, isValidDeviceId, sameOrigin, SESSION_COOKIE } from '../proxy';
 import { signInBody } from '../signin';
+import { cookieSecure } from './cookie';
 
 /**
  * Sign-in routes (OTP verify, password login) call the API from the server and keep the
@@ -45,7 +46,7 @@ export async function signInRoute(req: NextRequest, apiPath: 'auth/otp/verify' |
   const res = NextResponse.json({ customer: data.customer, expires_at: data.expires_at });
   const expires = data.expires_at ? new Date(data.expires_at) : undefined;
   res.cookies.set(SESSION_COOKIE, data.token, {
-    httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/',
+    httpOnly: true, sameSite: 'lax', secure: cookieSecure(), path: '/',
     ...(expires && !Number.isNaN(expires.getTime()) ? { expires } : { maxAge: 60 * 60 * 24 * 60 }),
   });
   res.headers.set('Cache-Control', 'no-store');

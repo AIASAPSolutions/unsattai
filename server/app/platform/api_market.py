@@ -13,11 +13,12 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field, model_validator
 
+from ..config import env_int
 from ..schemas import Garment
 from . import accounts, catalog, commerce, config, lifecycle, security, sellers
 from .db import PlatformStore
 
-PASSWORD_RESET_MINUTES = 15
+PASSWORD_RESET_MINUTES = env_int("PASSWORD_RESET_MINUTES", 15)
 
 
 class LoginIn(BaseModel):

@@ -19,6 +19,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, Header, HTTPException, Request
 
+from ..config import env_bool, env_int, is_production
 from .db import PlatformStore, now
 
 log = logging.getLogger("urjersey.auth")
@@ -38,12 +39,12 @@ PERMISSIONS: dict[str, set[str]] = {
     "seller": {"seller"},
 }
 
-SESSION_DAYS = {"customer": 60, "staff": 1}
-OTP_MINUTES = 10
-OTP_MAX_ATTEMPTS = 5
-OTP_RESEND_SECONDS = 30
-LOGIN_MAX_FAILURES = 5
-LOGIN_LOCK_MINUTES = 15
+SESSION_DAYS = {"customer": env_int("CUSTOMER_SESSION_DAYS", 60), "staff": env_int("STAFF_SESSION_DAYS", 1)}
+OTP_MINUTES = env_int("OTP_MINUTES", 10)
+OTP_MAX_ATTEMPTS = env_int("OTP_MAX_ATTEMPTS", 5)
+OTP_RESEND_SECONDS = env_int("OTP_RESEND_SECONDS", 30)
+LOGIN_MAX_FAILURES = env_int("LOGIN_MAX_FAILURES", 5)
+LOGIN_LOCK_MINUTES = env_int("LOGIN_LOCK_MINUTES", 15)
 
 
 def _pbkdf2(password: str, salt: bytes, rounds: int = 240_000) -> bytes:
@@ -137,7 +138,8 @@ def valid_email(email: str) -> bool:
 
 
 def otp_echo() -> bool:
-    return os.getenv("OTP_DEV_ECHO", "1") not in ("0", "false", "no")
+    """Put the code in the API answer (local testing only). Never on in production."""
+    return env_bool("OTP_DEV_ECHO", True) and not is_production()
 
 
 def _otp_key(phone: str | None, email: str | None) -> tuple[str, str, str]:
@@ -164,11 +166,10 @@ def request_code(store: PlatformStore, phone: str | None = None, email: str | No
     code = f"{secrets.randbelow(1_000_000):06d}"
     expires = (datetime.now(timezone.utc) + timedelta(minutes=OTP_MINUTES)).isoformat(timespec="seconds")
     store.put_otp(key, _sha(key + code), expires)
-    text = f"{code} is your UrJersey code. It expires in {OTP_MINUTES} minutes. Don't share it."
     if channel == "email":
-        notify.send_email(ident, "Your UrJersey code", text, secret=True)
+        notify.send_code_email(ident, code, OTP_MINUTES)
     else:
-        notify.send_sms(ident, text, secret=True)
+        notify.send_code_sms(ident, code, OTP_MINUTES)
     out = {"sent": True, channel: ident, "expires_in": OTP_MINUTES * 60}
     if otp_echo():
         out["dev_code"] = code

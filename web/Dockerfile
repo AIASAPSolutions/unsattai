@@ -15,5 +15,6 @@ COPY --from=build --chown=node:node /srv/web ./
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-CMD ["npx", "next", "start", "-p", "3000"]
+  CMD node -e "fetch('http://127.0.0.1:'+process.env.PORT+'/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+# PORT is set by hosting platforms such as Render or Railway; 3000 otherwise.
+CMD ["sh", "-c", "exec node node_modules/next/dist/bin/next start -p \"$PORT\""]

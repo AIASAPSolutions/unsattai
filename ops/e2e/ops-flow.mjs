@@ -642,6 +642,15 @@ try {
     await shot('42-messages');
   });
 
+  await step('messages: the SMS and email services panel sends a test', async () => {
+    await page.goto(`${OPS}/messages`);
+    await page.locator('.messaging-setup').getByText('Not connected (server log only)').first().waitFor();
+    await page.fill('#msg-test-to', 'owner@example.com');
+    await tid('messaging-test-send').click();
+    await page.locator('.messaging-setup').getByText('only written to the server log').waitFor();
+    await shot('42b-messaging-setup');
+  });
+
   await step('settings: COD fee saves, coupons and returns show their new fields', async () => {
     await page.goto(`${OPS}/settings/price-book`);
     await tid('cod-fee').waitFor();

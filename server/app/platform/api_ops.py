@@ -13,15 +13,22 @@ from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.responses import HTMLResponse, PlainTextResponse
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from .. import orders as order_mod
 from ..schemas import PaymentConfirmation
-from . import config, crm, lifecycle, planning, security, sellers
+from . import config, crm, lifecycle, notify, planning, security, sellers
 from .db import ConflictError, PlatformStore
 from .pricing import QuoteRequest, quote
 
 need = security.need
+
+
+class MessageTest(BaseModel):
+    channel: Literal["sms", "email"]
+    to: str = Field(..., min_length=5, max_length=120)
 
 
 class Login(BaseModel):
@@ -202,6 +209,32 @@ def router(store: PlatformStore, key_dep) -> APIRouter:
                 raise HTTPException(422, "A seller login needs the id of an existing seller (seller_id).")
         elif seller_id:
             raise HTTPException(422, "Only the seller role is linked to a seller.")
+
+    # ------------------------------------------------------------- messaging
+
+    @r.get("/messaging")
+    def messaging(s: dict = Depends(need("settings"))):
+        """Which SMS and email services are connected (set in environment variables, never here)."""
+        return {**notify.status(), "problems": notify.check_config()}
+
+    @r.post("/messaging/test")
+    def messaging_test(body: MessageTest, s: dict = Depends(need("settings"))):
+        """Send a test message so the admin can check the SMS or email settings."""
+        text = f"Test message from {notify.brand()}. SMS and email are working."
+        if body.channel == "sms":
+            to = security.normalize_phone(body.to)
+            if not security.valid_phone(to):
+                raise HTTPException(422, "Enter a valid mobile number.")
+            result = notify.send_sms(to, text, vars={"message": text, "number": "TEST", "brand": notify.brand()})
+            provider = notify.sms_provider()
+        else:
+            to = security.normalize_email(body.to)
+            if not security.valid_email(to):
+                raise HTTPException(422, "Enter a valid email address.")
+            result = notify.send_email(to, f"{notify.brand()} test email", text)
+            provider = notify.email_provider()
+        store.audit(actor(s), "messaging.test", body.channel, {"provider": provider, "result": result})
+        return {"channel": body.channel, "to": to, "provider": provider, "result": result}
 
     # ------------------------------------------------------------- settings
 
