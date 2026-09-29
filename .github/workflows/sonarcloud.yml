@@ -16,7 +16,7 @@ jobs:
           # Full history — SonarCloud uses it for blame / new-code-period analysis.
           fetch-depth: 0
 
-      - uses: pnpm/action-setup@v3
+      - uses: pnpm/action-setup@v6
         with:
           version: 8
 

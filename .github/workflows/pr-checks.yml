@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v3
+      - uses: pnpm/action-setup@v6
         with:
           version: 8
 
@@ -44,7 +44,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v3
+      - uses: pnpm/action-setup@v6
         with:
           version: 8
 
@@ -71,7 +71,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v3
+      - uses: pnpm/action-setup@v6
         with:
           version: 8
 
@@ -116,7 +116,7 @@ jobs:
   #       with:
   #         repository: ${{ github.repository_owner }}/clinivio-frontend
   #         token: ${{ secrets.GH_PAT }}
-  #     - uses: pnpm/action-setup@v3
+  #     - uses: pnpm/action-setup@v6
   #       with:
   #         version: 8
   #     - uses: actions/setup-node@v4
