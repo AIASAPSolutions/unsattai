@@ -338,6 +338,9 @@ export interface OrderRequest {
 }
 
 export interface Address {
+  /** Who receives it; optional, the checkout contact is used when empty. */
+  name?: string;
+  phone?: string;
   line1: string;
   line2: string;
   city: string;
@@ -365,6 +368,8 @@ export interface Catalogue {
   rush: { enabled: boolean; fee_rate: number; label: string };
   pickup: { enabled: boolean; label: string; fee: number };
   quantity_tiers: { min: number; discount: number }[];
+  cod?: { enabled: boolean; fee: number; max_order_value: number | null };
+  returns?: { window_days: number; reasons: string[] };
   company: { name: string; email: string; phone: string; support_hours: string };
 }
 
@@ -392,7 +397,9 @@ export interface Pricing {
   quantity_discount: { min: number; rate: number; amount: number; next: { min: number; rate: number; pieces_needed: number } | null };
   rush: { selected: boolean; amount: number; rate: number; label: string };
   coupon: { code: string; amount: number; error?: string; note?: string } | null;
-  shipping: { method: 'ship' | 'pickup'; amount: number; free: boolean; label?: string; zone_name?: string; transit_days: number };
+  shipping: { method: 'ship' | 'pickup'; amount: number; free: boolean; label?: string; zone_name?: string; transit_days: number; combined?: boolean };
+  cod?: { selected: boolean; fee: number; available: boolean; max_order_value?: number | null };
+  seller?: SellerRef | null;
   tax: { name: string; rate: number; amount: number; inclusive: boolean };
   total: number;
   average_per_piece: number;
@@ -415,6 +422,21 @@ export interface Fulfilment {
   promised_ship_date?: string | null;
   promised_delivery_date?: string | null;
   stages?: { id: string; name: string; done_at: string | null }[];
+  shipment?: Shipment | null;
+  return_until?: string | null;
+  dispatched_at?: string;
+  delivered_at?: string;
+}
+
+export interface Shipment {
+  id: string;
+  carrier_name: string;
+  tracking_no: string;
+  tracking_url: string;
+  status: 'planned' | 'packed' | 'dispatched' | 'delivered' | 'returned' | 'cancelled' | string;
+  planned_date: string | null;
+  dispatched_at: string | null;
+  delivered_at: string | null;
 }
 
 
@@ -458,7 +480,10 @@ export interface Order {
   checks: Check[];
   manufacturing_ready: boolean;
   files: OrderFile[];
-  payment: { demo: boolean; reference: string; confirmed_at: string; note: string } | null;
+  payment: {
+    demo?: boolean; reference: string; confirmed_at?: string; note?: string;
+    method?: string; collected?: boolean; amount?: number; collected_at?: string | null;
+  } | null;
   factory: FactoryReceipt | null;
   notes: string[];
   duplicate?: boolean;
@@ -468,7 +493,18 @@ export interface Order {
   pricing?: Pricing;
   delivery?: OrderDelivery & { transit_days?: number; zone?: string | null };
   fulfilment?: Fulfilment;
-  timeline?: { at: string; code: string; text: string }[];
+  timeline?: { at: string; code: string; text: string; params?: Record<string, unknown> }[];
+  /** Marketplace fields (servers from 2026-09 on). */
+  seller?: SellerRef;
+  checkout_id?: string | null;
+  payment_method?: PaymentMethod;
+  can_cancel?: boolean;
+  can_return?: boolean;
+  return_until?: string | null;
+  review?: OrderReview | null;
+  returns?: ReturnRecord[];
+  refunds?: { id: string; amount: number; at: string; method: string; note: string }[];
+  product_id?: string | null;
 }
 
 export interface OrderFailure {
@@ -494,4 +530,333 @@ export interface Health {
   default_provider: string;
   factory_connected: boolean;
   auth_required: boolean;
+}
+
+// ------------------------------------------------------------------ marketplace
+
+export type PaymentMethod = 'online' | 'cod';
+
+export interface SellerRef {
+  id: string;
+  name: string;
+}
+
+export interface Rating {
+  average: number | null;
+  count: number;
+}
+
+export type ServiceReason =
+  | 'invalid_pincode' | 'not_serviceable' | 'garment_unavailable' | 'pieces_out_of_range' | 'seller_unavailable'
+  | 'cod_unavailable' | 'print_check_failed';
+
+export interface Place {
+  state: string;
+  state_name: string;
+}
+
+export interface SellerOffer {
+  seller_id: string;
+  seller_name: string;
+  rating: Rating;
+  unit_price: number;
+  ship_date: string;
+  delivery_date: string;
+  transit_days: number;
+  cod_available: boolean;
+  recommended: boolean;
+  fastest: boolean;
+  cheapest: boolean;
+}
+
+export interface Serviceability {
+  pincode: string;
+  serviceable: boolean;
+  place: Place | null;
+  reason: ServiceReason | string | null;
+  offers: SellerOffer[];
+  recommended_seller_id: string | null;
+}
+
+export interface Offer {
+  code: string;
+  title: string;
+  kind: 'percent' | 'amount';
+  value: number;
+  max_discount: number | null;
+  min_subtotal: number | null;
+  expires: string | null;
+}
+
+export interface Product {
+  id: string;
+  slug: string;
+  title: string;
+  description: string;
+  sport: string;
+  garment: Garment;
+  colours: string[];
+  tags: string[];
+  fabric: string;
+  featured: boolean;
+  rating: Rating;
+  orders_count: number;
+  published_at: string;
+  price_from: number | null;
+  currency: string;
+  image_url: string;
+  style_name: string;
+}
+
+export interface Review {
+  id: string;
+  rating: number;
+  title: string;
+  body: string;
+  customer_name: string;
+  created_at: string;
+  verified_purchase: boolean;
+  garment: string;
+  seller_name: string;
+}
+
+export interface ProductDetail extends Product {
+  spec: DesignSpec;
+  review_summary: Rating & { distribution: Record<string, number> };
+  reviews: Review[];
+  fabrics: { id: string; name: string; surcharge: number }[];
+}
+
+export interface Facet {
+  value: string;
+  count: number;
+}
+
+export type ProductSort = 'popular' | 'new' | 'price_asc' | 'price_desc' | 'rating';
+
+export interface ProductQuery {
+  q?: string;
+  sport?: string;
+  garment?: string;
+  colour?: string;
+  min_price?: number | null;
+  max_price?: number | null;
+  sort?: ProductSort;
+  page?: number;
+  size?: number;
+  featured?: boolean;
+}
+
+export interface ProductPage {
+  items: Product[];
+  total: number;
+  page: number;
+  pages: number;
+  sort: ProductSort;
+  facets: { sport: Facet[]; garment: Facet[]; colour: Facet[]; price: { min: number; max: number } | null };
+}
+
+/** A cart item exactly as the server takes it: a product or the customer's own design. */
+export interface CartItem {
+  product_id?: string;
+  spec?: DesignSpec | null;
+  design_id?: string;
+  garment?: Garment | null;
+  fabric: string;
+  logos?: number;
+  lines: OrderItem[];
+  seller_id?: string;
+}
+
+export interface ServerCart {
+  items: CartItem[];
+  max_items: number;
+}
+
+export interface CartDelivery {
+  method: 'ship' | 'pickup';
+  pincode: string;
+  state: string;
+}
+
+export interface CartQuoteRequest {
+  items: CartItem[];
+  delivery: CartDelivery;
+  coupon: string;
+  rush: boolean;
+  payment_method: PaymentMethod;
+}
+
+export interface CartTotals {
+  subtotal: number;
+  quantity_discount: number;
+  rush: number;
+  coupon: number;
+  shipping: number;
+  cod_fee: number;
+  tax: number;
+  total: number;
+}
+
+export interface CartQuoteItem {
+  index: number;
+  product_id?: string | null;
+  title: string;
+  garment: Garment;
+  seller: SellerRef | null;
+  quote: Quote & { seller?: SellerRef | null; seller_problem?: string | null; cod?: { selected: boolean; fee: number; available: boolean } };
+  coupon_share: number;
+  delivery_date: string | null;
+  problems: string[];
+}
+
+export interface CartQuote {
+  currency: string;
+  items: CartQuoteItem[];
+  coupon: { code: string; amount: number; note?: string; error?: string; split?: { index: number; amount: number }[] } | null;
+  payment_method: PaymentMethod;
+  pieces: number;
+  totals: CartTotals;
+  cod_available: boolean;
+  delivery_by: string | null;
+  problems: string[];
+}
+
+export interface CheckoutRequest {
+  items: CartItem[];
+  customer: Customer;
+  delivery: OrderDelivery;
+  coupon: string;
+  rush: boolean;
+  payment_method: PaymentMethod;
+  idempotency_key: string;
+  channel: 'app';
+  language: Language;
+}
+
+export interface Checkout {
+  id: string;
+  number: string;
+  order_ids: string[];
+  customer: Customer;
+  customer_id: string | null;
+  payment_method: PaymentMethod;
+  status: 'open' | 'paid' | string;
+  coupon: CartQuote['coupon'];
+  currency: string;
+  totals: CartTotals;
+  channel: string;
+  created_at: string;
+  updated_at: string;
+  orders?: Order[];
+  duplicate?: boolean;
+}
+
+/** One item that stopped a checkout (422). */
+export interface CheckoutItemProblem {
+  index: number;
+  code: ServiceReason | string;
+  message: string;
+  failures?: OrderFailure[];
+}
+
+export interface Me {
+  id: string;
+  name: string;
+  phone: string;
+  email: string;
+  addresses: Address[];
+  marketing_opt_in: boolean;
+  orders_count: number;
+  phone_verified: boolean;
+  email_verified: boolean;
+  has_password: boolean;
+}
+
+export interface CodeSent {
+  sent: boolean;
+  phone?: string;
+  email?: string;
+  expires_in: number;
+  /** Only from test servers (OTP_DEV_ECHO). */
+  dev_code?: string;
+}
+
+export interface SignedIn {
+  token: string;
+  expires_at: string;
+  session_id: string;
+  customer: Me;
+}
+
+export interface SessionInfo {
+  id: string;
+  created_at: string;
+  last_seen_at: string;
+  device_label: string;
+  current: boolean;
+}
+
+export interface OrderSummary {
+  id: string;
+  number: string | null;
+  created_at: string;
+  status: OrderStatus;
+  fulfilment_status: FulfilmentStatus;
+  team_name: string;
+  garment: Garment;
+  pieces: number;
+  total: number | null;
+  currency: string | null;
+  promised_delivery_date: string | null;
+  style_name: string | null;
+  seller_name: string | null;
+  payment_method: PaymentMethod;
+  checkout_id: string | null;
+  product_id: string | null;
+}
+
+export interface OrderReview {
+  id: string;
+  rating: number;
+  title: string;
+  body: string;
+  created_at: string;
+  hidden?: boolean;
+}
+
+export interface ReturnRecord {
+  id: string;
+  number: string;
+  status: 'requested' | 'approved' | 'picked_up' | 'resolved' | 'rejected' | string;
+  reason: string;
+  details: string;
+  lines: { line: number; quantity: number }[];
+  resolution: 'replacement' | 'refund' | null;
+  refund_amount: number | null;
+  created_at: string;
+  updated_at: string;
+  note: string;
+}
+
+export interface AppNotification {
+  id: string;
+  code: string;
+  title: string;
+  body: string;
+  order_id: string | null;
+  read: boolean;
+  created_at: string;
+}
+
+export interface NotificationPage {
+  items: AppNotification[];
+  total: number;
+  unread: number;
+  page: number;
+}
+
+export interface Wishlist {
+  product_ids: string[];
+  items: Product[];
 }

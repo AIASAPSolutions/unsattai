@@ -1,23 +1,24 @@
 import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { ColorPickerModal } from '../components/ColorPickerModal';
-import { VoiceInput } from '../components/VoiceInput';
-import { GARMENTS, MAX_LOCKED_COLORS, PROMPT_LIMIT, TEXT_LIMITS, type Language } from '../api/types';
-import { errorMessage, LANGUAGE_OPTIONS, useT } from '../i18n';
-import { checkNumber, checkPlayer, checkPrompt, checkTeam, cleanNumber } from '../lib/validation';
-import { useFlow } from '../state/flow';
-import { usePrefs } from '../state/prefs';
-import { Banner } from '../ui/Banner';
-import { Button } from '../ui/Button';
-import { Card } from '../ui/Card';
-import { Chip } from '../ui/Chip';
-import { Swatch } from '../ui/ColorPicker';
-import { Field } from '../ui/Field';
-import { Screen } from '../ui/Screen';
-import { T } from '../ui/Text';
-import { colors, space } from '../ui/theme';
-import { useVoiceGuide } from '../voice/useVoiceGuide';
+import { ColorPickerModal } from '../../components/ColorPickerModal';
+import { DeliverToBar } from '../../components/shop/DeliverTo';
+import { VoiceInput } from '../../components/VoiceInput';
+import { GARMENTS, MAX_LOCKED_COLORS, PROMPT_LIMIT, TEXT_LIMITS, type Language } from '../../api/types';
+import { errorMessage, LANGUAGE_OPTIONS, useT } from '../../i18n';
+import { checkNumber, checkPlayer, checkPrompt, checkTeam, cleanNumber } from '../../lib/validation';
+import { useFlow } from '../../state/flow';
+import { usePrefs } from '../../state/prefs';
+import { Banner } from '../../ui/Banner';
+import { Button } from '../../ui/Button';
+import { Card } from '../../ui/Card';
+import { Chip } from '../../ui/Chip';
+import { Swatch } from '../../ui/ColorPicker';
+import { Field } from '../../ui/Field';
+import { Screen } from '../../ui/Screen';
+import { T } from '../../ui/Text';
+import { colors, space } from '../../ui/theme';
+import { useVoiceGuide } from '../../voice/useVoiceGuide';
 
 export default function DescribeScreen() {
   const t = useT();
@@ -85,6 +86,7 @@ export default function DescribeScreen() {
             onPress={() => setLanguage(o.code as Language)} />
         ))}
       </View>
+      <DeliverToBar garment={brief.garment} />
       {notice ? <Banner tone="info" text={notice} /> : null}
       {hasDraft ? (
         <Banner tone="info" text={t('restoreDraft')}>
@@ -118,7 +120,12 @@ export default function DescribeScreen() {
         ))}
       </View>
 
-      <Card title={t('pictureEntryTitle')} style={{ marginTop: space(4) }}>
+      <Card title={t('shopEntryTitle')} style={{ marginTop: space(4) }}>
+        <T variant="caption" style={{ marginBottom: space(3) }}>{t('shopEntryHint')}</T>
+        <Button testID="go-shop" compact kind="secondary" label={t('shopEntryCta')} onPress={() => router.navigate('/shop')} />
+      </Card>
+
+      <Card title={t('pictureEntryTitle')}>
         <T variant="caption" style={{ marginBottom: space(3) }}>{t('pictureEntryHint')}</T>
         <Button testID="use-picture" compact kind="secondary" label={t('pictureEntryCta')} onPress={() => router.push('/from-picture')} />
       </Card>

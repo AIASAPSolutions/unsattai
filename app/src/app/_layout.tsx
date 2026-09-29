@@ -5,47 +5,23 @@ import { NotoSansDevanagari_400Regular, NotoSansDevanagari_700Bold } from '@expo
 import { NotoSansTamil_400Regular, NotoSansTamil_700Bold } from '@expo-google-fonts/noto-sans-tamil';
 import { NotoSansTelugu_400Regular, NotoSansTelugu_700Bold } from '@expo-google-fonts/noto-sans-telugu';
 import { useFonts } from 'expo-font';
-import { router, Stack } from 'expo-router';
+import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { loadApiUrl } from '../api/config';
+import { HeaderActions } from '../components/HeaderActions';
 import { useT } from '../i18n';
+import { useAuth } from '../state/auth';
 import { usePrefs } from '../state/prefs';
 import { Loading } from '../ui/States';
-import { T } from '../ui/Text';
 import { colors, FONT_FAMILY } from '../ui/theme';
-
-function HeaderActions() {
-  const t = useT();
-  const voiceGuide = usePrefs((s) => s.voiceGuide);
-  const setVoiceGuide = usePrefs((s) => s.setVoiceGuide);
-  return (
-    <View style={styles.actions}>
-      <Pressable
-        testID="voice-toggle"
-        accessibilityRole="switch"
-        accessibilityState={{ checked: voiceGuide }}
-        accessibilityLabel={t('voiceGuide')}
-        onPress={() => setVoiceGuide(!voiceGuide)}
-        hitSlop={8}
-        style={styles.action}
-      >
-        <T variant="heading" color="#fff">{voiceGuide ? '🔊' : '🔈'}</T>
-      </Pressable>
-      <Pressable testID="open-settings" accessibilityRole="button" accessibilityLabel={t('settings')}
-        onPress={() => router.push('/settings')} hitSlop={8} style={styles.action}>
-        <T variant="heading" color="#fff">⚙︎</T>
-      </Pressable>
-    </View>
-  );
-}
 
 export default function RootLayout() {
   const t = useT();
   const lang = usePrefs((s) => s.language);
+  const restore = useAuth((s) => s.restore);
   const [ready, setReady] = useState(false);
   const [fontsLoaded, fontError] = useFonts({
     NotoSans_400Regular, NotoSans_700Bold,
@@ -55,8 +31,12 @@ export default function RootLayout() {
   });
 
   useEffect(() => {
-    loadApiUrl().finally(() => setReady(true));
-  }, []);
+    // The server address first, then the saved sign-in (checked against the server in the background).
+    loadApiUrl().finally(() => {
+      setReady(true);
+      restore().catch(() => undefined);
+    });
+  }, [restore]);
 
   const fontsReady = fontsLoaded || !!fontError; // system fonts still render every script if loading fails
   return (
@@ -75,13 +55,23 @@ export default function RootLayout() {
               contentStyle: { backgroundColor: colors.bg },
             }}
           >
-            <Stack.Screen name="index" options={{ title: t('appName') }} />
+            <Stack.Screen name="(tabs)" options={{ headerShown: false, title: t('appName') }} />
             <Stack.Screen name="confirm" options={{ title: t('confirmTitle') }} />
             <Stack.Screen name="designs" options={{ title: t('designsTitle') }} />
             <Stack.Screen name="from-picture" options={{ title: t('pictureTitle') }} />
             <Stack.Screen name="studio" options={{ title: t('studioTitle'), gestureEnabled: false }} />
             <Stack.Screen name="order" options={{ title: t('orderTitle') }} />
             <Stack.Screen name="orders/[id]" options={{ title: t('orderTitle') }} />
+            <Stack.Screen name="product/[slug]" options={{ title: t('productTitle') }} />
+            <Stack.Screen name="wishlist" options={{ title: t('wishlistTitle') }} />
+            <Stack.Screen name="checkout" options={{ title: t('checkoutTitle') }} />
+            <Stack.Screen name="checkouts/[id]" options={{ title: t('confirmationTitle') }} />
+            <Stack.Screen name="sign-in" options={{ title: t('signInTitle'), headerRight: () => null }} />
+            <Stack.Screen name="account/profile" options={{ title: t('profileTitle') }} />
+            <Stack.Screen name="account/addresses" options={{ title: t('addressesTitle') }} />
+            <Stack.Screen name="account/security" options={{ title: t('securityTitle') }} />
+            <Stack.Screen name="account/orders" options={{ title: t('myOrdersTitle') }} />
+            <Stack.Screen name="account/notifications" options={{ title: t('notificationsTitle') }} />
             <Stack.Screen name="settings" options={{ title: t('settingsTitle'), headerRight: () => null }} />
             <Stack.Screen name="design" options={{ title: t('appName') }} />
           </Stack>
@@ -90,8 +80,3 @@ export default function RootLayout() {
     </GestureHandlerRootView>
   );
 }
-
-const styles = StyleSheet.create({
-  actions: { flexDirection: 'row', alignItems: 'center' },
-  action: { minWidth: 40, minHeight: 40, alignItems: 'center', justifyContent: 'center', marginLeft: 4 },
-});

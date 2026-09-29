@@ -85,6 +85,8 @@ interface FlowState {
   ratings: Record<string, number>;
 
   designId: string | null;
+  /** Set when the design being edited started from a shop product. */
+  product: { id: string; slug: string; title: string } | null;
   history: History<DesignSpec> | null;
   gestureBase: DesignSpec | null;
 
@@ -103,6 +105,8 @@ interface FlowState {
   showDesigns: (res: GenerateResponse) => void;
   // studio
   openDesign: (design: Design) => void;
+  /** Customise a ready-made product in the studio. */
+  openProduct: (p: { id: string; slug: string; title: string; spec: DesignSpec }) => void;
   edit: (spec: DesignSpec) => void;
   live: (spec: DesignSpec) => void;
   beginGesture: () => void;
@@ -149,6 +153,7 @@ export const useFlow = create<FlowState>()(
       designs: [],
       ratings: {},
       designId: null,
+      product: null,
       history: null,
       gestureBase: null,
       order: EMPTY_ORDER,
@@ -221,7 +226,13 @@ export const useFlow = create<FlowState>()(
       },
 
       openDesign: (design) => set({
-        designId: design.id, history: createHistory(design.spec), gestureBase: null,
+        designId: design.id, product: null, history: createHistory(design.spec), gestureBase: null,
+        order: { ...get().order, idempotencyKey: null, keyFor: null },
+      }),
+
+      openProduct: (p) => set({
+        // The product id keys the studio's one-time layer set-up; orders send it as a custom design.
+        designId: p.id, product: { id: p.id, slug: p.slug, title: p.title }, history: createHistory(p.spec), gestureBase: null,
         order: { ...get().order, idempotencyKey: null, keyFor: null },
       }),
 
@@ -267,7 +278,7 @@ export const useFlow = create<FlowState>()(
 
       reset: () => set({
         brief: { ...EMPTY_BRIEF, garment: get().brief.garment }, understanding: null, answers: {}, confirmed: null,
-        generation: null, designs: [], ratings: {}, designId: null, history: null, gestureBase: null,
+        generation: null, designs: [], ratings: {}, designId: null, product: null, history: null, gestureBase: null,
         order: { ...EMPTY_ORDER, customer: get().order.customer }, lastOrder: null,
       }),
     }),
@@ -278,7 +289,7 @@ export const useFlow = create<FlowState>()(
       // History is rebuilt from the current spec on restore: 60 steps of multi-MB logos is too much to store.
       partialize: (s) => ({
         brief: s.brief, understanding: s.understanding, answers: s.answers, confirmed: s.confirmed,
-        generation: s.generation, designs: s.designs, ratings: s.ratings, designId: s.designId,
+        generation: s.generation, designs: s.designs, ratings: s.ratings, designId: s.designId, product: s.product,
         history: s.history ? { past: [], present: s.history.present, future: [] } : null,
         // Contact details are only kept when the customer opts in (prefs.customer), never in the draft.
         // The delivery address is personal too: it is re-typed (or remembered with the contact details).

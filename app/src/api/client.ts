@@ -1,9 +1,13 @@
+import { Platform } from 'react-native';
 import { getApiKey, getApiUrl, getDeviceId } from './config';
+import { getSessionToken } from './session';
 
 export type ApiErrorKind =
   | 'network'      // server unreachable / offline
   | 'timeout'
-  | 'auth'         // 401
+  | 'auth'         // 401: missing API key, not signed in, or a wrong code or password
+  | 'forbidden'    // 403: account blocked or not allowed
+  | 'locked'       // 423 (and 429 on sign-in): too many wrong tries for now
   | 'validation'   // 422 with field errors
   | 'blocked'      // 422 with manufacturing failures (orders)
   | 'conflict'     // 409
@@ -34,6 +38,15 @@ export class ApiError extends Error {
   get retryable(): boolean {
     return this.kind === 'network' || this.kind === 'timeout' || this.kind === 'server';
   }
+
+  /** The server's machine reason code, e.g. not_serviceable or cod_unavailable, when it sent one. */
+  get code(): string | null {
+    const c = (this.data as { code?: unknown } | null)?.code;
+    return typeof c === 'string' ? c : null;
+  }
+
+  /** The request carried a session token and the server no longer accepts it. */
+  sessionExpired = false;
 }
 
 export function parseErrorBody(status: number, body: unknown): ApiError {
@@ -57,7 +70,9 @@ export function parseErrorBody(status: number, body: unknown): ApiError {
 }
 
 function kindFor(status: number): ApiErrorKind {
-  if (status === 401 || status === 403) return 'auth';
+  if (status === 401) return 'auth';
+  if (status === 403) return 'forbidden';
+  if (status === 423) return 'locked';
   if (status === 404) return 'not_found';
   if (status === 409) return 'conflict';
   if (status === 413) return 'too_large';
@@ -73,6 +88,23 @@ export interface RequestOptions {
   signal?: AbortSignal;
   /** Return the raw text body (SVG downloads). */
   text?: boolean;
+  /** Leave out the session token (sign-in calls). */
+  anonymous?: boolean;
+}
+
+export type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+
+// Told when the server rejects the saved session token (expired or signed out elsewhere).
+let onSessionExpired: (() => void) | null = null;
+export function setSessionExpiredHandler(fn: (() => void) | null): void {
+  onSessionExpired = fn;
+}
+
+/** The server names the session's device from this, e.g. "UrJersey app on Android". Browsers send their own. */
+export function appUserAgent(os: string = Platform.OS): string | null {
+  if (os === 'android') return 'UrJersey app on Android';
+  if (os === 'ios') return 'UrJersey app on iPhone';
+  return null;
 }
 
 export type Fetcher = typeof fetch;
@@ -83,12 +115,16 @@ export function setFetcher(f: Fetcher): void {
   fetcher = f;
 }
 
-export async function request<T>(method: 'GET' | 'POST', path: string, opts: RequestOptions = {}): Promise<T> {
+export async function request<T>(method: Method, path: string, opts: RequestOptions = {}): Promise<T> {
   const base = getApiUrl();
   const key = await getApiKey();
+  const token = opts.anonymous ? null : await getSessionToken();
   const headers: Record<string, string> = { Accept: opts.text ? 'image/svg+xml, text/plain, */*' : 'application/json' };
   if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
   if (key) headers['X-API-Key'] = key;
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const ua = appUserAgent();
+  if (ua) headers['User-Agent'] = ua;
   headers['X-Device-Id'] = await getDeviceId();
 
   const controller = new AbortController();
@@ -121,7 +157,13 @@ export async function request<T>(method: 'GET' | 'POST', path: string, opts: Req
     } catch {
       /* plain text error */
     }
-    throw parseErrorBody(res.status, body);
+    const err = parseErrorBody(res.status, body);
+    // A 401 for a request that carried our session means the session is gone, not a wrong password.
+    if (res.status === 401 && token && !/X-API-Key/i.test(err.message)) {
+      err.sessionExpired = true;
+      onSessionExpired?.();
+    }
+    throw err;
   }
   if (opts.text) return raw as unknown as T;
   try {

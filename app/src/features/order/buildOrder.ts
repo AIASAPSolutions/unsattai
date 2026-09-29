@@ -1,4 +1,4 @@
-import type { Customer, DesignSpec, OrderItem, OrderRequest, Language, QuoteRequest } from '../../api/types';
+import type { CartItem, Customer, DesignSpec, OrderItem, OrderRequest, Language, QuoteRequest } from '../../api/types';
 import { checkCustomerName, checkEmail, checkNumber, checkPhone, checkPlayer, checkQuantity, cleanNumber } from '../../lib/validation';
 import type { Commerce, OrderDraft } from '../../state/flow';
 
@@ -99,4 +99,23 @@ export function orderPayload(
 
 export function payloadHash(p: Omit<OrderRequest, 'idempotency_key'>): string {
   return hashString(JSON.stringify(p));
+}
+
+/** Roster and quantity problems only: contact details and the address are asked at checkout. */
+export function itemIssues(draft: OrderDraft, spec: DesignSpec): DraftIssue[] {
+  return validateDraft(draft, spec).filter((i) => i.kind !== 'customer');
+}
+
+/**
+ * The customer's own design as a cart item. A design that started from a shop
+ * product is sent as a design too (the customer changed it), without the id of
+ * a generated design.
+ */
+export function customCartItem(spec: DesignSpec, items: OrderItem[], fabric: string, designId: string | null, fromProduct: boolean): CartItem {
+  return {
+    spec,
+    design_id: !fromProduct && designId ? designId : '',
+    fabric,
+    lines: items.map(({ player_name, number, size, quantity }) => ({ player_name, number: cleanNumber(number), size, quantity })),
+  };
 }

@@ -37,23 +37,57 @@ export function tMaybe(t: T, key: string, fallback: string): string {
   return key in en ? t(key as StringKey) : fallback;
 }
 
+const REASON_KEYS: Record<string, StringKey> = {
+  not_serviceable: 'errNotServiceable', invalid_pincode: 'errInvalidPincode', garment_unavailable: 'errGarmentUnavailable',
+  pieces_out_of_range: 'errPiecesOutOfRange', seller_unavailable: 'errSellerUnavailable', cod_unavailable: 'errCodUnavailable',
+};
+
+/**
+ * Words for a failed request. Sign-in answers are told apart by status and the
+ * server's (stable, English) message so each gets its own translated text.
+ */
 export function errorMessage(t: T, e: unknown): string {
   if (e instanceof ApiError) {
+    const m = e.message;
     switch (e.kind) {
       case 'network': return t('errNetwork');
       case 'timeout': return t('errTimeout');
-      case 'auth': return t('errAuth');
-      case 'validation': return t('errValidation', { detail: e.message });
+      case 'auth':
+        if (e.sessionExpired) return t('errSessionExpired');
+        if (/X-API-Key/i.test(m)) return t('errAuth');
+        if (/please sign in/i.test(m)) return t('errSignInNeeded');
+        if (/current password/i.test(m)) return t('errCurrentPassword');
+        if (/expired/i.test(m)) return t('errCodeExpired');
+        if (/code/i.test(m)) return t('errWrongCode');
+        if (/password/i.test(m)) return t('errWrongPassword');
+        return t('errAuth');
+      case 'forbidden': return t('errBlocked');
+      case 'locked': return t('errLocked');
+      case 'validation': {
+        const code = e.code;
+        if (code && REASON_KEYS[code]) return t(REASON_KEYS[code]);
+        if (/password/i.test(m) && e.status === 422 && !e.fields.length) return t('errWeakPassword', { detail: m });
+        return t('errValidation', { detail: m });
+      }
       case 'blocked': return t('orderBlockedServer');
       case 'not_found': return t('errNotFound');
-      case 'conflict': return t('errConflict', { detail: e.message });
+      case 'conflict':
+        if (/belongs to another account/i.test(m)) return t('errIdentifierTaken');
+        if (/idempotency|different body/i.test(m)) return t('errConflict', { detail: m });
+        return t('errCannotChange', { detail: m });
       case 'too_large': return t('errTooLarge');
       case 'quota': {
-        const code = (e.data as { code?: string } | null)?.code;
-        return t(code === 'ai_rate' ? 'errAiRate' : code === 'ai_busy' ? 'errAiBusy' : 'errAiQuota');
+        const code = e.code;
+        if (code === 'ai_rate') return t('errAiRate');
+        if (code === 'ai_busy') return t('errAiBusy');
+        if (code) return t('errAiQuota');
+        if (/wrong passwords/i.test(m)) return t('errLocked');
+        if (/wrong codes/i.test(m)) return t('errTooManyCodes');
+        if (/few seconds|another code/i.test(m)) return t('errCodeWait');
+        return t('errTooMany');
       }
       case 'server': return t('errServer');
-      default: return t('errUnknown', { detail: e.message });
+      default: return t('errUnknown', { detail: m });
     }
   }
   return t('errUnknown', { detail: e instanceof Error ? e.message : String(e) });

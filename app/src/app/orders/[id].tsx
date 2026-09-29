@@ -1,14 +1,16 @@
 import * as Linking from 'expo-linking';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { api } from '../../api/endpoints';
-import type { Order } from '../../api/types';
+import type { Catalogue, Order } from '../../api/types';
 import { ChecksList } from '../../components/ChecksList';
+import { OrderActions } from '../../components/shop/OrderActions';
 import { PriceSummary } from '../../components/PriceSummary';
 import { saveTextFile } from '../../features/share/saveFile';
 import { errorMessage, tMaybe, useT } from '../../i18n';
-import { formatDay } from '../../lib/money';
+import { formatDay, formatMoney } from '../../lib/money';
+import { useAuth } from '../../state/auth';
 import { useFlow } from '../../state/flow';
 import { Banner } from '../../ui/Banner';
 import { Button } from '../../ui/Button';
@@ -38,6 +40,12 @@ export default function OrderStatusScreen() {
   const [loadError, setLoadError] = useState<unknown>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [catalogue, setCatalogue] = useState<Catalogue | null>(null);
+  const signedIn = useAuth((s) => s.status === 'signedIn');
+
+  useEffect(() => {
+    api.catalogue().then(setCatalogue).catch(() => setCatalogue(null));
+  }, []);
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -66,7 +74,13 @@ export default function OrderStatusScreen() {
     setBusy('pay');
     setError(null);
     try {
-      const o = await api.confirmDemoPayment(order.id);
+      let o: Order;
+      if (order.checkout_id) {
+        const ck = await api.payCheckout(order.checkout_id);
+        o = ck.orders?.find((x) => x.id === order.id) ?? await api.order(order.id);
+      } else {
+        o = await api.confirmDemoPayment(order.id);
+      }
       setOrder(o);
       setLastOrder(o);
       speak(t(`status_${o.status}`));
@@ -113,16 +127,59 @@ export default function OrderStatusScreen() {
   const pickup = order.delivery?.method === 'pickup';
   const stages = f?.stages ?? [];
   const receipt = order.factory;
+  const cod = order.payment_method === 'cod';
   const paid = order.status !== 'awaiting_payment';
-  const statusTone = order.status === 'paid_release_failed' ? colors.fail : paid ? colors.pass : colors.warn;
+  const cancelled = f?.status === 'cancelled';
+  const shipment = f?.shipment ?? null;
+  const onChanged = (o: Order) => {
+    setOrder(o);
+    setLastOrder(o);
+  };
+  // Once the order has left production (or was cancelled) that is what the customer cares about, not the payment step.
+  const afterMaking = ['dispatched', 'delivered', 'cancelled', 'returned'].includes(f?.status ?? '');
+  const statusTone = order.status === 'paid_release_failed' || cancelled ? colors.fail : paid ? colors.pass : colors.warn;
 
   return (
     <Screen testID="screen-order-status">
       <T variant="title" accessibilityRole="header">{t('orderStatus', { id: order.number ?? order.id })}</T>
       <View style={[styles.badge, { borderColor: statusTone }]}>
-        <T variant="label" color={statusTone} testID="order-status">{t(`status_${order.status}`)}</T>
+        <T variant="label" color={statusTone} testID="order-status">
+          {afterMaking && f ? tMaybe(t, `fstatus_${f.status}`, f.status) : t(`status_${order.status}`)}
+        </T>
       </View>
       {duplicate === '1' || order.duplicate ? <Banner tone="info" text={t('duplicateOrder')} testID="duplicate-order" /> : null}
+      {order.seller?.name ? (
+        <T variant="body" testID="order-seller">{t('soldBy', { seller: order.seller.name })} · {cod ? t('payCod') : t('payOnline')}</T>
+      ) : null}
+
+      {shipment ? (
+        <Card title={t('trackingTitle')} testID="tracking">
+          <View style={styles.kv}><T variant="caption">{t('carrier')}</T><T variant="label" testID="carrier">{shipment.carrier_name}</T></View>
+          <View style={styles.kv}>
+            <T variant="caption">{t('trackingNumber')}</T>
+            <T variant="label" selectable testID="tracking-no">{shipment.tracking_no || t('trackingSoon')}</T>
+          </View>
+          <View style={styles.kv}><T variant="caption">{t('shipmentStatus')}</T><T variant="label">{tMaybe(t, `shipment_${shipment.status}`, shipment.status)}</T></View>
+          {shipment.dispatched_at ? <View style={styles.kv}><T variant="caption">{t('dispatchedOn')}</T><T variant="label">{formatTime(shipment.dispatched_at)}</T></View> : null}
+          {shipment.delivered_at ? <View style={styles.kv}><T variant="caption">{t('deliveredOn')}</T><T variant="label">{formatTime(shipment.delivered_at)}</T></View> : null}
+          {shipment.tracking_url ? (
+            <Pressable accessibilityRole="link" onPress={() => Linking.openURL(shipment.tracking_url)} style={{ minHeight: 44, justifyContent: 'center' }}>
+              <T variant="label" color={colors.blue}>{t('trackOnCarrier')} ›</T>
+            </Pressable>
+          ) : null}
+        </Card>
+      ) : null}
+
+      <OrderActions order={order} signedIn={signedIn} reasons={catalogue?.returns?.reasons ?? ['damaged', 'wrong_item', 'print_quality']}
+        onChanged={onChanged} />
+
+      {order.refunds?.length ? (
+        <Card title={t('refundsTitle')}>
+          {order.refunds.map((r) => (
+            <T key={r.id} variant="body">{formatMoney(r.amount, order.pricing?.currency ?? 'INR')} · {formatTime(r.at)}{r.method === 'demo' ? ` · ${t('refundDemo')}` : ''}</T>
+          ))}
+        </Card>
+      ) : null}
 
       {f ? (
         <Card title={t('progress')}>
@@ -183,7 +240,13 @@ export default function OrderStatusScreen() {
         <ChecksList checks={order.checks} compact />
       </Card>
 
-      {!paid ? (
+      {cancelled ? null : cod ? (
+        <Card title={t('payment')}>
+          <Banner tone="info" testID="cod-due" text={order.payment?.collected ? t('codCollected') : t('codDue', {
+            total: formatMoney(order.payment?.amount ?? order.pricing?.total ?? 0, order.pricing?.currency ?? 'INR'),
+          })} />
+        </Card>
+      ) : !paid ? (
         <Card title={t('payment')}>
           <T variant="caption" style={{ marginBottom: space(3) }}>{t('demoPayNote')}</T>
           <Button testID="demo-pay" label={t('demoPay')} onPress={pay} busy={busy === 'pay'} disabled={busy !== null || !order.manufacturing_ready} />
@@ -232,6 +295,7 @@ export default function OrderStatusScreen() {
 
       {error ? <Banner tone="fail" text={error} testID="status-error" /> : null}
       <Button kind="secondary" label={t('refresh')} onPress={load} style={{ marginBottom: space(2) }} />
+      {signedIn ? <Button kind="ghost" label={t('myOrdersTitle')} onPress={() => router.push('/account/orders')} /> : null}
       <Button testID="new-design" kind="ghost" label={t('newDesign')} onPress={() => {
         reset();
         router.replace('/');
