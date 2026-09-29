@@ -7,6 +7,7 @@ import { orderTitle } from '../../features/orders/orders';
 import { errorMessage, tMaybe, useT } from '../../i18n';
 import { formatDay, formatMoney } from '../../lib/money';
 import { useAuth } from '../../state/auth';
+import { useDemoPayments } from '../../state/shopInfo';
 import { Banner } from '../../ui/Banner';
 import { Button } from '../../ui/Button';
 import { Card } from '../../ui/Card';
@@ -26,6 +27,7 @@ export default function ConfirmationScreen() {
   const [loadError, setLoadError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const demo = useDemoPayments();
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -56,7 +58,7 @@ export default function ConfirmationScreen() {
       setCk(next);
       speak(t('orderPlaced', { number: next.number }));
     } catch (e) {
-      setError(errorMessage(t, e));
+      setError(demo.markOff(e) ? null : errorMessage(t, e));
     } finally {
       setBusy(false);
     }
@@ -93,8 +95,12 @@ export default function ConfirmationScreen() {
 
       {open && !cod ? (
         <Card title={t('payment')}>
-          <T variant="caption" style={{ marginBottom: space(3) }}>{t('demoPayNote')}</T>
-          <Button testID="pay-now" label={t('payNow', { total: formatMoney(ck.totals.total, ck.currency) })} onPress={pay} busy={busy} />
+          {demo.enabled ? (
+            <>
+              <T variant="caption" style={{ marginBottom: space(3) }}>{t('demoPayNote')}</T>
+              <Button testID="pay-now" label={t('payNow', { total: formatMoney(ck.totals.total, ck.currency) })} onPress={pay} busy={busy} />
+            </>
+          ) : <Banner tone="info" text={t('demoPaymentsOffOrder')} testID="demo-pay-off" />}
           {error ? <Banner tone="fail" text={error} testID="pay-error" /> : null}
         </Card>
       ) : null}

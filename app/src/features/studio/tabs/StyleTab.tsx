@@ -1,10 +1,13 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { ColorPickerModal } from '../../../components/ColorPickerModal';
+import { GarmentOptionsPicker } from '../../../components/GarmentOptionsPicker';
 import { COLOR_ROLES, COVERAGES, FONTS, PATTERNS, type ColorRole, type DesignSpec } from '../../../api/types';
 import { useT } from '../../../i18n';
-import { setPath } from '../../../lib/spec';
+import { fitLayersToZone, setPath } from '../../../lib/spec';
+import { collarOf, hasSleeves, sleevesOf } from '../../../lib/sizing';
 import { useMeta } from '../../../state/meta';
+import { useCatalogue } from '../../../state/shopInfo';
 import { Card } from '../../../ui/Card';
 import { Chip } from '../../../ui/Chip';
 import { Segmented } from '../../../ui/Segmented';
@@ -17,6 +20,7 @@ import { latestSpec, type StudioTools } from './types';
 export function StyleTab({ spec, edit, live, begin, end }: StudioTools) {
   const t = useT();
   const { meta } = useMeta();
+  const catalogue = useCatalogue();
   const [role, setRole] = useState<ColorRole | null>(null);
 
   const set = (path: string, value: unknown) => edit(setPath(spec, path, value));
@@ -32,6 +36,15 @@ export function StyleTab({ spec, edit, live, begin, end }: StudioTools) {
 
   return (
     <View>
+      {hasSleeves(spec.garment) ? (
+        <Card title={t('garmentOptions')} testID="garment-options">
+          <GarmentOptionsPicker garment={spec.garment} sleeves={sleevesOf(spec)} collar={collarOf(spec)} testID="studio-opt"
+            prices={catalogue?.options} currency={catalogue?.currency}
+            onSleeves={(v) => v !== sleevesOf(spec) && edit(fitLayersToZone({ ...spec, sleeves: v }))}
+            onCollar={(v) => v !== collarOf(spec) && edit(fitLayersToZone({ ...spec, collar: v }))} />
+        </Card>
+      ) : null}
+
       <Card title={t('colours')}>
         {COLOR_ROLES.map((r) => (
           <Pressable key={r} testID={`role-${r}`} onPress={() => setRole(r)} accessibilityRole="button"

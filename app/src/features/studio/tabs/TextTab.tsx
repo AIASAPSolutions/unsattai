@@ -137,7 +137,7 @@ export function TextTab(tools: StudioTools) {
           <View style={[styles.wrap, { marginTop: space(3) }]}>
             <Button compact kind="secondary" label={`⇄ ${t('bringToFront')}`} onPress={() => {
               const other = selected.panel === 'front' ? 'back' : 'front';
-              const [x, y] = zoneCenter(spec.garment, other);
+              const [x, y] = zoneCenter(spec.garment, other, spec.sleeves, spec.collar);
               patchSelected({ panel: other, x, y });
             }} style={{ marginRight: space(2) }} />
             <Button compact kind="danger" label={t('deleteLayer')} onPress={() => {

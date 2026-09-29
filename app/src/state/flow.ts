@@ -3,10 +3,11 @@ import { persist } from 'zustand/middleware';
 import { api } from '../api/endpoints';
 import type {
   Address,
-  Design, DesignSpec, Garment, GenerateResponse, Language, Order, OrderItem, Question, Size, Understanding,
+  Design, DesignSpec, Fit, Garment, GarmentOptions, GenerateResponse, Language, Order, OrderItem, Question, Size, Understanding,
 } from '../api/types';
 import { canRedo, canUndo, commitFrom, createHistory, push, redo, replace, undo, type History } from '../lib/history';
 import { newIdempotencyKey } from '../lib/ids';
+import { pickedOptions } from '../lib/sizing';
 import { draftStorage } from './storage';
 
 // The customer journey as one store: brief -> understanding -> confirmed brief ->
@@ -20,6 +21,8 @@ export interface Brief {
   team_name: string;
   player_name: string;
   number: string;
+  /** Sleeves and collar the customer picked on the confirm screen (missing in older drafts). */
+  options?: GarmentOptions;
 }
 
 export interface Confirmed extends Brief {
@@ -46,7 +49,8 @@ export const EMPTY_COMMERCE: Commerce = { fabric: 'standard', method: 'ship', ad
 export interface OrderDraft {
   mode: OrderMode;
   commerce: Commerce;
-  single: { size: Size; quantity: number };
+  /** fit is missing in drafts saved before fits existed: men's. */
+  single: { fit?: Fit; size: Size; quantity: number };
   rows: RosterRow[];
   customer: { name: string; phone: string; email: string };
   idempotencyKey: string | null;
@@ -61,7 +65,7 @@ export const EMPTY_BRIEF: Brief = {
 const EMPTY_ORDER: OrderDraft = {
   mode: 'single',
   commerce: EMPTY_COMMERCE,
-  single: { size: 'M', quantity: 1 },
+  single: { fit: 'men', size: 'M', quantity: 1 },
   rows: [],
   customer: { name: '', phone: '', email: '' },
   idempotencyKey: null,
@@ -139,6 +143,7 @@ function confirmedFrom(u: Understanding, brief: Brief): Confirmed {
     team_name: u.team_name.value,
     player_name: u.player_name.value,
     number: u.number.value,
+    options: brief.options,
   };
 }
 
@@ -199,6 +204,7 @@ export const useFlow = create<FlowState>()(
         const res = await api.generate({
           prompt: c.prompt, garment: c.garment, sport: c.sport, team_name: c.team_name, player_name: c.player_name,
           number: c.number, locked_colors: c.locked_colors, variants: 4, language,
+          ...(pickedOptions(c.garment, c.options) ? { options: pickedOptions(c.garment, c.options) } : {}),
         });
         const { designs, ...meta } = res;
         set({ generation: meta, designs: more ? [...get().designs, ...designs] : designs });

@@ -1,4 +1,5 @@
-import type { CartItem, CartQuote, Garment, OrderItem, SellerRef } from '../../api/types';
+import type { CartItem, CartQuote, Fit, Garment, OrderItem, SellerRef } from '../../api/types';
+import { fitOf, withFit } from '../../lib/sizing';
 
 // The cart as the app keeps it: server-shaped items plus what the app needs to
 // show them (a title and a picture). The server merges the same way on sign-in:
@@ -15,6 +16,8 @@ export interface CartLine {
   image?: string;
   slug?: string;
   garment?: Garment;
+  /** Products: the colourway's name for the cart ("Original", "Midnight"). */
+  colourwayName?: string;
 }
 
 /** Stable text for an item, ignoring key order and empty optional fields, as the server compares them. */
@@ -32,7 +35,8 @@ export function itemSignature(item: CartItem): string {
     return v;
   };
   const { logos, ...rest } = item;
-  return JSON.stringify(clean({ ...rest, logos: logos || undefined }));
+  // Lines saved before fits existed are men's, as the server reads them.
+  return JSON.stringify(clean({ ...rest, lines: withFit(item.lines ?? []), logos: logos || undefined }));
 }
 
 export function sameItem(a: CartItem, b: CartItem): boolean {
@@ -47,13 +51,12 @@ export function cartPieces(lines: CartLine[]): number {
   return lines.reduce((n, l) => n + linePieces(l.item), 0);
 }
 
-/** A plain product in one size: adding it again only raises the quantity. */
+/** A plain product in one fit and size, with the same choices: adding it again only raises the quantity. */
 function mergeableQty(a: CartItem, b: CartItem): boolean {
   if (!a.product_id || a.product_id !== b.product_id) return false;
   if (a.lines.length !== 1 || b.lines.length !== 1) return false;
-  const [x, y] = [a.lines[0], b.lines[0]];
-  const sameLine = x.size === y.size && x.player_name === y.player_name && x.number === y.number;
-  return sameLine && a.fabric === b.fabric && (a.seller_id || '') === (b.seller_id || '');
+  const oneOf = (i: CartItem) => ({ ...i, lines: [{ ...i.lines[0], quantity: 1 }] });
+  return itemSignature(oneOf(a)) === itemSignature(oneOf(b));
 }
 
 export type AddResult = { lines: CartLine[]; outcome: 'added' | 'merged' | 'full'; key: string | null };
@@ -91,8 +94,9 @@ export function mergeLines(saved: CartLine[], device: CartLine[]): CartLine[] {
   return out;
 }
 
+/** Items as the server takes them: every line carries its fit (old lines are men's). */
 export function toServerItems(lines: CartLine[]): CartItem[] {
-  return lines.map((l) => l.item);
+  return lines.map((l) => ({ ...l.item, lines: withFit(l.item.lines) }));
 }
 
 /**
@@ -112,6 +116,7 @@ export function fromServerItems(items: CartItem[], known: CartLine[], newKey: ()
       image: prev?.image,
       slug: prev?.slug,
       garment: prev?.garment ?? item.garment ?? item.spec?.garment,
+      colourwayName: prev?.colourwayName,
     };
   });
 }
@@ -138,11 +143,15 @@ export function groupBySeller(quote: CartQuote): SellerGroup[] {
   return groups;
 }
 
-/** "Priya 10 · S × 1, Arul 7 · XL × 2" for a roster, "M × 2" for a plain piece. */
-export function linesSummary(lines: OrderItem[], max = 3): string {
+/**
+ * "Priya 10 · S × 1, Arul 7 · XL × 2" for a roster, "M × 2" for a plain piece. With a fit
+ * labeller each size says its fit: "Kids 8Y × 2" (the labeller may return "" for a fit).
+ */
+export function linesSummary(lines: OrderItem[], max = 3, fitLabel?: (fit: Fit) => string): string {
   const parts = lines.slice(0, max).map((l) => {
     const who = [l.player_name, l.number].filter(Boolean).join(' ');
-    return `${who ? `${who} · ` : ''}${l.size} × ${l.quantity}`;
+    const fit = fitLabel?.(fitOf(l)) ?? '';
+    return `${who ? `${who} · ` : ''}${fit ? `${fit} ` : ''}${l.size} × ${l.quantity}`;
   });
   return lines.length > max ? `${parts.join(', ')} …` : parts.join(', ');
 }

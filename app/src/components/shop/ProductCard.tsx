@@ -35,6 +35,13 @@ export function ProductCard({ p, index, width }: { p: Product; index: number; wi
         </View>
         <T variant="label" numberOfLines={2} style={{ marginTop: space(2) }}>{p.title}</T>
         <T variant="caption" numberOfLines={1}>{t(`garment_${p.garment}`)} · {tMaybe(t, `sport_${p.sport}`, p.sport)}</T>
+        {(p.colourways?.length ?? 0) > 1 ? (
+          <View style={styles.dots} accessible accessibilityLabel={`${t('colourway')}: ${p.colourways!.map((c) => c.name).join(', ')}`}>
+            {p.colourways!.slice(0, 6).map((c) => (
+              <View key={c.id} style={[styles.dot, { backgroundColor: c.swatch?.[0] ?? c.palette?.primary ?? colors.line }]} />
+            ))}
+          </View>
+        ) : null}
         {p.rating.average !== null ? <T variant="caption" color={colors.warn}>{ratingText(p.rating)}</T> : null}
         <T variant="label" style={{ marginTop: space(1) }}>
           {p.price_from !== null ? t('priceFrom', { price: formatMoney(p.price_from, p.currency) }) : t('unavailable')}
@@ -48,6 +55,8 @@ export function ProductCard({ p, index, width }: { p: Product; index: number; wi
 const styles = StyleSheet.create({
   card: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: space(3), marginBottom: space(3) },
   pic: { backgroundColor: '#eef0f4', borderRadius: radius.md, padding: space(1) },
+  dots: { flexDirection: 'row', gap: 4, marginTop: space(1) },
+  dot: { width: 14, height: 14, borderRadius: 7, borderWidth: 1, borderColor: colors.line },
   heartPos: { position: 'absolute', top: space(1), right: space(1) },
   heart: { minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
 });

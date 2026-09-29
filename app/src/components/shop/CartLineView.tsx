@@ -4,6 +4,8 @@ import type { CartQuoteItem } from '../../api/types';
 import { linePieces, linesSummary, type CartLine } from '../../features/cart/cart';
 import { useT } from '../../i18n';
 import { formatDay, formatMoney } from '../../lib/money';
+import { FIT_KEY } from '../../lib/sizing';
+import { optionsText } from '../GarmentOptionsPicker';
 import { useCart } from '../../state/cart';
 import { Button } from '../../ui/Button';
 import { Card } from '../../ui/Card';
@@ -28,19 +30,30 @@ export function CartLineView({ line, index, quoted, currency, readOnly }: {
   const title = lineTitle(line, quoted, t('customDesign'));
   const garment = item.garment ?? line.garment ?? item.spec?.garment ?? quoted?.garment;
   const single = item.lines.length === 1;
+  const opts = quoted?.options;
+  const chosen = optionsText(t, garment, opts?.sleeves ?? item.sleeves ?? item.spec?.sleeves, opts?.collar ?? item.collar ?? item.spec?.collar);
+  const colourway = item.product_id && (item.colourway || opts?.colourway) && (item.colourway || opts?.colourway) !== 'original'
+    ? line.colourwayName || item.colourway || opts?.colourway : '';
+  // The server's picture already shows the chosen colourway, sleeves and collar.
+  const image = (item.product_id && quoted?.image_url) || line.image;
   return (
     <Card testID={`cart-item-${index}`}>
       <View style={styles.row}>
         <Pressable style={styles.pic} disabled={!line.slug} accessibilityRole={line.slug ? 'link' : undefined}
           onPress={() => line.slug && router.push({ pathname: '/product/[slug]', params: { slug: line.slug } })}>
-          {line.image ? <RemoteSvg path={line.image} label={title} /> : item.spec ? <DesignThumb spec={item.spec} label={title} /> : null}
+          {image ? <RemoteSvg path={image} label={title} /> : item.spec ? <DesignThumb spec={item.spec} label={title} /> : null}
         </Pressable>
         <View style={{ flex: 1, marginLeft: space(3) }}>
           <T variant="label" numberOfLines={2} testID={`cart-item-title-${index}`}>{title}</T>
           <T variant="caption">
             {[garment ? t(`garment_${garment}`) : '', item.product_id ? t('readyMade') : t('yourDesign')].filter(Boolean).join(' · ')}
           </T>
-          <T variant="caption" numberOfLines={2}>{linesSummary(item.lines)}</T>
+          {chosen || colourway ? (
+            <T variant="caption" testID={`cart-item-options-${index}`}>
+              {[chosen, colourway ? `${t('colourway')}: ${colourway}` : ''].filter(Boolean).join(' · ')}
+            </T>
+          ) : null}
+          <T variant="caption" numberOfLines={3} testID={`cart-item-lines-${index}`}>{linesSummary(item.lines, 3, (f) => t(FIT_KEY[f]))}</T>
           <T variant="caption">{t('fabricNamed', { fabric: quoted?.quote.fabric.name ?? item.fabric })}</T>
           {quoted?.seller ? (
             <T variant="caption" color={colors.ink} testID={`cart-item-seller-${index}`}>

@@ -1,19 +1,23 @@
 import type { CartItem, Customer, DesignSpec, OrderItem, OrderRequest, Language, QuoteRequest } from '../../api/types';
 import { checkCustomerName, checkEmail, checkNumber, checkPhone, checkPlayer, checkQuantity, cleanNumber } from '../../lib/validation';
+import { collarOf, fitOf, hasCollar, hasSleeves, sleevesOf } from '../../lib/sizing';
 import type { Commerce, OrderDraft } from '../../state/flow';
 
 export const MAX_LINES = 200;
 export const MAX_PIECES = 5000;
 
-/** Lines exactly as they will be printed: single orders use the design's own name and number. */
+/**
+ * Lines exactly as they will be printed: single orders use the design's own name and number.
+ * Every line carries its fit; lines saved before fits existed are men's.
+ */
 export function buildItems(draft: OrderDraft, spec: DesignSpec): OrderItem[] {
   if (draft.mode === 'single') {
     return [{
       player_name: spec.typography.player_name, number: cleanNumber(spec.typography.number),
-      size: draft.single.size, quantity: draft.single.quantity,
+      fit: fitOf(draft.single), size: draft.single.size, quantity: draft.single.quantity,
     }];
   }
-  return draft.rows.map(({ player_name, number, size, quantity }) => ({ player_name, number: cleanNumber(number), size, quantity }));
+  return draft.rows.map((r) => ({ player_name: r.player_name, number: cleanNumber(r.number), fit: fitOf(r), size: r.size, quantity: r.quantity }));
 }
 
 export type DraftIssue =
@@ -63,7 +67,9 @@ export function quoteRequest(spec: DesignSpec, items: OrderItem[], c: Commerce):
   const pincode = cleanNumber(c.address.pincode);
   return {
     garment: spec.garment, fabric: c.fabric, logos: logoCount(spec), rush: c.rush, coupon: c.coupon.trim(),
-    lines: items.map(({ size, quantity, player_name, number }) => ({ size, quantity: Math.max(1, quantity || 1), player_name, number })),
+    ...(hasSleeves(spec.garment) ? { sleeves: sleevesOf(spec) } : {}),
+    ...(hasCollar(spec.garment) ? { collar: collarOf(spec) } : {}),
+    lines: items.map((l) => ({ fit: fitOf(l), size: l.size, quantity: Math.max(1, l.quantity || 1), player_name: l.player_name, number: l.number })),
     delivery: { method: c.method, pincode: /^\d{6}$/.test(pincode) ? pincode : '', state: c.address.state.trim().toUpperCase() },
   };
 }
@@ -116,6 +122,6 @@ export function customCartItem(spec: DesignSpec, items: OrderItem[], fabric: str
     spec,
     design_id: !fromProduct && designId ? designId : '',
     fabric,
-    lines: items.map(({ player_name, number, size, quantity }) => ({ player_name, number: cleanNumber(number), size, quantity })),
+    lines: items.map((l) => ({ player_name: l.player_name, number: cleanNumber(l.number), fit: fitOf(l), size: l.size, quantity: l.quantity })),
   };
 }

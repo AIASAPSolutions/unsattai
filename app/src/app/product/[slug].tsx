@@ -1,9 +1,10 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import { api } from '../../api/endpoints';
-import type { ProductDetail, Review, Size } from '../../api/types';
-import { Qty, SizePicker } from '../../components/OrderInputs';
+import { api, queryString } from '../../api/endpoints';
+import type { Collar, Colourway, Fit, ProductDetail, Review, Size, Sleeves } from '../../api/types';
+import { GarmentOptionsPicker } from '../../components/GarmentOptionsPicker';
+import { FitSizePicker, Qty } from '../../components/OrderInputs';
 import { DeliveryBox, ratingText } from '../../components/shop/DeliveryBox';
 import { WishButton } from '../../components/shop/ProductCard';
 import { RemoteSvg } from '../../components/shop/RemoteSvg';
@@ -11,6 +12,8 @@ import { chosenOffer } from '../../features/pincode/pincode';
 import { useDeliveryPincode, useServiceability } from '../../features/pincode/useServiceability';
 import { errorMessage, tMaybe, useT } from '../../i18n';
 import { formatDay, formatMoney } from '../../lib/money';
+import { collarOf, hasCollar, hasSleeves, sleevesOf } from '../../lib/sizing';
+import { useCatalogue } from '../../state/shopInfo';
 import { useCart } from '../../state/cart';
 import { useFlow } from '../../state/flow';
 import { Banner } from '../../ui/Banner';
@@ -33,6 +36,11 @@ export default function ProductScreen() {
   const [loadError, setLoadError] = useState<unknown>(null);
   const [fabric, setFabric] = useState('standard');
   const [size, setSize] = useState<Size>('M');
+  const [fit, setFit] = useState<Fit>('men');
+  const [colourway, setColourway] = useState('original');
+  const [sleeves, setSleeves] = useState<Sleeves>('short');
+  const [collar, setCollar] = useState<Collar>('crew');
+  const catalogue = useCatalogue();
   const [qty, setQty] = useState(1);
   const [sellerId, setSellerId] = useState('');
   const [notice, setNotice] = useState<{ tone: 'pass' | 'fail' | 'info'; text: string } | null>(null);
@@ -46,6 +54,8 @@ export default function ProductScreen() {
       const d = await api.product(slug);
       setP(d);
       setFabric(d.fabric);
+      setSleeves(sleevesOf(d.spec));
+      setCollar(collarOf(d.spec));
       setReviews(d.reviews);
       setReviewPages(Math.max(1, Math.ceil(d.review_summary.count / 20)));
       speak(`${d.title}. ${d.description}`);
@@ -75,9 +85,20 @@ export default function ProductScreen() {
   }
 
   const cantDeliver = !!pincode && !!svc.data && !svc.data.serviceable;
+  const colourways: Colourway[] = p.colourways ?? [];
+  const cw = colourways.find((c) => c.id === colourway) ?? null;
+  const choice = {
+    ...(colourway !== 'original' && cw ? { colourway } : {}),
+    ...(hasSleeves(p.garment) ? { sleeves } : {}),
+    ...(hasCollar(p.garment) ? { collar } : {}),
+  };
+  // The server draws the product in the chosen colourway, sleeves and collar.
+  const picture = `${p.image_url}${queryString(choice)}`;
   const line = () => ({
-    item: { product_id: p.id, fabric, lines: [{ player_name: '', number: '', size, quantity: qty }], seller_id: sellerId || undefined },
-    title: p.title, image: p.image_url, slug: p.slug, garment: p.garment,
+    item: {
+      product_id: p.id, fabric, lines: [{ player_name: '', number: '', fit, size, quantity: qty }], seller_id: sellerId || undefined, ...choice,
+    },
+    title: p.title, image: picture, slug: p.slug, garment: p.garment, colourwayName: cw && colourway !== 'original' ? cw.name : undefined,
   });
 
   const add = (then?: 'checkout') => {
@@ -96,7 +117,10 @@ export default function ProductScreen() {
   };
 
   const customise = () => {
-    openProduct({ id: p.id, slug: p.slug, title: p.title, spec: p.spec });
+    // Start the studio from what the customer picked here.
+    const spec = { ...p.spec, ...(cw?.palette ? { palette: { ...p.spec.palette, ...cw.palette } } : {}),
+      ...(hasSleeves(p.garment) ? { sleeves } : {}), ...(hasCollar(p.garment) ? { collar } : {}) };
+    openProduct({ id: p.id, slug: p.slug, title: p.title, spec });
     router.push('/studio');
   };
 
@@ -125,7 +149,7 @@ export default function ProductScreen() {
     }>
       <Stack.Screen options={{ title: p.title }} />
       <View style={styles.pic}>
-        <RemoteSvg path={p.image_url} label={`${p.title}, ${t(`garment_${p.garment}`)}`} />
+        <RemoteSvg path={picture} label={`${p.title}, ${t(`garment_${p.garment}`)}${cw && colourway !== 'original' ? `, ${cw.name}` : ''}`} />
         <View style={styles.heart}><WishButton product={p} testID="product-wish" onError={(text) => setNotice({ tone: 'fail', text })} /></View>
       </View>
       <T variant="title" accessibilityRole="header" testID="product-title">{p.title}</T>
@@ -159,8 +183,32 @@ export default function ProductScreen() {
             ))}
           </View>
         ) : null}
-        <T variant="label" style={{ marginBottom: space(2) }}>{t('size')}</T>
-        <SizePicker testID="product-size" value={size} onChange={setSize} />
+        {colourways.length > 1 ? (
+          <View style={{ marginBottom: space(3) }} testID="colourways">
+            <T variant="label" style={{ marginBottom: space(2) }}>{t('colourway')}: {cw?.name ?? ''}</T>
+            <View style={styles.swatches} accessibilityRole="radiogroup">
+              {colourways.map((c) => {
+                const [a, b] = c.palette ? [c.palette.primary, c.palette.secondary] : c.swatch ?? ['#cccccc', '#999999'];
+                const on = c.id === colourway;
+                return (
+                  <Pressable key={c.id} testID={`colourway-${c.id}`} onPress={() => setColourway(c.id)} accessibilityRole="radio"
+                    accessibilityLabel={c.name} accessibilityState={{ checked: on }} style={[styles.swatch, on && styles.swatchOn]}>
+                    <View style={[styles.half, { backgroundColor: a }]} />
+                    <View style={[styles.half, { backgroundColor: b }]} />
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        ) : null}
+        {hasSleeves(p.garment) ? (
+          <View style={{ marginBottom: space(2) }}>
+            <GarmentOptionsPicker garment={p.garment} sleeves={sleeves} collar={collar} onSleeves={setSleeves} onCollar={setCollar}
+              prices={catalogue?.options} currency={catalogue?.currency ?? p.currency} testID="product-opt" />
+          </View>
+        ) : null}
+        <FitSizePicker testID="product-size" fit={fit} size={size} garment={p.garment} sleeves={sleeves}
+          onChange={(v) => { setFit(v.fit); setSize(v.size); }} />
         <Qty testID="product-qty" value={qty} onChange={setQty} />
         <Button testID="customise" kind="ghost" label={`✎ ${t('customise')}`} onPress={customise} style={{ alignSelf: 'flex-start' }}
           accessibilityHint={t('customiseHint')} />
@@ -210,6 +258,10 @@ const styles = StyleSheet.create({
     padding: space(3), marginBottom: space(2), minHeight: 48,
   },
   optionOn: { borderColor: colors.brand, borderWidth: 2, backgroundColor: colors.brandSoft },
+  swatches: { flexDirection: 'row', flexWrap: 'wrap', gap: space(2) },
+  swatch: { width: 40, height: 40, borderRadius: 20, overflow: 'hidden', flexDirection: 'row', borderWidth: 1, borderColor: colors.line },
+  swatchOn: { borderWidth: 3, borderColor: colors.navy },
+  half: { flex: 1 },
   bar: { flexDirection: 'row', alignItems: 'center', marginBottom: space(1) },
   track: { flex: 1, height: 8, borderRadius: 4, backgroundColor: colors.line, marginHorizontal: space(2), overflow: 'hidden' },
   fill: { height: 8, backgroundColor: '#f5a524' },

@@ -14,7 +14,7 @@ const draft = (over: Partial<OrderDraft> = {}): OrderDraft => ({
 
 describe('building the order', () => {
   it('a single order prints the design name and number', () => {
-    expect(buildItems(draft(), spec)).toEqual([{ player_name: 'ARUL', number: '7', size: 'L', quantity: 2 }]);
+    expect(buildItems(draft(), spec)).toEqual([{ player_name: 'ARUL', number: '7', fit: 'men', size: 'L', quantity: 2 }]);
     expect(validateDraft(draft(), spec)).toEqual([]);
   });
 
@@ -84,8 +84,8 @@ describe('shop options', () => {
     expect(logoCount(withLogo)).toBe(1);
     const q = quoteRequest(withLogo, buildItems(draft(), spec), home);
     expect(q).toEqual({
-      garment: 'jersey', fabric: 'premium', logos: 1, rush: true, coupon: 'welcome10',
-      lines: [{ size: 'L', quantity: 2, player_name: 'ARUL', number: '7' }],
+      garment: 'jersey', fabric: 'premium', logos: 1, rush: true, coupon: 'welcome10', sleeves: 'short', collar: 'crew',
+      lines: [{ fit: 'men', size: 'L', quantity: 2, player_name: 'ARUL', number: '7' }],
       delivery: { method: 'ship', pincode: '600001', state: 'TN' },
     });
   });

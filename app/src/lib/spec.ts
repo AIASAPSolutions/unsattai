@@ -93,19 +93,39 @@ export function placeLogo(
     const fitted = { ...candidate, width: candidate.width * k };
     if (isSafe(spec, fitted) && !spec.elements.some((e) => overlaps(e, fitted))) return fitted;
   }
-  const [x, y] = zoneCenter(spec.garment, preferredPanel ?? 'front');
+  const [x, y] = zoneCenter(spec.garment, preferredPanel ?? 'front', spec.sleeves, spec.collar);
   const centered: LogoElement = { ...base, panel: preferredPanel ?? 'front', x, y };
   return { ...centered, width: centered.width * fitScale(spec, centered) };
 }
 
 export function newTextLayer(spec: DesignSpec, panel: LayerPanel, text: string): TextElement {
-  const [x, y] = zoneCenter(spec.garment, panel);
+  const [x, y] = zoneCenter(spec.garment, panel, spec.sleeves, spec.collar);
   const el: TextElement = {
     id: newId('text'), type: 'text', panel, x, y: y + 120, rotation: 0, text, size: 40,
     font: null, color_role: 'text', color: null, bind: null,
   };
   const k = fitScale(spec, el);
   return { ...el, size: Math.max(8, el.size * k) };
+}
+
+/**
+ * After a change of sleeves or collar the safe print area can be smaller (sleeveless armholes,
+ * a polo placket): layers that no longer fit are shrunk where they are, or centred and shrunk.
+ */
+export function fitLayersToZone(spec: DesignSpec): DesignSpec {
+  let changed = false;
+  const scale = (el: Element, k: number): Element =>
+    el.type === 'logo' ? { ...el, width: el.width * k } : { ...el, size: el.size * k, max_width: el.max_width ? el.max_width * k : el.max_width };
+  const elements = (spec.elements ?? []).map((el) => {
+    if (isSafe(spec, el)) return el;
+    changed = true;
+    const inPlace = scale(el, fitScale(spec, el));
+    if (isSafe(spec, inPlace) && fitScale(spec, el) > 0.5) return inPlace;
+    const [cx] = zoneCenter(spec.garment, el.panel, spec.sleeves, spec.collar);
+    const centred = { ...el, x: cx } as Element;
+    return scale(centred, fitScale(spec, centred));
+  });
+  return changed ? { ...spec, elements } : spec;
 }
 
 export function personalise(spec: DesignSpec, playerName: string, number: string): DesignSpec {

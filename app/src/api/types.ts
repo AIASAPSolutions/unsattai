@@ -26,8 +26,32 @@ export type Font = (typeof FONTS)[number];
 export const COLOR_ROLES = ['primary', 'secondary', 'accent', 'trim', 'text'] as const;
 export type ColorRole = (typeof COLOR_ROLES)[number];
 
+/** Men's sizes before fits existed (the studio's print checks use these). */
 export const SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL'] as const;
-export type Size = (typeof SIZES)[number];
+/** Every size of every fit: Men XS-3XL, Women XS-XXL, Kids 4Y-14Y. */
+export const ALL_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL', '4Y', '6Y', '8Y', '10Y', '12Y', '14Y'] as const;
+export type Size = (typeof ALL_SIZES)[number];
+
+/** Which size chart a line is made to. Lines saved before fits existed are men's. */
+export const FITS = ['men', 'women', 'kids'] as const;
+export type Fit = (typeof FITS)[number];
+export const FIT_SIZES: Record<Fit, readonly Size[]> = {
+  men: ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL'],
+  women: ['XS', 'S', 'M', 'L', 'XL', 'XXL'],
+  kids: ['4Y', '6Y', '8Y', '10Y', '12Y', '14Y'],
+};
+
+/** Garment options for tops. "none" is sleeveless. Collars are for the round-neck jersey only. */
+export const SLEEVES = ['short', 'long', 'none'] as const;
+export type Sleeves = (typeof SLEEVES)[number];
+export const COLLARS = ['crew', 'polo', 'mandarin'] as const;
+export type Collar = (typeof COLLARS)[number];
+
+/** What the customer picked before designing; null = read it from the brief or picture. */
+export interface GarmentOptions {
+  sleeves?: Sleeves | null;
+  collar?: Collar | null;
+}
 
 export const LANGUAGES = ['en', 'hi', 'te', 'ta'] as const;
 export type Language = (typeof LANGUAGES)[number];
@@ -114,6 +138,9 @@ export interface DesignSpec extends Open {
   seed: number;
   rationale: string;
   elements: Element[];
+  /** Tops only; older specs leave them out (short sleeves, crew neck). */
+  sleeves?: Sleeves;
+  collar?: Collar;
 }
 
 export type CheckLevel = 'pass' | 'info' | 'warn' | 'fail';
@@ -147,6 +174,7 @@ export interface GenerateRequest {
   variants: number;
   seed?: number | null;
   language: Language;
+  options?: GarmentOptions;
 }
 
 export interface GenerateResponse {
@@ -203,6 +231,8 @@ export interface Understanding {
   number: SourcedValue;
   questions: Question[];
   ready: boolean;
+  /** Sleeves and collar found in the brief ("sleeveless vest", "polo collar"). */
+  options?: { sleeves: Sleeves | null; collar: Collar | null };
 }
 
 export interface Panel {
@@ -215,6 +245,8 @@ export interface Panel {
   svg: string;
   editable: boolean;
   safe_zone: [number, number][] | null;
+  /** e.g. "Flat front piece as printed. The sleeves are separate pieces, sewn on." */
+  note?: string;
 }
 
 export interface PanelsResponse {
@@ -242,6 +274,7 @@ export interface FromImageRequest {
   player_name: string;
   number: string;
   language: Language;
+  options?: GarmentOptions;
 }
 
 /** What the server could read from the picture. Warnings are codes the app translates. */
@@ -261,6 +294,8 @@ export interface FromImageResponse {
     pattern: string;
     coverage: string;
     base: string;
+    sleeves?: Sleeves | null;
+    collar?: Collar | null;
   };
   warnings: PictureWarning[];
   ai: AiAllowance;
@@ -312,8 +347,19 @@ export interface BackgroundRemoval {
 export interface OrderItem {
   player_name: string;
   number: string;
+  /** Missing on lines saved before fits existed: the server reads it as men. */
+  fit?: Fit;
   size: Size;
   quantity: number;
+}
+
+/** A placed order line: measurements in cm and the flat pieces in mm, for production. */
+export interface OrderLine extends OrderItem {
+  line: number;
+  files: string[];
+  measurements?: Record<string, number>;
+  pieces_mm?: Record<string, [number, number]>;
+  chart_row?: unknown;
 }
 
 export interface Customer {
@@ -371,13 +417,24 @@ export interface Catalogue {
   cod?: { enabled: boolean; fee: number; max_order_value: number | null };
   returns?: { window_days: number; reasons: string[] };
   company: { name: string; email: string; phone: string; support_hours: string };
+  /** Active choices only, price per piece (can be negative). Older servers leave it out. */
+  options?: { sleeves: OptionPrice[]; collar: OptionPrice[]; fit: OptionPrice[] };
+  size_surcharge?: Record<string, number>;
+}
+
+export interface OptionPrice {
+  id: string;
+  name: string;
+  price: number;
 }
 
 export interface QuoteRequest {
   garment: Garment;
   fabric: string;
   logos: number;
-  lines: { size: Size; quantity: number; player_name: string; number: string }[];
+  sleeves?: Sleeves;
+  collar?: Collar;
+  lines: { fit: Fit; size: Size; quantity: number; player_name: string; number: string }[];
   delivery: { method: 'ship' | 'pickup'; pincode: string; state: string };
   rush: boolean;
   coupon: string;
@@ -443,6 +500,7 @@ export interface Shipment {
 export interface OrderFile {
   name: string;
   line: number;
+  fit?: Fit;
   size: Size;
   panel: string;
   player_name: string;
@@ -472,7 +530,11 @@ export interface Order {
   status: OrderStatus;
   design_id: string;
   garment: Garment;
-  lines: (OrderItem & { line: number; files: string[] })[];
+  lines: OrderLine[];
+  /** Sleeves and collar the order is made with (empty for shorts). */
+  options?: { sleeves?: Sleeves; collar?: Collar };
+  /** Production sheets such as measurements.svg. */
+  sheets?: string[];
   items_submitted: number;
   total_pieces: number;
   customer: Customer;
@@ -511,6 +573,7 @@ export interface OrderFailure {
   line: number;
   player_name: string;
   number: string;
+  fit?: Fit;
   size: Size;
   checks: Check[];
 }
@@ -521,6 +584,26 @@ export interface Meta {
   palettes: { name: string; palette: Palette; tags: string[] }[];
   colors: { name: string; hex: string }[];
   languages: { code: Language; name: string; native: string }[];
+  /** Servers with garment options and fits. */
+  options?: { sleeves: Sleeves[]; collars: Collar[]; fits: Fit[] };
+  fit_sizes?: Partial<Record<Fit, Size[]>>;
+}
+
+/** GET /shop/size-guide. Garment measurements laid flat, in cm; body_chest is the wearer's chest all round. */
+export interface SizeGuideRow {
+  size: Size;
+  body_chest: [number, number];
+  height: [number, number] | null;
+  top: { chest: number; length: number; shoulder: number; sleeve_short: number; sleeve_long: number };
+  shorts: { waist: number; hip: number; length: number };
+}
+
+export interface SizeGuide {
+  unit: string;
+  tolerance_cm: number;
+  note: string;
+  how_to_measure: { id: string; name: string; text: string }[];
+  fits: { id: Fit; name: string; sizes: SizeGuideRow[] }[];
 }
 
 export interface Health {
@@ -530,6 +613,8 @@ export interface Health {
   default_provider: string;
   factory_connected: boolean;
   auth_required: boolean;
+  /** False in production: no "Pay (demo)"; online payment is coming soon. */
+  demo_payments?: boolean;
 }
 
 // ------------------------------------------------------------------ marketplace
@@ -606,6 +691,15 @@ export interface Product {
   currency: string;
   image_url: string;
   style_name: string;
+  /** The first is always the original. List items carry swatches, the detail full palettes. */
+  colourways?: Colourway[];
+}
+
+export interface Colourway {
+  id: string;
+  name: string;
+  swatch?: [string, string];
+  palette?: Palette;
 }
 
 export interface Review {
@@ -666,6 +760,10 @@ export interface CartItem {
   logos?: number;
   lines: OrderItem[];
   seller_id?: string;
+  /** Products only: a colourway id and garment options that override the product's own. */
+  colourway?: string;
+  sleeves?: Sleeves | null;
+  collar?: Collar | null;
 }
 
 export interface ServerCart {
@@ -708,6 +806,9 @@ export interface CartQuoteItem {
   coupon_share: number;
   delivery_date: string | null;
   problems: string[];
+  /** Servers with garment options: what the item is made with, and a picture that shows it. */
+  options?: { sleeves?: Sleeves | null; collar?: Collar | null; colourway?: string | null };
+  image_url?: string;
 }
 
 export interface CartQuote {

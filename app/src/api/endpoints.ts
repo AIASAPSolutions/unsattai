@@ -4,7 +4,7 @@ import type {
   OrderReview, OrderSummary, ProductDetail, ProductPage, ProductQuery, Review, ReturnRecord, ServerCart, Serviceability,
   SessionInfo, SignedIn, Wishlist, Address,
   AiAllowance, BackgroundRemoval, Catalogue, Quote, QuoteRequest, Design, FromImageRequest, FromImageResponse, DesignSpec, GenerateRequest, GenerateResponse, Health, Language, LogoSuggestResponse,
-  Meta, Order, OrderItem, OrderRequest, Palette, PanelsResponse, Preview, RefineResponse, Size, UnderstandRequest, Understanding,
+  Meta, Order, OrderItem, OrderRequest, Palette, PanelsResponse, Preview, RefineResponse, Size, SizeGuide, UnderstandRequest, Understanding,
 } from './types';
 
 const LONG = 90_000; // generation with an LLM provider can take a while
@@ -35,10 +35,11 @@ export const api = {
   generate: (body: GenerateRequest) =>
     request<GenerateResponse>('POST', '/api/v1/designs/generate', { body, timeoutMs: LONG }),
 
-  render: (spec: DesignSpec, sizes: Size[] = [], signal?: AbortSignal) =>
+  /** sizes: "M" or "fit:size" such as "kids:8Y" (see sizeKey). */
+  render: (spec: DesignSpec, sizes: string[] = [], signal?: AbortSignal) =>
     request<Preview>('POST', '/api/v1/render', { body: { spec, sizes }, signal }),
 
-  panels: (spec: DesignSpec, includeElements: boolean, sizes: Size[] = [], signal?: AbortSignal) =>
+  panels: (spec: DesignSpec, includeElements: boolean, sizes: string[] = [], signal?: AbortSignal) =>
     request<PanelsResponse>('POST', '/api/v1/render/panels',
       { body: { spec, include_elements: includeElements, sizes }, signal }),
 
@@ -61,6 +62,8 @@ export const api = {
     withRetry(() => request<Order>('POST', '/api/v1/orders', { body, timeoutMs: 60_000 })),
 
   catalogue: () => withRetry(() => request<Catalogue>('GET', '/api/v1/shop/catalogue')),
+
+  sizeGuide: () => withRetry(() => request<SizeGuide>('GET', '/api/v1/shop/size-guide')),
 
   quote: (body: QuoteRequest, signal?: AbortSignal) =>
     request<Quote>('POST', '/api/v1/shop/quote', { body, signal }),

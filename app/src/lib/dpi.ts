@@ -1,7 +1,11 @@
 import type { LogoElement, Size } from '../api/types';
 
-// Same grading factors as the server (server/app/engine/garments.py).
-export const SIZE_SCALE: Record<Size, number> = { XS: 0.88, S: 0.94, M: 1.0, L: 1.06, XL: 1.12, XXL: 1.18 };
+// Same grading factors as the server (server/app/engine/garments.py). 3XL and kids sizes are
+// graded from the size chart on the server; these are close enough for the in-app hint only.
+export const SIZE_SCALE: Record<Size, number> = {
+  XS: 0.88, S: 0.94, M: 1.0, L: 1.06, XL: 1.12, XXL: 1.18, '3XL': 1.24,
+  '4Y': 0.6, '6Y': 0.64, '8Y': 0.68, '10Y': 0.73, '12Y': 0.78, '14Y': 0.84,
+};
 export const TARGET_DPI = 300;
 export const MIN_DPI = 72;
 

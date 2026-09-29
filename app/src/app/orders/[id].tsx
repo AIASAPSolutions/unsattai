@@ -5,13 +5,16 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { api } from '../../api/endpoints';
 import type { Catalogue, Order } from '../../api/types';
 import { ChecksList } from '../../components/ChecksList';
+import { optionsText } from '../../components/GarmentOptionsPicker';
 import { OrderActions } from '../../components/shop/OrderActions';
 import { PriceSummary } from '../../components/PriceSummary';
 import { saveTextFile } from '../../features/share/saveFile';
 import { errorMessage, tMaybe, useT } from '../../i18n';
 import { formatDay, formatMoney } from '../../lib/money';
+import { FIT_KEY, fitOf } from '../../lib/sizing';
 import { useAuth } from '../../state/auth';
 import { useFlow } from '../../state/flow';
+import { useDemoPayments } from '../../state/shopInfo';
 import { Banner } from '../../ui/Banner';
 import { Button } from '../../ui/Button';
 import { Card } from '../../ui/Card';
@@ -42,6 +45,7 @@ export default function OrderStatusScreen() {
   const [error, setError] = useState<string | null>(null);
   const [catalogue, setCatalogue] = useState<Catalogue | null>(null);
   const signedIn = useAuth((s) => s.status === 'signedIn');
+  const demo = useDemoPayments();
 
   useEffect(() => {
     api.catalogue().then(setCatalogue).catch(() => setCatalogue(null));
@@ -85,7 +89,7 @@ export default function OrderStatusScreen() {
       setLastOrder(o);
       speak(t(`status_${o.status}`));
     } catch (e) {
-      const msg = errorMessage(t, e);
+      const msg = demo.markOff(e) ? t('demoPaymentsOffOrder') : errorMessage(t, e);
       setError(msg);
       speak(msg);
       load();
@@ -226,10 +230,22 @@ export default function OrderStatusScreen() {
       ) : null}
 
       <Card title={t('orderLines')}>
+        {optionsText(t, order.garment, order.options?.sleeves ?? order.spec?.sleeves, order.options?.collar ?? order.spec?.collar) ? (
+          <T variant="label" testID="order-options" style={{ marginBottom: space(2) }}>
+            {t(`garment_${order.garment}`)} · {optionsText(t, order.garment, order.options?.sleeves ?? order.spec?.sleeves, order.options?.collar ?? order.spec?.collar)}
+          </T>
+        ) : null}
         {order.lines.map((l) => (
-          <View key={l.line} style={styles.line}>
-            <T variant="body" style={{ flex: 1 }}>{t('line', { n: l.line })}: {[l.player_name, l.number].filter(Boolean).join(' · ') || '—'}</T>
-            <T variant="label">{l.size} × {l.quantity}</T>
+          <View key={l.line} style={styles.lineBlock} testID={`order-line-${l.line}`}>
+            <View style={styles.lineRow}>
+              <T variant="body" style={{ flex: 1 }}>{t('line', { n: l.line })}: {[l.player_name, l.number].filter(Boolean).join(' · ') || '—'}</T>
+              <T variant="label">{t(FIT_KEY[fitOf(l)])} · {l.size} × {l.quantity}</T>
+            </View>
+            {l.measurements && Object.keys(l.measurements).length ? (
+              <T variant="caption" testID={`order-line-measure-${l.line}`}>
+                {t('measurementsCm')}: {Object.entries(l.measurements).map(([k, v]) => `${measureName(t, k)} ${v}`).join(' · ')}
+              </T>
+            ) : null}
           </View>
         ))}
         <T variant="label" style={{ marginTop: space(2) }}>{t('totalPieces', { n: order.total_pieces })}</T>
@@ -248,8 +264,12 @@ export default function OrderStatusScreen() {
         </Card>
       ) : !paid ? (
         <Card title={t('payment')}>
-          <T variant="caption" style={{ marginBottom: space(3) }}>{t('demoPayNote')}</T>
-          <Button testID="demo-pay" label={t('demoPay')} onPress={pay} busy={busy === 'pay'} disabled={busy !== null || !order.manufacturing_ready} />
+          {demo.enabled ? (
+            <>
+              <T variant="caption" style={{ marginBottom: space(3) }}>{t('demoPayNote')}</T>
+              <Button testID="demo-pay" label={t('demoPay')} onPress={pay} busy={busy === 'pay'} disabled={busy !== null || !order.manufacturing_ready} />
+            </>
+          ) : <Banner tone="info" text={t('demoPaymentsOffOrder')} testID="demo-pay-off" />}
           {CHECKOUT_URL ? (
             <Button kind="secondary" label={t('checkout')} style={{ marginTop: space(2) }}
               onPress={() => Linking.openURL(`${CHECKOUT_URL}${CHECKOUT_URL.includes('?') ? '&' : '?'}order_id=${encodeURIComponent(order.id)}`)} />
@@ -280,9 +300,18 @@ export default function OrderStatusScreen() {
           <View key={f.name} style={styles.line}>
             <View style={{ flex: 1 }}>
               <T variant="label" numberOfLines={1}>{f.name}</T>
-              <T variant="caption">{t('line', { n: f.line })} · {f.size} · {f.panel}{f.player_name ? ` · ${f.player_name}` : ''}{f.number ? ` ${f.number}` : ''}</T>
+              <T variant="caption">{t('line', { n: f.line })} · {f.fit ? `${t(FIT_KEY[fitOf(f)])} ` : ''}{f.size} · {f.panel}{f.player_name ? ` · ${f.player_name}` : ''}{f.number ? ` ${f.number}` : ''}</T>
             </View>
             <Button compact kind="secondary" label={t('download')} busy={busy === f.name} disabled={busy !== null} onPress={() => download(f.name)} />
+          </View>
+        ))}
+        {(order.sheets ?? []).map((name) => (
+          <View key={name} style={styles.line} testID={`sheet-${name}`}>
+            <View style={{ flex: 1 }}>
+              <T variant="label" numberOfLines={1}>{name}</T>
+              <T variant="caption">{name.startsWith('measurements') ? t('measurementSheet') : ''}</T>
+            </View>
+            <Button compact kind="secondary" label={t('download')} busy={busy === name} disabled={busy !== null} onPress={() => download(name)} />
           </View>
         ))}
       </Card>
@@ -304,7 +333,17 @@ export default function OrderStatusScreen() {
   );
 }
 
+const MEASURE_KEYS = {
+  chest: 'guide_chest', length: 'guide_length', shoulder: 'guide_shoulder', sleeve: 'guide_sleeve', waist: 'guide_waist', hip: 'guide_hip',
+} as const;
+
+function measureName(t: ReturnType<typeof useT>, key: string): string {
+  return key in MEASURE_KEYS ? t(MEASURE_KEYS[key as keyof typeof MEASURE_KEYS]) : key;
+}
+
 const styles = StyleSheet.create({
+  lineBlock: { paddingVertical: space(2), borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.line },
+  lineRow: { flexDirection: 'row', alignItems: 'center' },
   badge: { alignSelf: 'flex-start', borderWidth: 2, borderRadius: radius.pill, paddingHorizontal: space(3), paddingVertical: space(1), marginVertical: space(3) },
   line: { flexDirection: 'row', alignItems: 'center', paddingVertical: space(2), borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.line },
   stages: { marginTop: space(3) },

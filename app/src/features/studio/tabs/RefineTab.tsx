@@ -5,6 +5,7 @@ import { api } from '../../../api/endpoints';
 import type { AiAllowance, RefineChange } from '../../../api/types';
 import { VoiceInput } from '../../../components/VoiceInput';
 import { errorMessage, useT } from '../../../i18n';
+import { fitLayersToZone } from '../../../lib/spec';
 import { usePrefs } from '../../../state/prefs';
 import { Banner } from '../../../ui/Banner';
 import { Button } from '../../../ui/Button';
@@ -46,7 +47,9 @@ export function RefineTab({ edit }: StudioTools) {
       const res = await api.refine(spec, instruction, lang);
       if (res.ai) setAi(res.ai);
       if (res.changes.length) {
-        edit(res.spec);
+        // "remove the sleeves" / "polo collar" can shrink the safe print area: keep the layers inside it.
+        const optionsChanged = res.spec.sleeves !== spec.sleeves || res.spec.collar !== spec.collar;
+        edit(optionsChanged ? fitLayersToZone(res.spec) : res.spec);
         const summary = res.source === 'ai' && res.message ? res.message : res.changes.map((c) => c.message).join('; ');
         const msg = `${res.source === 'ai' ? `✨ ${t('refineByAi')} · ` : ''}${t('refineDone', { summary })}`;
         setResult({ tone: 'pass', text: msg, changes: res.changes });

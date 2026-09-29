@@ -18,6 +18,8 @@ import { useAuth } from '../state/auth';
 import { useCart } from '../state/cart';
 import { useLocation } from '../state/location';
 import { usePrefs } from '../state/prefs';
+import { useDemoPayments } from '../state/shopInfo';
+import { FIT_KEY } from '../lib/sizing';
 import { Banner } from '../ui/Banner';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
@@ -51,6 +53,7 @@ export default function CheckoutScreen() {
   const devicePin = useLocation((s) => s.pincode);
   const setDevicePin = useLocation((s) => s.setPincode);
   const { speak } = useVoiceGuide();
+  const demo = useDemoPayments();
 
   const lines = useMemo(() => (only ? allLines.filter((l) => l.key === only) : allLines), [allLines, only]);
   const saved = me?.addresses ?? [];
@@ -118,6 +121,13 @@ export default function CheckoutScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quoteKey]);
 
+  // Online payment is not live on this server: cash on delivery is the way to pay.
+  const codAllowed = catalogue?.cod?.enabled !== false && (!quote || quote.cod_available);
+  useEffect(() => {
+    if (!demo.enabled && payment === 'online' && codAllowed) setOptions({ payment: 'cod' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [demo.enabled, payment, codAllowed]);
+
   if (done) return <Screen testID="screen-checkout"><Loading label={t('placingOrder')} /></Screen>;
   if (!lines.length) {
     return (
@@ -164,10 +174,14 @@ export default function CheckoutScreen() {
       if (method === 'ship' && address.pincode !== devicePin) setDevicePin(address.pincode);
       // Placed: the next checkout needs a new key, even for the same items.
       useCart.setState({ checkoutKey: null, checkoutKeyFor: null, coupon: '' });
-      if (ck.payment_method === 'online' && ck.status !== 'paid') {
+      if (ck.payment_method === 'online' && ck.status !== 'paid' && demo.enabled) {
         setBusy('pay');
         // A failed payment is not lost: the confirmation screen offers "Pay now" again.
-        ck = await api.payCheckout(ck.id).catch(() => ck);
+        const placedCk = ck;
+        ck = await api.payCheckout(ck.id).catch((e) => {
+          demo.markOff(e);
+          return placedCk;
+        });
       }
       setDone(true);
       removeMany(lines.map((l) => l.key));
@@ -316,7 +330,7 @@ export default function CheckoutScreen() {
 
       <Card title={t('stepPayment')}>
         <PayOption testID="pay-online" value="online" current={payment} onPick={(p) => setOptions({ payment: p })}
-          title={t('payOnline')} note={t('payOnlineNote')} />
+          disabled={!demo.enabled} title={t('payOnline')} note={demo.enabled ? t('payOnlineNote') : t('demoPaymentsOff')} />
         {codOn ? (
           <PayOption testID="pay-cod" value="cod" current={payment} onPick={(p) => setOptions({ payment: p })} disabled={!!quote && !quote.cod_available}
             title={t('payCod')} note={quote && !quote.cod_available ? t('codUnavailableHere') : codFee ? t('codFeeNote', { fee: formatMoney(codFee, quote?.currency ?? 'INR') }) : t('codNote')} />
@@ -337,7 +351,7 @@ export default function CheckoutScreen() {
               <T variant="body">{p.message}</T>
               {(p.failures ?? []).map((f) => (
                 <View key={`${f.line}-${f.size}`} style={{ marginTop: space(2) }}>
-                  <T variant="caption">{t('line', { n: f.line })}: {[f.player_name, f.number, f.size].filter(Boolean).join(' · ')}</T>
+                  <T variant="caption">{t('line', { n: f.line })}: {[f.player_name, f.number, f.fit && f.fit !== 'men' ? `${t(FIT_KEY[f.fit])} ${f.size}` : f.size].filter(Boolean).join(' · ')}</T>
                   <ChecksList checks={f.checks} compact />
                 </View>
               ))}

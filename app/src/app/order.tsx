@@ -5,9 +5,10 @@ import { router } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { api } from '../api/endpoints';
-import { TEXT_LIMITS, type CartQuote, type Catalogue, type Check } from '../api/types';
+import { TEXT_LIMITS, type CartQuote, type Catalogue, type Check, type Garment, type Sleeves } from '../api/types';
+import { optionsText } from '../components/GarmentOptionsPicker';
 import { ChecksList } from '../components/ChecksList';
-import { Qty, SizePicker } from '../components/OrderInputs';
+import { FitSizePicker, Qty } from '../components/OrderInputs';
 import { DeliverToBar } from '../components/shop/DeliverTo';
 import { buildItems, customCartItem, itemIssues, type DraftIssue } from '../features/order/buildOrder';
 import { useDeliveryPincode } from '../features/pincode/useServiceability';
@@ -16,6 +17,7 @@ import { newId } from '../lib/ids';
 import { formatDay, formatMoney } from '../lib/money';
 import { readAsBase64 } from '../lib/readFile';
 import { parseRoster, totalPieces, type RosterError } from '../lib/roster';
+import { checkSize, fitOf, sleevesOf } from '../lib/sizing';
 import { cleanNumber } from '../lib/validation';
 import { useCart } from '../state/cart';
 import { currentSpec, useFlow, type Commerce, type RosterRow } from '../state/flow';
@@ -30,8 +32,9 @@ import { T } from '../ui/Text';
 import { colors, radius, space } from '../ui/theme';
 import { useVoiceGuide } from '../voice/useVoiceGuide';
 
-function RowEditor({ row, index, issues, onChange, onRemove }: {
+function RowEditor({ row, index, issues, onChange, onRemove, garment, sleeves }: {
   row: RosterRow; index: number; issues: DraftIssue[]; onChange: (r: RosterRow) => void; onRemove: () => void;
+  garment: Garment; sleeves: Sleeves;
 }) {
   const t = useT();
   const has = (field: string) => issues.some((i) => i.kind === 'row' && i.index === index && i.field === field);
@@ -51,7 +54,8 @@ function RowEditor({ row, index, issues, onChange, onRemove }: {
             error={has('number') ? t('digitsOnly') : null} onChangeText={(v) => onChange({ ...row, number: cleanNumber(v) })} />
         </View>
       </View>
-      <SizePicker value={row.size} onChange={(size) => onChange({ ...row, size })} testID={`row-size-${index}`} />
+      <FitSizePicker fit={fitOf(row)} size={row.size} garment={garment} sleeves={sleeves} testID={`row-size-${index}`}
+        onChange={(v) => onChange({ ...row, ...v })} />
       <Qty value={row.quantity} onChange={(quantity) => onChange({ ...row, quantity })} testID={`row-qty-${index}`} />
     </View>
   );
@@ -88,7 +92,8 @@ export default function OrderScreen() {
   }, []);
 
   const items = useMemo(() => (spec ? buildItems(draft, spec) : []), [draft, spec]);
-  const orderSizes = useMemo(() => [...new Set(items.map((i) => i.size))], [items]);
+  // "M" or "kids:8Y": the print checks grade each fit to its own chart.
+  const orderSizes = useMemo(() => [...new Set(items.map(checkSize))], [items]);
   const sizeKey = orderSizes.join(',');
 
   // Re-check the design for the sizes actually ordered (logo DPI depends on size).
@@ -114,7 +119,7 @@ export default function OrderScreen() {
     [spec, items, commerce.fabric, designId, product]);
 
   // Live price and date for this item, delivered to the Deliver-to PIN code by the best seller.
-  const quoteKey = cartItem && !issues.length ? JSON.stringify([cartItem.lines, cartItem.fabric, pincode, payment, spec?.elements.length]) : '';
+  const quoteKey = cartItem && !issues.length ? JSON.stringify([cartItem.lines, cartItem.fabric, pincode, payment, spec?.elements.length, spec?.sleeves, spec?.collar]) : '';
   useEffect(() => {
     if (!cartItem || !quoteKey) return;
     const controller = new AbortController();
@@ -146,7 +151,8 @@ export default function OrderScreen() {
   const fabrics = catalogue ? catalogue.fabrics.filter((f) => f.garments.includes(spec.garment)) : [];
   const setRows = (rows: RosterRow[]) => setOrder({ rows });
   const addParsed = (text: string) => {
-    const res = parseRoster(text, draft.rows[draft.rows.length - 1]?.size ?? 'M');
+    const last = draft.rows[draft.rows.length - 1];
+    const res = parseRoster(text, last?.size ?? 'M', last ? fitOf(last) : 'men');
     setRows([...draft.rows, ...res.rows.map((r) => ({ ...r, key: newId('row') }))]);
     setRosterNote({ added: res.rows.length, errors: res.errors });
   };
@@ -223,6 +229,13 @@ export default function OrderScreen() {
         </Banner>
       ) : null}
 
+      {optionsText(t, spec.garment, spec.sleeves, spec.collar) ? (
+        <Card title={t('garmentOptions')} testID="order-options">
+          <T variant="label" testID="order-options-text">{optionsText(t, spec.garment, spec.sleeves, spec.collar)}</T>
+          <T variant="caption">{t('optionsChangeInStudio')}</T>
+        </Card>
+      ) : null}
+
       <Segmented testID="order-mode" value={draft.mode} onChange={(mode) => setOrder({ mode })}
         options={[{ value: 'single', label: t('single') }, { value: 'team', label: t('team') }]} />
 
@@ -231,13 +244,14 @@ export default function OrderScreen() {
           <T variant="caption" style={{ marginBottom: space(3) }}>
             {[spec.typography.player_name, spec.typography.number].filter(Boolean).join(' · ') || spec.style_name}
           </T>
-          <T variant="label" style={{ marginBottom: space(2) }}>{t('size')}</T>
-          <SizePicker testID="single-size" value={draft.single.size} onChange={(size) => setOrder({ single: { ...draft.single, size } })} />
+          <FitSizePicker testID="single-size" fit={fitOf(draft.single)} size={draft.single.size} garment={spec.garment} sleeves={sleevesOf(spec)}
+            onChange={(v) => setOrder({ single: { ...draft.single, ...v } })} />
           <Qty testID="single-qty" value={draft.single.quantity} onChange={(quantity) => setOrder({ single: { ...draft.single, quantity } })} />
         </Card>
       ) : (
         <Card title={t('roster')} style={{ marginTop: space(4) }}>
-          <T variant="caption" style={{ marginBottom: space(3) }}>{t('rosterHelp')}</T>
+          <T variant="caption" style={{ marginBottom: space(1) }}>{t('rosterHelp')}</T>
+          <T variant="caption" style={{ marginBottom: space(3) }}>{t('rosterFitHint')}</T>
           <View style={styles.wrap}>
             <Button testID="paste-roster" compact kind="secondary" label={t('pasteRoster')} onPress={paste} style={{ marginRight: space(2), marginBottom: space(2) }} />
             <Button testID="import-roster" compact kind="secondary" label={t('importRoster')} onPress={importFile} style={{ marginBottom: space(2) }} />
@@ -251,12 +265,13 @@ export default function OrderScreen() {
             </Banner>
           ) : null}
           {draft.rows.map((r, i) => (
-            <RowEditor key={r.key} row={r} index={i} issues={touched ? issues : []}
+            <RowEditor key={r.key} row={r} index={i} issues={touched ? issues : []} garment={spec.garment} sleeves={sleevesOf(spec)}
               onChange={(next) => setRows(draft.rows.map((x) => (x.key === r.key ? next : x)))}
               onRemove={() => setRows(draft.rows.filter((x) => x.key !== r.key))} />
           ))}
           <Button testID="add-row" kind="secondary" label={`+ ${t('addRow')}`} onPress={() => setRows([...draft.rows, {
-            key: newId('row'), player_name: '', number: '', size: draft.rows[draft.rows.length - 1]?.size ?? 'M', quantity: 1,
+            key: newId('row'), player_name: '', number: '', quantity: 1,
+            fit: draft.rows.length ? fitOf(draft.rows[draft.rows.length - 1]) : 'men', size: draft.rows[draft.rows.length - 1]?.size ?? 'M',
           }])} />
           {touched && listIssue ? (
             <T variant="caption" color={colors.fail} style={{ marginTop: space(2) }}>

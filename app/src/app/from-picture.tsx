@@ -4,7 +4,10 @@ import { useMemo, useState } from 'react';
 import { Image, Share, StyleSheet, View } from 'react-native';
 import { api } from '../api/endpoints';
 import { DesignCard } from '../components/DesignCard';
-import type { FromImageResponse, PictureWarning } from '../api/types';
+import type { FromImageResponse, GarmentOptions, PictureWarning } from '../api/types';
+import { GarmentOptionsPicker } from '../components/GarmentOptionsPicker';
+import { COLLAR_KEY, SLEEVES_KEY, collarOf, hasCollar, hasSleeves, pickedOptions, sleevesOf } from '../lib/sizing';
+import { useCatalogue } from '../state/shopInfo';
 import { buildOutsidePrompt } from '../features/picture/outsidePrompt';
 import { preparePicture } from '../features/picture/preparePicture';
 import { errorMessage, tMaybe, useT } from '../i18n';
@@ -40,6 +43,9 @@ export default function FromPictureScreen() {
   const [busy, setBusy] = useState<'pick' | 'recognise' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<FromImageResponse | null>(null);
+  // Only what the customer picks is sent; otherwise the server follows the picture.
+  const [options, setOptions] = useState<GarmentOptions>({});
+  const catalogue = useCatalogue();
 
   const prompt = useMemo(() => buildOutsidePrompt({
     garment: brief.garment, idea: brief.prompt, sport: confirmed?.sport ?? null, colors: brief.locked_colors,
@@ -80,6 +86,7 @@ export default function FromPictureScreen() {
       const res = await api.fromImage({
         image: picture.dataUrl, garment: brief.garment, sport: confirmed?.sport ?? null,
         team_name: brief.team_name, player_name: brief.player_name, number: brief.number, language: lang,
+        ...(pickedOptions(brief.garment, options) ? { options: pickedOptions(brief.garment, options) } : {}),
       });
       showDesigns({ ...res, requested_provider: 'image', fallback_reason: null, seed: 0 });
       setResult(res);
@@ -119,6 +126,14 @@ export default function FromPictureScreen() {
           <Image source={{ uri: picture.uri }} accessibilityLabel={t('uploadStep')} testID="picked-picture"
             style={[styles.preview, { aspectRatio: 1 / picture.aspect }]} resizeMode="contain" />
         ) : null}
+        {hasSleeves(brief.garment) ? (
+          <View style={{ marginBottom: space(3) }}>
+            <GarmentOptionsPicker garment={brief.garment} testID="picture-opt" sleeves={options.sleeves ?? null} collar={options.collar ?? null}
+              onSleeves={(v) => setOptions((o) => ({ ...o, sleeves: o.sleeves === v ? null : v }))}
+              onCollar={(v) => setOptions((o) => ({ ...o, collar: o.collar === v ? null : v }))}
+              prices={catalogue?.options} currency={catalogue?.currency} note={t('optionsPictureHint')} />
+          </View>
+        ) : null}
         <View style={styles.row}>
           <Button testID="choose-picture" compact kind={picture ? 'secondary' : 'primary'}
             label={picture ? t('changePicture') : t('choosePicture')} onPress={pick} busy={busy === 'pick'} disabled={busy !== null} />
@@ -145,6 +160,19 @@ export default function FromPictureScreen() {
             <T variant="caption">
               {tMaybe(t, `pattern_${result.recognised.pattern}`, result.recognised.pattern)} · {t('coverageLabel')}: {tMaybe(t, `coverage_${result.recognised.coverage}`, result.recognised.coverage)}
             </T>
+            {hasSleeves(brief.garment) && (result.recognised.sleeves || result.designs[0]) ? (
+              <T variant="caption" testID="recognised-options">
+                {(() => {
+                  const sp = result.designs[0]?.spec;
+                  const sl = sleevesOf({ sleeves: result.recognised.sleeves ?? sp?.sleeves });
+                  const co = collarOf({ collar: result.recognised.collar ?? sp?.collar });
+                  return t('recognisedOptions', {
+                    sleeves: t(SLEEVES_KEY[sl]),
+                    collar: hasCollar(brief.garment) ? t(COLLAR_KEY[co]) : '—',
+                  });
+                })()}
+              </T>
+            ) : null}
             {result.recognised.notes ? <T variant="body" style={{ marginTop: space(2), fontSize: 14 }}>{result.recognised.notes}</T> : null}
             {result.ai.enabled ? (
               <T variant="caption" style={{ marginTop: space(2) }}>✨ {t('aiLeft', { n: result.ai.remaining, limit: result.ai.limit })}</T>

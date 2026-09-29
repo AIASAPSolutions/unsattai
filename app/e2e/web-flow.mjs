@@ -3,6 +3,8 @@
 // Needs Playwright (npm i -g playwright) and a Chromium it can launch. The API must
 // run with ADMIN_EMAIL / ADMIN_PASSWORD set (defaults below): the run signs in to the
 // ops API to add a second seller, block a PIN code and move an order to delivered.
+// It also makes the studio design sleeveless (checking the panel note), orders a kids line,
+// opens the size guide and checks the order's options, fits and measurements via the ops API.
 import { createRequire } from 'module';
 import { mkdirSync } from 'fs';
 
@@ -147,6 +149,19 @@ try {
     await shot('05-style');
   });
 
+  await step('sleeveless: pattern pieces and panel note', async () => {
+    await id('garment-options').waitFor();
+    await id('studio-opt-sleeves-none').click();
+    // Sleeveless is only a front and a back piece, and the note says the armholes are bound.
+    await page.waitForFunction(() => ![...document.querySelectorAll('[data-testid="panel-sleeve_left"]')].some((e) => e.offsetParent !== null),
+      null, { timeout: 15000 });
+    await waitText('panel-note', /sleeveless|armhole|binding/);
+    await shot('05b-sleeveless');
+    await id('panel-back').click();
+    await waitText('panel-note', /.+/);
+    await id('panel-front').click();
+  });
+
   await step('text layer', async () => {
     await id('tab-text').click();
     await id('free-text').fill('Since 1999');
@@ -213,6 +228,19 @@ try {
     await id('row-name-1').fill('அருள்');
     await id('row-number-1').fill('7');
     await id('row-size-1-XL').click();
+    // A kids line: kids sizes replace the adult ones.
+    await id('row-size-1-fit-kids').click();
+    await id('row-size-1-10Y').click();
+    await waitText('order-options-text', /Sleeveless/);
+    await id('row-size-1-guide').click();
+    await id('size-guide').waitFor();
+    await waitText('size-guide', /Fits chest/);
+    await waitText('size-guide', /Height/);                  // opened on the Kids tab
+    await shot('11a-size-guide-kids');
+    await id('guide-fit-women').click();
+    await id('guide-table-women').waitFor();
+    await id('size-guide-close').click();
+    await id('size-guide').waitFor({ state: 'hidden', timeout: 5000 });
     await id('fabric-premium').click();
     await page.waitForFunction(() => /₹/.test(document.querySelector('[data-testid="price-total"]')?.textContent ?? ''), null, { timeout: 15000 });
     quotedTeamTotal = await textOf('price-total');
@@ -289,6 +317,11 @@ try {
       return el && el.textContent !== b;
     }, before, { timeout: 10000 });
     await id('product-wish').click();
+    // Another colourway and long sleeves: the picture is redrawn by the server.
+    if (await prefixed('colourway-').count() > 1) await prefixed('colourway-').nth(1).click();
+    if (await id('product-opt-sleeves-long').count()) await id('product-opt-sleeves-long').click();
+    await page.waitForTimeout(800);
+    await shot('15a-product-options');
     await id('product-size-L').click();
     await id('add-to-cart').click();
     await id('product-notice').waitFor();
@@ -311,6 +344,10 @@ try {
     await id('screen-cart').waitFor();
     await id('cart-item-1').waitFor({ timeout: 10000 });
     if (await prefixed('cart-item-title-').count() !== 2) throw new Error('expected two cart items');
+    const summaries = (await prefixed('cart-item-lines-').allInnerTexts()).join(' | ');
+    if (!/Kids 10Y × 1/.test(summaries) || !/Women|Men \/ unisex/.test(summaries)) throw new Error(`fits missing in cart: ${summaries}`);
+    const opts = (await prefixed('cart-item-options-').allInnerTexts()).join(' | ');
+    if (!/Sleeveless/.test(opts)) throw new Error(`options missing in cart: ${opts}`);
     await waitText('cart-total', /₹/);
     await waitText('cart-eta', /\d/);
     await shot('17-cart');
@@ -346,6 +383,13 @@ try {
     await id('screen-confirmation').waitFor({ timeout: 30000 });
     placed.cod = await confirmedOrders();
     if (placed.cod.length !== 2) throw new Error(`expected 2 orders, got ${placed.cod.length}`);
+    // The custom team order is made sleeveless, with a kids line graded to the kids chart.
+    const made = await Promise.all(placed.cod.map(async (o) => (await ops('GET', `/ops/orders/${o}`)).order));
+    const team = made.find((o) => o.lines.length === 2);
+    if (!team || team.options?.sleeves !== 'none') throw new Error(`team order options: ${JSON.stringify(team?.options)}`);
+    const kid = team.lines.find((l) => l.fit === 'kids');
+    if (!kid || kid.size !== '10Y' || !kid.measurements?.chest) throw new Error(`kids line: ${JSON.stringify(kid)}`);
+    if (!(team.sheets ?? []).includes('measurements.svg')) throw new Error('no measurement sheet');
     await shot('19-confirmation-cod');
     await id('continue-shopping').click();
     await id('screen-shop').waitFor({ timeout: 10000 });

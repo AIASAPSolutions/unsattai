@@ -11,6 +11,7 @@ import { Stars } from '../ui/Stars';
 import { T } from '../ui/Text';
 import { colors, radius, space } from '../ui/theme';
 import { summarize } from './ChecksList';
+import { optionsText } from './GarmentOptionsPicker';
 import { SvgImage } from './SvgImage';
 
 /** One design with its mock-up, check status, palette, rating and "open in editor". */
@@ -38,6 +39,9 @@ export function DesignCard({ d, index }: { d: Design; index: number }) {
       <T variant="caption">
         {tMaybe(t, `pattern_${p.type}`, p.type)} · {t('coverageLabel')}: {tMaybe(t, `coverage_${p.coverage}`, p.coverage)} · {tMaybe(t, `sport_${d.spec.sport}`, d.spec.sport)}
       </T>
+      {optionsText(t, d.spec.garment, d.spec.sleeves, d.spec.collar) ? (
+        <T variant="caption" testID={`design-options-${index}`}>{optionsText(t, d.spec.garment, d.spec.sleeves, d.spec.collar)}</T>
+      ) : null}
       {counts.warn ? <T variant="caption" color={colors.warn}>! {t('warnings', { n: counts.warn })}</T> : null}
       <View style={styles.palette}>
         {(['primary', 'secondary', 'accent', 'trim', 'text'] as const).map((r) => (

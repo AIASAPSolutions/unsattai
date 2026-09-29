@@ -21,7 +21,9 @@ const draft = (over: Partial<CheckoutDraft> = {}): CheckoutDraft => ({
 describe('checkout request', () => {
   it('sends every cart item with a cleaned address, the channel and the language', () => {
     const p = checkoutPayload(lines, draft(), 'ta');
-    expect(p.items).toEqual([lines[0].item, lines[1].item]);
+    // Lines saved without a fit are sent as men's.
+    const men = (i: CartItem) => ({ ...i, lines: i.lines.map((l) => ({ ...l, fit: 'men' })) });
+    expect(p.items).toEqual([men(lines[0].item), men(lines[1].item)]);
     expect(p.customer).toEqual({ name: 'Priya', phone: '9876543210', email: 'priya@example.com' });
     expect(p.delivery).toEqual({
       method: 'ship',

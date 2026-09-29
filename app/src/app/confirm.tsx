@@ -2,8 +2,11 @@ import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { ColorPickerModal } from '../components/ColorPickerModal';
+import { GarmentOptionsPicker } from '../components/GarmentOptionsPicker';
 import { GARMENTS, MAX_LOCKED_COLORS, PROMPT_LIMIT, SPORTS, TEXT_LIMITS, type Question } from '../api/types';
 import { errorMessage, tMaybe, useT, type T as Tr } from '../i18n';
+import { hasSleeves } from '../lib/sizing';
+import { useCatalogue } from '../state/shopInfo';
 import { checkNumber, checkPlayer, checkPrompt, checkTeam, cleanNumber } from '../lib/validation';
 import { canGenerate, unansweredQuestions, useFlow } from '../state/flow';
 import { usePrefs } from '../state/prefs';
@@ -50,6 +53,7 @@ export default function ConfirmScreen() {
   const [error, setError] = useState<string | null>(null);
   const [picker, setPicker] = useState(false);
   const [promptDirty, setPromptDirty] = useState(false);
+  const catalogue = useCatalogue();
 
   const open = unansweredQuestions(understanding, answers);
 
@@ -80,6 +84,7 @@ export default function ConfirmScreen() {
       setBrief({
         prompt: confirmed.prompt, garment: confirmed.garment, team_name: confirmed.team_name,
         player_name: confirmed.player_name, number: confirmed.number, locked_colors: confirmed.locked_colors,
+        options: confirmed.options,
       });
       await understand(lang);
       setPromptDirty(false);
@@ -182,6 +187,20 @@ export default function ConfirmScreen() {
           ))}
         </View>
       </Card>
+
+      {hasSleeves(confirmed.garment) ? (
+        <Card title={t('garmentOptions')} testID="confirm-options">
+          {/* Picked > read from the brief > the default. Only a pick is sent; the server reads the brief itself. */}
+          <GarmentOptionsPicker garment={confirmed.garment} testID="confirm-opt"
+            sleeves={confirmed.options?.sleeves ?? understanding.options?.sleeves ?? 'short'}
+            collar={confirmed.options?.collar ?? understanding.options?.collar ?? 'crew'}
+            onSleeves={(sleeves) => editConfirmed({ options: { ...confirmed.options, sleeves } })}
+            onCollar={(collar) => editConfirmed({ options: { ...confirmed.options, collar } })}
+            prices={catalogue?.options} currency={catalogue?.currency}
+            note={(understanding.options?.sleeves && !confirmed.options?.sleeves) || (understanding.options?.collar && !confirmed.options?.collar)
+              ? t('optionsFromBrief') : t('optionsHint')} />
+        </Card>
+      ) : null}
 
       <Card title={t('colours')}>
         {understanding.colors.length === 0 && locked.length === 0 ? <T variant="caption">{t('noneDetected')}</T> : null}

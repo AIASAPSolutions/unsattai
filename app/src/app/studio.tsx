@@ -16,6 +16,7 @@ import { ShareSheet } from '../features/share/ShareSheet';
 import { errorMessage, tMaybe, useT } from '../i18n';
 import { canRedo, canUndo } from '../lib/history';
 import { isSafe } from '../lib/geometry';
+import { optionsText } from '../components/GarmentOptionsPicker';
 import { materializeLayers, usesLayers } from '../lib/spec';
 import { currentSpec, useFlow } from '../state/flow';
 import { Banner } from '../ui/Banner';
@@ -157,6 +158,7 @@ export default function StudioScreen() {
             <T variant="caption" style={styles.hint}>
               {panel.editable ? (selectedId ? t('safeArea') : t('selectLayerHint')) : t('sleevesFollow')}
             </T>
+            {panel.note ? <T variant="caption" color={colors.info} style={styles.hint} testID="panel-note">{panel.note}</T> : null}
           </View>
         ) : (
           <View style={{ width: stageW, alignSelf: 'center' }}>
@@ -190,7 +192,8 @@ export default function StudioScreen() {
           {tab === 'refine' ? <RefineTab {...tools} /> : null}
           {tab === 'checks' ? <ChecksTab checks={data.checks} ready={data.ready} fresh={fresh} sizes={sizes} onSizes={setSizes} /> : null}
           <T variant="caption" style={{ textAlign: 'center', marginTop: space(2) }}>
-            {spec.style_name} · {t(`garment_${spec.garment}`)} · {tMaybe(t, `sport_${spec.sport}`, spec.sport)}
+            {[spec.style_name, t(`garment_${spec.garment}`), optionsText(t, spec.garment, spec.sleeves, spec.collar),
+              tMaybe(t, `sport_${spec.sport}`, spec.sport)].filter(Boolean).join(' · ')}
           </T>
         </ScrollView>
       </KeyboardAvoidingView>

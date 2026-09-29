@@ -51,6 +51,20 @@ describe('brief to confirmation', () => {
     expect(canGenerate(after)).toBe(true);
   });
 
+  it('sends sleeves and collar with generate only when the customer picked them', async () => {
+    respond(understanding({ options: { sleeves: 'none', collar: null } }));
+    useFlow.getState().setBrief({ prompt: 'sleeveless navy vest' });
+    await useFlow.getState().understand('en');
+    useFlow.getState().editConfirmed({ team_name: 'Royals', sport: 'basketball' });
+    let calls = respond({ generation_id: 'g', provider: 'rule', requested_provider: 'rule', fallback_reason: null, seed: 1, designs: [] });
+    await useFlow.getState().generate('en');
+    expect(calls[0].body).not.toHaveProperty('options');
+    useFlow.getState().editConfirmed({ options: { sleeves: 'long', collar: 'mandarin' } });
+    calls = respond({ generation_id: 'g', provider: 'rule', requested_provider: 'rule', fallback_reason: null, seed: 1, designs: [] });
+    await useFlow.getState().generate('en');
+    expect(calls[0].body).toMatchObject({ options: { sleeves: 'long', collar: 'mandarin' } });
+  });
+
   it('typing a value settles the question about that field', async () => {
     respond(understanding());
     useFlow.getState().setBrief({ prompt: 'navy kit' });

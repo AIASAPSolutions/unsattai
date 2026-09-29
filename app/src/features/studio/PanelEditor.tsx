@@ -5,7 +5,7 @@ import Svg, { Circle, G, Image as SvgImg, Line, Path, Polygon, Rect, Text as Svg
 import { SvgImage } from '../../components/SvgImage';
 import type { DesignSpec, Element, LayerPanel, Panel } from '../../api/types';
 import { contrastRatio } from '../../lib/color';
-import { elementSize, isSafe, safeZone, TEXT_ASCENT, textValue, type Pt } from '../../lib/geometry';
+import { elementSize, isSafe, specZone, TEXT_ASCENT, textValue, type Pt } from '../../lib/geometry';
 import { updateElement } from '../../lib/spec';
 import { colors } from '../../ui/theme';
 import { VectorLogo } from './VectorLogo';
@@ -75,7 +75,10 @@ export function PanelEditor({ spec, panel, selectedId, onSelect, onBegin, onLive
   const pinchStart = useRef<Element | null>(null);
   const rotStart = useRef<Element | null>(null);
 
-  const zone = useMemo(() => (side ? safeZone(spec.garment, side) : null), [spec.garment, side]);
+  // The server's zone for this panel when it sent one (it knows sleeves and collar), else the same rule here.
+  const zone = useMemo(() => (side ? (panel.safe_zone ?? specZone(spec, side)) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [spec.garment, spec.sleeves, spec.collar, side, panel.safe_zone]);
   const layers = side ? spec.elements.filter((e) => e.panel === side) : [];
   const selected = layers.find((e) => e.id === selectedId) ?? null;
   const toMm = (x: number, y: number): Pt => [x / scale, y / scale];

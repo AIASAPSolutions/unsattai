@@ -61,7 +61,7 @@ export function errorMessage(t: T, e: unknown): string {
         if (/code/i.test(m)) return t('errWrongCode');
         if (/password/i.test(m)) return t('errWrongPassword');
         return t('errAuth');
-      case 'forbidden': return t('errBlocked');
+      case 'forbidden': return e.code === 'demo_payments_off' ? t('demoPaymentsOff') : t('errBlocked');
       case 'locked': return t('errLocked');
       case 'validation': {
         const code = e.code;

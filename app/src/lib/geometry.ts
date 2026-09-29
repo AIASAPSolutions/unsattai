@@ -1,4 +1,4 @@
-import type { DesignSpec, Element, Garment, LayerPanel, TextElement } from '../api/types';
+import type { Collar, DesignSpec, Element, Garment, LayerPanel, Sleeves, TextElement } from '../api/types';
 
 // Mirrors server/app/engine/layout.py so the editor can show safe/unsafe while
 // a finger is still dragging. The server's checks remain the authority.
@@ -14,10 +14,23 @@ const NECK_DEPTH: Record<LayerPanel, Record<'jersey' | 'vneck', number>> = {
   back: { jersey: 28, vneck: 28 },
 };
 
-export function safeZone(garment: Garment, panel: LayerPanel): Pt[] {
+const POLO_PLACKET_END = 150; // the polo's button placket runs down the front to here (mm)
+
+/** Same zones as the server: a polo placket pushes the front zone down, sleeveless armholes narrow it. */
+export function safeZone(garment: Garment, panel: LayerPanel, sleeves: Sleeves | null = 'short', collar: Collar | null = 'crew'): Pt[] {
   if (garment === 'shorts') return [[70, 60], [570, 60], [595, 330], [45, 330]];
-  const top = NECK_DEPTH[panel][garment] + 20;
+  let top = NECK_DEPTH[panel][garment] + 20;
+  if (garment === 'jersey' && collar === 'polo' && panel === 'front') top = Math.max(top, POLO_PLACKET_END + 12);
+  if (sleeves === 'none') {
+    top = Math.max(top, 62);
+    return [[165, top], [375, top], [500, 400], [500, 690], [40, 690], [40, 400]];
+  }
   return [[100, top], [440, top], [500, 270], [500, 690], [40, 690], [40, 270]];
+}
+
+/** The safe zone for a layer panel of this spec (its sleeves and collar). */
+export function specZone(spec: Pick<DesignSpec, 'garment' | 'sleeves' | 'collar'>, panel: LayerPanel): Pt[] {
+  return safeZone(spec.garment, panel, spec.sleeves ?? 'short', spec.collar ?? 'crew');
 }
 
 export function panelSize(garment: Garment): { w: number; h: number } {
@@ -64,7 +77,7 @@ export function insideConvex(poly: Pt[], p: Pt): boolean {
 
 export function isSafe(spec: DesignSpec, el: Element): boolean {
   if (el.type === 'text' && !textValue(spec, el)) return true;
-  const zone = safeZone(spec.garment, el.panel);
+  const zone = specZone(spec, el.panel);
   return corners(spec, el).every((c) => insideConvex(zone, c));
 }
 
@@ -83,8 +96,8 @@ export function fitScale(spec: DesignSpec, el: Element): number {
   return lo;
 }
 
-export function zoneCenter(garment: Garment, panel: LayerPanel): Pt {
-  const z = safeZone(garment, panel);
+export function zoneCenter(garment: Garment, panel: LayerPanel, sleeves: Sleeves | null = 'short', collar: Collar | null = 'crew'): Pt {
+  const z = safeZone(garment, panel, sleeves, collar);
   const xs = z.map((p) => p[0]);
   const ys = z.map((p) => p[1]);
   return [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2];
