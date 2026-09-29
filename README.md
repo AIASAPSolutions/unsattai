@@ -13,6 +13,10 @@ This repository has four parts that share one API:
 
 How prices, planning, order states and roles work is explained in [docs/platform.md](docs/platform.md). The full API is in `docs/openapi.json`.
 
+**Marketplace.** The customer apps work like an online marketplace: delivery is checked by PIN code against the partner sellers who can serve it, customers sign in with mobile or email (code or password), and they get search, product pages, wishlist, a cart across sellers, cash on delivery, offers, cancel, returns, reviews and notifications. The plan is in [docs/marketplace.md](docs/marketplace.md) and the API in [docs/marketplace-api.md](docs/marketplace-api.md).
+
+**Hosting.** `deploy/` runs all of it on one small server with Docker and automatic HTTPS (free on Oracle Cloud's Always Free tier). Installation, database upgrades, backups and restores are in [docs/deploy.md](docs/deploy.md).
+
 ```
  mobile app ──┐
               ├──> API (server/) <── operations app (staff sign-in)

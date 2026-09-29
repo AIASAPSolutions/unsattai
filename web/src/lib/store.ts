@@ -21,6 +21,16 @@ export function createStore<S extends object>(initial: S, persist?: { key: strin
   const emit = () => listeners.forEach((l) => l());
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
+  const pendingKey = persist ? `uj.pending.${persist.key}` : '';
+  const save = () => {
+    if (!persist) return;
+    const value = persist.pick(state);
+    void kvSet(persist.key, value).then(() => {
+      // The saved copy is now at least as new as one left behind by flush().
+      if (!saveTimer) lsRemove(pendingKey);
+    });
+  };
+
   const store: Store<S> = {
     get: () => state,
     set: (patch) => {
@@ -29,7 +39,10 @@ export function createStore<S extends object>(initial: S, persist?: { key: strin
       emit();
       if (persist && isHydrated) {
         if (saveTimer) clearTimeout(saveTimer);
-        saveTimer = setTimeout(() => void kvSet(persist.key, persist.pick(state)), 300);
+        saveTimer = setTimeout(() => {
+          saveTimer = null;
+          save();
+        }, 300);
       }
     },
     subscribe: (fn) => {
@@ -40,9 +53,30 @@ export function createStore<S extends object>(initial: S, persist?: { key: strin
   };
 
   if (persist && typeof window !== 'undefined') {
+    // Leaving the page (a full navigation, closing the tab) must not drop the last change
+    // still waiting for its debounced save. IndexedDB writes started while a page unloads
+    // may never finish, so the change is also written synchronously to localStorage and
+    // picked up by the next page (when it fits there).
+    const flush = () => {
+      if (!saveTimer || !isHydrated) return;
+      clearTimeout(saveTimer);
+      saveTimer = null;
+      try {
+        localStorage.setItem(pendingKey, JSON.stringify(persist.pick(state)));
+      } catch {
+        /* too big for localStorage: rely on the IndexedDB write below */
+      }
+      void kvSet(persist.key, persist.pick(state));
+    };
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && flush());
+
     kvGet<Partial<S>>(persist.key)
       .then((saved) => {
-        if (saved && typeof saved === 'object') state = { ...state, ...saved };
+        const pending = lsGet<Partial<S>>(pendingKey);
+        const value = pending ?? saved;
+        if (value && typeof value === 'object') state = { ...state, ...value };
+        if (pending) void kvSet(persist.key, pending).then(() => lsRemove(pendingKey));
       })
       .catch(() => undefined)
       .finally(() => {
@@ -66,12 +100,30 @@ export function useHydrated(store: Pick<Store<object>, 'subscribe' | 'hydrated'>
 const DB = 'urjersey';
 const OS = 'kv';
 
+let dbPromise: Promise<IDBDatabase> | null = null;
+
+/** One connection per page, so a save started while the page is being left needs no second open. */
 function openDb(): Promise<IDBDatabase> {
+  dbPromise ??= openDbOnce();
+  dbPromise.catch(() => {
+    dbPromise = null;
+  });
+  return dbPromise;
+}
+
+function openDbOnce(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     if (typeof indexedDB === 'undefined') return reject(new Error('no indexedDB'));
     const req = indexedDB.open(DB, 1);
     req.onupgradeneeded = () => req.result.createObjectStore(OS);
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => {
+      const db = req.result;
+      db.onversionchange = () => {
+        db.close();
+        dbPromise = null;
+      };
+      resolve(db);
+    };
     req.onerror = () => reject(req.error);
   });
 }
@@ -109,6 +161,23 @@ export async function kvSet(key: string, value: unknown): Promise<void> {
     } catch {
       /* quota: the draft just isn't kept */
     }
+  }
+}
+
+function lsGet<T>(key: string): T | null {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : null;
+  } catch {
+    return null;
+  }
+}
+
+function lsRemove(key: string) {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    /* ignore */
   }
 }
 

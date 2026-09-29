@@ -327,3 +327,69 @@ export function KV({ items }: { items: [ReactNode, ReactNode][] }) {
     </dl>
   );
 }
+
+// ----------------------------------------------------------------- Popover
+
+/**
+ * A panel that opens under its trigger (the parent wraps both in a positioned box).
+ * Escape or a click outside closes it and focus returns to the trigger.
+ */
+export function Popover({ open, onClose, children, label, testId, align = 'start', triggerRef, wide }: {
+  open: boolean; onClose: () => void; children: ReactNode; label: string; testId?: string; align?: 'start' | 'end';
+  triggerRef: React.RefObject<HTMLElement | null>; wide?: boolean;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const panel = ref.current;
+    panel?.querySelector<HTMLElement>('input, button, a, select, textarea')?.focus();
+    const onDown = (e: MouseEvent | TouchEvent) => {
+      const target = e.target as Node;
+      if (panel?.contains(target) || triggerRef.current?.contains(target)) return;
+      onClose();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      onClose();
+      triggerRef.current?.focus();
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('touchstart', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('touchstart', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open, onClose, triggerRef]);
+  if (!open) return null;
+  return (
+    <div ref={ref} role="dialog" aria-label={label} className={cx(s.popover, align === 'end' && s.popEnd, wide && s.popWide)} data-testid={testId}>
+      {children}
+    </div>
+  );
+}
+
+/** A count badge on an icon button (cart items, unread notifications). */
+export function Badge({ n, testId, label }: { n: number; testId?: string; label?: string }) {
+  if (n <= 0) return null;
+  return <span className={s.badge} data-testid={testId} aria-label={label}>{n > 99 ? '99+' : n}</span>;
+}
+
+/** Stars shown read-only, with the average as text for screen readers. */
+export function RatingStars({ value, count, label, testId, size = 'sm' }: {
+  value: number | null; count?: number; label: string; testId?: string; size?: 'sm' | 'md';
+}) {
+  const v = value ?? 0;
+  return (
+    <span className={cx(s.ratingRow, size === 'md' && s.ratingMd)} data-testid={testId}>
+      <span className={s.ratingStars} aria-hidden>
+        <span style={{ width: `${(v / 5) * 100}%` }}>★★★★★</span>★★★★★
+      </span>
+      <span className="visually-hidden">{label}</span>
+      {value !== null ? <span className={s.ratingNum} aria-hidden>{value.toFixed(1)}</span> : null}
+      {count !== undefined ? <span className={s.ratingCount} aria-hidden>({count})</span> : null}
+    </span>
+  );
+}

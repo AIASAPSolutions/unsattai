@@ -1,0 +1,35 @@
+# Caddy gets and renews HTTPS certificates for these domains by itself.
+# Point each domain's DNS A record at this server before the first start.
+{
+	email {$ACME_EMAIL}
+}
+
+(common) {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+}
+
+{$SHOP_DOMAIN} {
+	import common
+	reverse_proxy web:3000
+}
+
+{$API_DOMAIN} {
+	import common
+	request_body {
+		max_size 12MB
+	}
+	reverse_proxy api:8000
+}
+
+{$OPS_DOMAIN} {
+	import common
+	root * /srv/ops
+	try_files {path} /index.html
+	file_server
+	header /assets/* Cache-Control "public, max-age=31536000, immutable"
+	header /index.html Cache-Control "no-cache"
+}

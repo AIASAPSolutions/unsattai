@@ -14,7 +14,28 @@ describe('upstreamPath / upstreamUrl', () => {
       expect(upstreamPath(p)).toBeNull();
     }
     expect(upstreamPath(['auth', 'otp', 'request'])).toBe('auth/otp/request');
-    expect(upstreamPath(['shop', 'ops'])).toBe('shop/ops');
+  });
+  it('allows the customer marketplace routes', () => {
+    const ok = [
+      'shop/serviceability', 'shop/offers', 'shop/products', 'shop/products/royal-strikers',
+      'shop/products/royal-strikers/reviews', 'shop/products/royal-strikers/mockup.svg', 'shop/sellers/sel_house',
+      'shop/cart/quote', 'checkout', 'checkouts/chk_1', 'checkouts/chk_1/pay', 'me', 'me/cart', 'me/cart/merge',
+      'me/wishlist', 'me/wishlist/prd_1', 'me/password', 'me/identifiers/request', 'me/identifiers/verify', 'me/sessions',
+      'me/sessions/ses_1', 'me/sessions/revoke-others', 'me/orders/ord_1/cancel', 'me/orders/ord_1/returns',
+      'me/orders/ord_1/review', 'me/returns', 'me/notifications', 'me/notifications/read', 'me/checkouts',
+      'orders', 'orders/ord_1', 'orders/ord_1/invoice', 'orders/UJ-00001/track', 'orders/ord_1/payment-confirmed',
+      'collections', 'collections/tok', 'collections/tok/entries', 'collections/tok/entries/e1', 'quotes/tok/accept',
+      'designs/generate', 'designs/d1/feedback', 'render/panels', 'meta',
+    ];
+    for (const p of ok) expect(upstreamPath(p.split('/')), p).toBe(p);
+  });
+  it('refuses everything that is not a customer route', () => {
+    const no = [
+      'shop/ops', 'ops/sellers', 'ops/auth/login', 'auth/login', 'auth/logout', 'auth/otp/verify', 'print',
+      'designs/d1/print.svg', 'orders/ord_1/files/front.svg', 'orders/ord_1/stages/print', 'checkouts/chk_1/refund',
+      'shop/products/x/y/z', 'admin', 'factory/queue', 'dataset/export', 'stats', 'sellers', 'shop/sellers',
+    ];
+    for (const p of no) expect(upstreamPath(p.split('/')), p).toBeNull();
   });
   it('refuses traversal and odd characters', () => {
     expect(upstreamPath([])).toBeNull();
@@ -45,6 +66,9 @@ describe('upstreamHeaders', () => {
     expect(upstreamHeaders({ headers: { 'x-device-id': 'dev_12345678' }, cookies: {} })['X-Device-Id']).toBe('dev_12345678');
     expect(upstreamHeaders({ headers: {}, cookies: { uj_device: 'web_abcdef12' } })['X-Device-Id']).toBe('web_abcdef12');
     expect(upstreamHeaders({ headers: { 'x-device-id': 'bad id\n' }, cookies: {} })['X-Device-Id']).toBeUndefined();
+  });
+  it('passes the user agent so the API can label the device', () => {
+    expect(upstreamHeaders({ headers: { 'user-agent': 'Mozilla/5.0 (Android) Chrome/120' }, cookies: {} })['User-Agent']).toContain('Chrome');
   });
   it('keeps content negotiation headers', () => {
     const h = upstreamHeaders({ headers: { 'content-type': 'application/json', accept: '*/*', 'accept-language': 'ta' }, cookies: {} });

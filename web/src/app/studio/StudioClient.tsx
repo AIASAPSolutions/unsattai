@@ -125,7 +125,7 @@ export function StudioClient() {
         <Button kind="secondary" size="sm" onClick={() => setModal('save')} testId="save-design">{t('saveDesign')}</Button>
         <Button kind="secondary" size="sm" onClick={() => setModal('team')} testId="team-order">{t('teamOrder')}</Button>
         <Button kind="accent" disabled={!canOrder} testId="order" title={canOrder ? undefined : t('orderBlockedHint')}
-          onClick={() => router.push('/checkout')}>{t('orderNow')} →</Button>
+          onClick={() => router.push('/configure')}>{t('orderNow')} →</Button>
       </div>
 
       <div className={s.body}>

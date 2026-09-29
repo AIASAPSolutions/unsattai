@@ -4,7 +4,8 @@
 //
 // Needs the store running (WEB_URL, default http://127.0.0.1:3100) against an API
 // with its own database (API_URL, default http://127.0.0.1:8100) and the admin user
-// from ADMIN_EMAIL / ADMIN_PASSWORD for the sales-quote step. Screenshots go to e2e/shots/.
+// from ADMIN_EMAIL / ADMIN_PASSWORD (sellers, shipping and the sales quote go
+// through the ops API as that admin). Screenshots go to e2e/shots/.
 import { mkdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 
@@ -21,6 +22,9 @@ mkdirSync(SHOTS, { recursive: true });
 const run = Date.now().toString().slice(-5);
 const phone = (n) => `98${run}${String(n).padStart(3, '0')}`;
 const ORGANISER = phone(1);
+// Sellers deliver everywhere except this PIN code (blocked for the house seller in the ops setup step).
+const BLOCKED_PIN = '695001';
+const PASSWORD = 'Strik3rs-Passw0rd';
 
 let passed = 0;
 const results = [];
@@ -86,6 +90,8 @@ async function main() {
   let designShareUrl = '';
   let collectionId = '';
   let teamToken = '';
+  let admin = '';
+  let chennaiSeller = '';
 
   // ------------------------------------------------------------------ landing
   await step('landing shows garments with from-prices, tiers and contact', async () => {
@@ -127,6 +133,116 @@ async function main() {
     await page.click(tid('landing-enquiry-send'));
     const done = await page.locator(tid('landing-enquiry-done')).innerText({ timeout: 10_000 });
     assert(/lead_|[A-Za-z0-9_-]{6,}/.test(done), `enquiry reference: ${done}`);
+  });
+
+  // ------------------------------------------------------------------ marketplace: PIN code, shop, product
+  await step('ops setup: a second seller for Chennai and a blocked PIN code', async () => {
+    // Staff do this in the ops app; here through the ops API as the admin.
+    const { token } = await api('ops/auth/login', { method: 'POST', body: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD } });
+    admin = token;
+    const seller = await api('ops/sellers', {
+      method: 'POST', token, body: {
+        name: `Chennai Quick Prints ${run}`, service_areas: [{ match: '600', transit_days: 1, cod: true }], price_adjust: 0.05,
+      },
+    });
+    chennaiSeller = seller.id;
+    const { seller: house } = await api('ops/sellers/sel_house', { token });
+    for (const k of ['id', 'rating', 'created_at', 'updated_at', 'house']) delete house[k];
+    await api('ops/sellers/sel_house', { method: 'PUT', token, body: { ...house, blocked_pincodes: [...new Set([...house.blocked_pincodes, BLOCKED_PIN])] } });
+    // Only these two sellers may deliver to Chennai in this run.
+    const { items } = await api('ops/sellers?status=active', { token });
+    for (const x of items) {
+      if (x.id !== 'sel_house' && x.id !== chennaiSeller) await api(`ops/sellers/${x.id}`, { method: 'DELETE', token }).catch(() => {});
+    }
+  });
+
+  await step('Deliver to PIN code: invalid, not serviceable, then remembered', async () => {
+    await page.goto(`${WEB}/`);
+    await page.click(tid('pin-chip'));
+    await page.locator(tid('pin-popover')).waitFor();
+    await page.fill(tid('pin-input'), '012345');
+    await page.click(tid('pin-apply'));
+    assert(/valid 6-digit/.test(await page.locator(tid('pin-msg')).innerText()), 'invalid PIN code message');
+    await page.fill(tid('pin-input'), BLOCKED_PIN);
+    await page.click(tid('pin-apply'));
+    await page.waitForFunction(() => /deliver to/.test(document.querySelector('[data-testid="pin-msg"]')?.textContent || ''), null, { timeout: 10_000 });
+    await page.waitForFunction(() => /not deliverable/.test(document.querySelector('[data-testid="pin-chip-value"]')?.textContent || ''), null, { timeout: 10_000 });
+    await shot('01b-pin-unserviceable');
+    await page.fill(tid('pin-input'), '600001');
+    await page.click(tid('pin-apply'));
+    await page.locator(tid('pin-popover')).waitFor({ state: 'detached' });
+    await page.waitForFunction(() => /600001.*Tamil Nadu/.test(document.querySelector('[data-testid="pin-chip-value"]')?.textContent || ''), null, { timeout: 10_000 });
+    await page.reload();
+    await page.waitForFunction(() => /600001/.test(document.querySelector('[data-testid="pin-chip-value"]')?.textContent || ''), null, { timeout: 10_000 });
+    // Ready-made designs on the home page show delivery dates for the chosen PIN code.
+    await page.locator(`${tid('home-products')} [data-testid^="delivery-"][data-state="ok"]`).first().waitFor({ timeout: 15_000 });
+  });
+
+  await step('shop: search, facets, sort and paging', async () => {
+    await page.fill(tid('search-input'), 'strikers');
+    await page.press(tid('search-input'), 'Enter');
+    await page.waitForURL(/\/shop\?.*q=strikers/);
+    await page.locator(tid('product-royal-strikers')).waitFor({ timeout: 15_000 });
+    assert(/strikers/i.test(await page.locator('h1').innerText()), 'search title');
+    await page.goto(`${WEB}/shop`);
+    await page.locator(tid('product-grid')).waitFor({ timeout: 15_000 });
+    const all = Number((await page.locator(tid('results-count')).innerText()).match(/\d+/)[0]);
+    await page.click(tid('facet-sport-football'));
+    await page.waitForURL(/sport=football/);
+    await page.waitForFunction((n) => {
+      const m = (document.querySelector('[data-testid="results-count"]')?.textContent || '').match(/\d+/);
+      return m && Number(m[0]) < n;
+    }, all, { timeout: 10_000 });
+    const metas = await page.locator(`${tid('product-grid')} article`).allInnerTexts();
+    assert(metas.every((x) => /Football/.test(x)), 'only football designs');
+    await page.selectOption(tid('sort-select'), 'price_asc');
+    await page.waitForURL(/sort=price_asc/);
+    await page.waitForTimeout(500);
+    const prices = (await page.locator(`${tid('product-grid')} article`).allInnerTexts())
+      .map((x) => Number((x.match(/₹\s?([\d,]+(\.\d+)?)/) || [0, '0'])[1].replace(/,/g, '')));
+    assert(prices.every((p, i) => i === 0 || p >= prices[i - 1]), `sorted by price: ${prices}`);
+    await page.locator(`${tid('product-grid')} [data-testid^="delivery-"][data-state="ok"]`).first().waitFor({ timeout: 15_000 });
+    await page.click(tid('clear-all'));
+    await page.waitForURL((u) => !/sport=/.test(u.search));
+    if (await page.locator(tid('page-next')).count() && await page.locator(tid('page-next')).isEnabled()) {
+      await page.click(tid('page-next'));
+      await page.waitForURL(/page=2/);
+      await page.locator(`${tid('product-grid')} article`).first().waitFor();
+    }
+    await page.goto(`${WEB}/shop?q=zzzqqq`);
+    await page.locator(tid('shop-empty')).waitFor({ timeout: 15_000 });
+    await page.goto(`${WEB}/shop`);
+    await page.locator(tid('product-grid')).waitFor({ timeout: 15_000 });
+    await shot('01c-shop');
+  });
+
+  await step('product: delivery date, other sellers, size and add to cart', async () => {
+    await page.click(tid('product-link-royal-strikers'));
+    await page.waitForURL(/\/shop\/royal-strikers/);
+    await page.locator(tid('product-title')).waitFor();
+    assert(/₹/.test(await page.locator(tid('product-price')).innerText()), 'price from');
+    await page.waitForFunction(() => /Delivery by .*Sold by/s.test(document.querySelector('[data-testid="product-delivery"]')?.textContent || ''), null, { timeout: 15_000 });
+    assert(/Chennai Quick Prints/.test(await page.locator(tid('product-delivery')).innerText()), 'fastest seller recommended');
+    await page.locator(tid('offer-list')).waitFor();
+    assert(await page.locator(`${tid('offer-list')} li`).count() === 2, 'two sellers deliver to 600001');
+    await page.click(tid('offer-sel_house'));
+    await page.waitForFunction(() => /Sold by UrJersey/.test(document.querySelector('[data-testid="product-delivery"]')?.textContent || ''), null, { timeout: 10_000 });
+    await page.click(tid('add-to-cart'));
+    await page.locator(tid('size-error')).waitFor();
+    await page.click(tid('size-M'));
+    await page.click(tid('add-to-cart'));
+    await page.locator(tid('added-to-cart')).waitFor();
+    await page.waitForFunction(() => document.querySelector('[data-testid="cart-count"]')?.textContent?.trim() === '1');
+    // A PIN code the sellers can't reach says so on the product page.
+    await page.click(tid('product-pin-change'));
+    await page.fill(tid('product-pin-input'), BLOCKED_PIN);
+    await page.click(tid('product-pin-apply'));
+    await page.waitForFunction(() => /Not deliverable/.test(document.querySelector('[data-testid="product-delivery"]')?.textContent || ''), null, { timeout: 10_000 });
+    await page.fill(tid('product-pin-input'), '600001');
+    await page.click(tid('product-pin-apply'));
+    await page.waitForFunction(() => /Delivery by/.test(document.querySelector('[data-testid="product-delivery"]')?.textContent || ''), null, { timeout: 10_000 });
+    await page.keyboard.press('Escape');
+    await shot('01d-product');
   });
 
   // ------------------------------------------------------------------ design flow
@@ -240,11 +356,11 @@ async function main() {
     await page.keyboard.press('Escape');
   });
 
-  // ------------------------------------------------------------------ checkout
-  await step('checkout: team roster, paste, CSV, duplicates and size chart', async () => {
+  // ------------------------------------------------------------------ configure, cart and checkout
+  await step('configure: team roster, paste, CSV, duplicates and size chart', async () => {
     await page.click(tid('order'));
-    await page.waitForURL(/\/checkout/);
-    await page.locator(tid('screen-checkout')).waitFor();
+    await page.waitForURL(/\/configure/);
+    await page.locator(tid('screen-configure')).waitFor();
     await page.click(tid('mode-team'));
     await page.locator(tid('roster-row-0')).waitFor();
     await page.click(tid('roster-paste'));
@@ -273,55 +389,116 @@ async function main() {
     assert(/7/.test(total), `total pieces: ${total}`);
   });
 
-  await step('checkout: bulk enquiry offered above 50 pieces', async () => {
+  await step('configure: bulk enquiry offered above 50 pieces', async () => {
     await page.fill(tid('roster-qty-0'), '60');
     await page.locator(tid('bulk-banner')).waitFor();
     await page.fill(tid('roster-qty-0'), '1');
     await page.locator(tid('bulk-banner')).waitFor({ state: 'detached' });
   });
 
-  await step('checkout: fabric, express dates, coupon, address and live price', async () => {
-    await page.locator(tid('fabric-premium')).click();
+  await step('configure: fabric, live price, delivery date and add to cart', async () => {
     await page.locator(tid('price-total')).waitFor({ timeout: 20_000 });
     const before = await page.locator(tid('price-total')).innerText();
-    await page.check(tid('express-toggle'));
-    await page.waitForFunction(() => /Express:|same/.test(document.querySelector('[data-testid="express-dates"]')?.textContent || ''), null, { timeout: 15_000 });
-    await page.locator(tid('price-rush')).waitFor({ timeout: 15_000 });
-    await page.fill(tid('coupon'), 'WELCOME10');
-    await page.click(tid('coupon-apply'));
-    await page.locator(tid('coupon-ok')).waitFor({ timeout: 15_000 });
-    await page.locator(tid('price-coupon')).waitFor();
+    await page.locator(tid('fabric-premium')).click();
+    await page.waitForFunction((b) => {
+      const x = document.querySelector('[data-testid="price-total"]')?.textContent;
+      return x && x !== b;
+    }, before, { timeout: 15_000 });
+    for (const k of ['subtotal', 'shipping', 'tax', 'per-piece']) await page.locator(tid(`price-${k}`)).waitFor();
+    assert((await page.locator(tid('price-line')).count()) >= 5, 'per-line prices');
+    await page.waitForFunction(() => /Delivery by/.test(document.querySelector('[data-testid="configure-delivery"]')?.textContent || ''), null, { timeout: 15_000 });
+    assert(/Sold by/.test(await page.locator(tid('configure-seller')).innerText()), 'seller shown');
+    await shot('08-configure');
+    await page.click(tid('add-to-cart'));
+    await page.locator(tid('added-to-cart')).waitFor();
+    // The ready-made jersey added as a guest was merged into the account's cart at sign-in.
+    await page.waitForFunction(() => document.querySelector('[data-testid="cart-count"]')?.textContent?.trim() === '2', null, { timeout: 10_000 });
+  });
+
+  await step('cart: ready-made and custom design, one delivery charge per seller', async () => {
+    await page.click(tid('nav-cart'));
+    await page.waitForURL(/\/cart/);
+    await page.locator(tid('cart-item-1')).waitFor({ timeout: 15_000 });
+    await page.waitForFunction(() => /Royal Strikers/.test(document.querySelector('[data-testid="cart-items"]')?.textContent || ''), null, { timeout: 15_000 });
+    const rows = await page.locator(`${tid('cart-items')} > li`).allInnerTexts();
+    assert(rows.some((x) => /Royal Strikers/.test(x)) && rows.some((x) => /7 pieces/.test(x)), `cart rows: ${rows.join(' | ')}`);
+    await page.waitForFunction(() => /Sold by UrJersey/.test(document.body.textContent || '') && /Sold by Chennai Quick Prints/.test(document.body.textContent || ''), null, { timeout: 15_000 });
+    await page.locator(tid('cart-totals-total')).waitFor({ timeout: 15_000 });
+    // The server's cart quote: one delivery charge per seller, summed in the totals.
+    const [req, same] = await page.evaluate(async () => {
+      const cart = await (await fetch('/api/uj/me/cart')).json();
+      const quote = async (items) => (await fetch('/api/uj/shop/cart/quote', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ items, delivery: { method: 'ship', pincode: '600001', state: '' }, coupon: '', rush: false, payment_method: 'online' }),
+      })).json();
+      return [await quote(cart.items), await quote(cart.items.map((i) => ({ ...i, seller_id: 'sel_house' })))];
+    });
+    // Both items from one seller: one charge on the first item, the other travels with it.
+    assert(same.items.every((i) => i.quote.shipping.combined) && same.items.filter((i) => i.quote.shipping.amount > 0).length <= 1,
+      `same seller: one combined charge (${same.items.map((i) => i.quote.shipping.amount)})`);
+    const sellers = new Set(req.items.map((i) => i.seller?.id));
+    assert(sellers.size === 2, `two sellers: ${[...sellers]}`);
+    const perSeller = req.items.reduce((m, i) => m.set(i.seller.id, (m.get(i.seller.id) ?? 0) + i.quote.shipping.amount), new Map());
+    assert(Math.abs([...perSeller.values()].reduce((a, b) => a + b, 0) - req.totals.shipping) < 0.01, 'shipping = sum per seller');
+    assert(/2 sellers/.test(await page.locator(tid('cart-totals-shipping')).innerText()), 'delivery charge per seller in the summary');
+    // Quantity of the ready-made item.
+    const idx = rows.findIndex((x) => /Royal Strikers/.test(x));
+    const beforeTotal = await page.locator(tid('cart-totals-total')).innerText();
+    await page.click(tid(`cart-qty-${idx}-plus`));
+    await page.waitForFunction((b) => document.querySelector('[data-testid="cart-totals-total"]')?.textContent !== b, beforeTotal, { timeout: 15_000 });
+    await page.locator(tid('offer-WELCOME10')).waitFor({ timeout: 10_000 });
+    await shot('08b-cart');
+    await page.click(tid('proceed-checkout'));
+    await page.waitForURL(/\/checkout$/);
+  });
+
+  await step('checkout: address, dates by seller, express, offers and live price', async () => {
+    await page.locator(tid('screen-checkout')).waitFor();
+    assert(/Signed in as/.test(await page.locator(tid('signed-in-as')).innerText()), 'signed in at checkout');
     await page.fill(tid('addr-line1'), '12 Anna Salai');
     await page.fill(tid('addr-city'), 'Chennai');
     await page.selectOption(tid('addr-state'), 'TN');
     await page.fill(tid('addr-pincode'), '600002');
-    await page.waitForTimeout(900);
+    await page.locator(tid('price-total')).waitFor({ timeout: 20_000 });
+    await page.waitForFunction(() => document.querySelectorAll('[data-testid^="seller-group-"]').length === 2, null, { timeout: 15_000 });
+    assert(await page.locator(tid('group-shipping')).count() === 2, 'a delivery charge line per seller');
+    const before = await page.locator(tid('price-total')).innerText();
+    await page.check(tid('express-toggle'));
+    await page.waitForFunction(() => /Adds \d+%/.test(document.querySelector('[data-testid="express-dates"]')?.textContent || ''), null, { timeout: 15_000 });
+    await page.locator(tid('price-rush')).waitFor({ timeout: 15_000 });
+    await page.click(tid('offer-apply-WELCOME10'));
+    await page.locator(tid('coupon-ok')).waitFor({ timeout: 15_000 });
+    await page.locator(tid('price-coupon')).waitFor();
+    await page.waitForTimeout(600);
     const after = await page.locator(tid('price-total')).innerText();
     assert(before !== after, `price updated (${before} -> ${after})`);
-    for (const k of ['subtotal', 'shipping', 'tax', 'per-piece', 'dates']) await page.locator(tid(`price-${k}`)).waitFor();
-    assert((await page.locator(tid('price-line')).count()) >= 5, 'per-line prices');
+    for (const k of ['subtotal', 'shipping', 'tax', 'saved']) await page.locator(tid(`price-${k}`)).waitFor();
     assert(/Demo: no money is taken/.test(await page.locator(tid('demo-label')).innerText()), 'demo label');
-    assert(/Signed in as/.test(await page.locator(tid('signed-in-as')).innerText()), 'signed in at checkout');
-    await shot('08-checkout');
+    await page.locator(tid('pay-cod')).waitFor();
+    await shot('08c-checkout');
   });
 
-  let orderRequest = null;
-  await step('place order, demo payment and confirmation with invoice', async () => {
-    const req = page.waitForRequest((r) => r.url().endsWith('/api/uj/orders') && r.method() === 'POST');
+  let checkoutRequest = null;
+  let checkoutId = '';
+  let productOrderId = '';
+  await step('place order online, demo payment and confirmation with invoice', async () => {
+    const req = page.waitForRequest((r) => r.url().endsWith('/api/uj/checkout') && r.method() === 'POST');
     await page.click(tid('place-order'));
-    orderRequest = (await req).postDataJSON();
-    assert(orderRequest.channel === 'web' && /^web_/.test(orderRequest.idempotency_key), 'web channel and idempotency key');
-    await page.waitForURL(/\/order\/[^/]+\/pay/, { timeout: 60_000 });
-    orderId = decodeURIComponent(page.url().split('/order/')[1].split('/')[0]);
+    checkoutRequest = (await req).postDataJSON();
+    assert(checkoutRequest.channel === 'web' && checkoutRequest.payment_method === 'online' && checkoutRequest.items.length === 2, 'web checkout of two items');
+    await page.waitForURL(/\/checkout\/[^/]+\/pay/, { timeout: 60_000 });
+    checkoutId = decodeURIComponent(page.url().split('/checkout/')[1].split('/')[0]);
     await page.locator(tid('demo-box')).waitFor();
     await shot('09-pay');
     await page.click(tid('demo-pay'));
-    await page.waitForURL(/\/order\/[^/]+(\?.*)?$/, { timeout: 30_000 });
-    await page.locator(tid('confirmation-number')).waitFor();
-    const number = await page.locator(tid('confirmation-number')).innerText();
-    assert(number.length > 3, 'order number');
-    await page.locator(tid('confirmation-promised')).waitFor();
-    const href = await page.locator(tid('confirmation-invoice')).getAttribute('href');
+    await page.waitForURL(/\/checkout\/[^/]+(\?.*)?$/, { timeout: 30_000 });
+    await page.locator(tid('checkout-number')).waitFor();
+    assert(await page.locator('[data-testid^="checkout-order-ord"]').count() === 2, 'one order per item');
+    const ck = await page.evaluate(async (id) => (await fetch(`/api/uj/checkouts/${id}`)).json(), checkoutId);
+    assert(ck.status === 'paid', `checkout paid: ${ck.status}`);
+    orderId = ck.orders.find((o) => !o.product_id).id;
+    productOrderId = ck.orders.find((o) => o.product_id).id;
+    const href = await page.locator(tid('checkout-invoice')).first().getAttribute('href');
     // Fetched from the page, like the customer's click: it carries the browser's session and device cookies,
     // which the API needs to show an order to its owner.
     const inv = await page.evaluate(async (u) => {
@@ -330,16 +507,21 @@ async function main() {
     }, href);
     assert(inv.ok && /html/.test(inv.type), 'invoice through the proxy');
     assert(/Invoice|INVOICE|invoice/.test(inv.text), 'invoice content');
+    await page.waitForFunction(() => !document.querySelector('[data-testid="cart-count"]'), null, { timeout: 10_000 });
     await shot('10-confirmation');
   });
 
-  await step('same order key is not placed twice; staff API not exposed', async () => {
-    // Replaying the exact order request with its idempotency key returns the same order.
-    const replay = await page.request.post(`${WEB}/api/uj/orders`, { data: orderRequest, headers: { origin: WEB } });
-    const again = await replay.json();
-    assert(replay.status() === 200 && again.id === orderId && again.duplicate === true, `idempotent replay: ${replay.status()} ${again.id}`);
+  await step('same checkout key is not placed twice; staff API not exposed', async () => {
+    // Replaying the exact checkout request with its idempotency key returns the same checkout.
+    const again = await page.evaluate(async (body) => {
+      const r = await fetch('/api/uj/checkout', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      return { status: r.status, data: await r.json() };
+    }, checkoutRequest);
+    assert(again.status === 200 && again.data.id === checkoutId && again.data.duplicate === true, `idempotent replay: ${again.status} ${again.data.id}`);
     const blocked = await page.request.get(`${WEB}/api/uj/ops/orders`);
     assert(blocked.status() === 404 || blocked.status() === 403, `ops API not exposed: ${blocked.status()}`);
+    const verify = await page.request.post(`${WEB}/api/uj/auth/login`, { data: { identifier: ORGANISER, password: 'x' }, headers: { origin: WEB } });
+    assert(verify.status() === 404 || verify.status() === 403, `password login only through the session route: ${verify.status()}`);
   });
 
   // ------------------------------------------------------------------ account
@@ -353,7 +535,7 @@ async function main() {
     await page.locator(tid('order-progress')).waitFor();
     await shot('12-account-order');
     await page.click(tid('order-again'));
-    await page.waitForURL(/\/checkout/);
+    await page.waitForURL(/\/configure/);
     await page.locator(tid('roster-row-5')).waitFor({ timeout: 10_000 });
   });
 
@@ -398,6 +580,194 @@ async function main() {
     await page.click(tid('ticket-reply-send'));
     await page.waitForFunction(() => document.querySelectorAll('[data-testid="ticket-messages"] > div').length >= 2);
     await shot('15-ticket');
+  });
+
+  // ------------------------------------------------------------------ marketplace account: wishlist, COD, after-sales
+  await step('wishlist: heart a design in the shop, list and remove it', async () => {
+    await page.goto(`${WEB}/shop`);
+    await page.locator(tid('product-grid')).waitFor({ timeout: 15_000 });
+    const heart = page.locator(`${tid('product-grid')} [data-testid^="wish-"]`).first();
+    const wid = await heart.getAttribute('data-testid');
+    await heart.click();
+    await page.waitForFunction((id) => document.querySelector(`[data-testid="${id}"]`)?.getAttribute('aria-pressed') === 'true', wid, { timeout: 10_000 });
+    await page.goto(`${WEB}/account/wishlist`);
+    await page.locator(`${tid('wishlist-grid')} article`).first().waitFor({ timeout: 15_000 });
+    await shot('15b-wishlist');
+    await page.locator(`${tid('wishlist-grid')} ${tid(wid)}`).click();
+    await page.locator(tid('wishlist-empty')).waitFor({ timeout: 10_000 });
+  });
+
+  await step('cash on delivery: buy now with the COD fee, then cancel the order', async () => {
+    await page.goto(`${WEB}/shop/royal-strikers`);
+    await page.locator(tid('product-title')).waitFor();
+    await page.click(tid('size-L'));
+    await page.click(tid('buy-now'));
+    await page.waitForURL(/\/checkout\?buy=1/);
+    await page.locator(tid('address-book')).waitFor({ timeout: 15_000 });
+    assert(await page.locator(`${tid('saved-address-0')} input`).isChecked(), 'default address chosen');
+    await page.locator(tid('price-total')).waitFor({ timeout: 20_000 });
+    await page.click(tid('pay-cod'));
+    await page.locator(tid('price-cod')).waitFor({ timeout: 15_000 });
+    assert(/on delivery/.test(await page.locator(tid('place-order')).innerText()), 'COD button');
+    await shot('15c-checkout-cod');
+    await page.click(tid('place-order'));
+    await page.waitForURL(/\/checkout\/[^/?]+$/, { timeout: 60_000 });
+    await page.locator(tid('checkout-number')).waitFor();
+    assert(/cash/i.test(await page.locator(tid('screen-checkout-done')).innerText()), 'pay in cash note');
+    const link = page.locator('[data-testid^="checkout-order-ord"] a').first();
+    const codOrder = (await page.locator('[data-testid^="checkout-order-ord"]').first().getAttribute('data-testid')).replace('checkout-order-', '');
+    await page.goto(`${WEB}/account/orders/${encodeURIComponent(codOrder)}`);
+    await page.locator(tid('order-payment')).waitFor({ timeout: 15_000 });
+    await page.click(tid('order-cancel'));
+    await page.locator(tid('cancel-dialog')).waitFor();
+    await page.selectOption(tid('cancel-reason'), 'cancel_ordered_twice');
+    await page.click(tid('cancel-confirm'));
+    await page.waitForFunction(() => /cancelled/.test(document.querySelector('[data-testid="order-msg"]')?.textContent || ''), null, { timeout: 15_000 });
+    assert(!(await page.locator(tid('order-cancel')).count()), 'no second cancel');
+    void link;
+  });
+
+  await step('delivered order: ops ships it; customer tracks, returns and reviews', async () => {
+    // The seller's staff move the order through production and delivery (ops API).
+    for (let i = 0; i < 12; i++) {
+      const { order } = await api(`ops/orders/${productOrderId}`, { token: admin });
+      const next = order.fulfilment.stages.find((st) => !st.done_at);
+      if (!next) break;
+      await api(`ops/orders/${productOrderId}/stages/${next.id}`, { method: 'POST', token: admin });
+    }
+    const shp = await api(`ops/orders/${productOrderId}/shipments`, { method: 'POST', token: admin, body: { carrier: 'surface', tracking_no: `SRF${run}` } });
+    const sid = shp.id ?? shp.shipment?.id;
+    await api(`ops/shipments/${sid}`, { method: 'PATCH', token: admin, body: { status: 'dispatched' } });
+    await page.goto(`${WEB}/account/orders/${encodeURIComponent(productOrderId)}`);
+    await page.locator(tid('shipment-details')).waitFor({ timeout: 15_000 });
+    assert(new RegExp(`SRF${run}`).test(await page.locator(tid('tracking-no')).innerText()), 'tracking number');
+    assert(/Dispatched with Surface courier/.test(await page.locator(tid('order-timeline')).innerText()), 'dispatch in the timeline');
+    await api(`ops/shipments/${sid}`, { method: 'PATCH', token: admin, body: { status: 'delivered' } });
+    await page.reload();
+    await page.locator(tid('return-window')).waitFor({ timeout: 15_000 });
+    await shot('15d-delivered');
+    await page.click(tid('order-return'));
+    await page.locator(tid('return-dialog')).waitFor();
+    await page.locator(tid('return-deadline')).waitFor();
+    await page.click(tid('return-submit'));
+    await page.waitForFunction(() => /Choose a reason/.test(document.querySelector('[data-testid="return-dialog"]')?.textContent || ''), null, { timeout: 5000 });
+    await page.selectOption(tid('return-reason'), 'print_quality');
+    await page.fill(tid('return-details'), 'The number is cracked after one wash.');
+    await page.click(tid('return-submit'));
+    await page.waitForFunction(() => /Return requested/.test(document.querySelector('[data-testid="order-msg"]')?.textContent || ''), null, { timeout: 15_000 });
+    await page.locator(tid('return-record')).waitFor({ timeout: 10_000 });
+    await page.click(tid('order-review-btn'));
+    await page.locator(tid('review-dialog')).waitFor();
+    await page.click(tid('review-stars-4'));
+    await page.fill(tid('review-title'), 'Great colours');
+    await page.fill(tid('review-body'), 'Colours are bright and the fit is good. Delivery was on time.');
+    await page.click(tid('review-submit'));
+    await page.waitForFunction(() => /Thank you for your review/.test(document.querySelector('[data-testid="order-msg"]')?.textContent || ''), null, { timeout: 15_000 });
+    await page.locator(tid('order-review')).waitFor({ timeout: 10_000 });
+    await shot('15e-return-review');
+    const reviews = await api('shop/products/royal-strikers/reviews');
+    assert(reviews.items.some((r) => r.title === 'Great colours'), 'review public on the product');
+  });
+
+  await step('notifications: bell with unread count, list and mark all read', async () => {
+    await page.goto(`${WEB}/account`);
+    await page.locator(tid('bell-count')).waitFor({ timeout: 20_000 });
+    await page.click(tid('nav-bell'));
+    await page.locator(tid('bell-popover')).waitFor();
+    await page.locator(`${tid('bell-list')} li`).first().waitFor({ timeout: 10_000 });
+    await shot('15f-bell');
+    await page.click(tid('bell-read-all'));
+    await page.locator(tid('bell-count')).waitFor({ state: 'detached', timeout: 10_000 });
+    await page.keyboard.press('Escape');
+    await page.goto(`${WEB}/account/notifications`);
+    await page.locator(`${tid('notifications-list')} li`).first().waitFor({ timeout: 10_000 });
+  });
+
+  await step('security: set a password, sign in with it elsewhere, sign that device out', async () => {
+    await page.goto(`${WEB}/account/security`);
+    await page.locator(tid('password-card')).waitFor({ timeout: 15_000 });
+    await page.fill(tid('password-new'), 'short');
+    await page.fill(tid('password-again'), 'short');
+    await page.click(tid('password-save'));
+    await page.waitForFunction(() => /too weak/.test(document.querySelector('[data-testid="password-card"]')?.textContent || ''));
+    await page.fill(tid('password-new'), PASSWORD);
+    await page.fill(tid('password-again'), PASSWORD);
+    await page.click(tid('password-save'));
+    await page.waitForFunction(() => /Password saved/.test(document.querySelector('[data-testid="password-msg"]')?.textContent || ''), null, { timeout: 10_000 });
+    // Another browser signs in with the mobile number and the password.
+    const other = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    const o = await other.newPage();
+    await o.goto(`${WEB}/signin`);
+    await o.click(tid('otp-use-password'));
+    await o.fill(tid('otp-phone'), ORGANISER);
+    await o.fill(tid('otp-password'), 'Wrong-Passw0rd');
+    await o.click(tid('otp-login'));
+    assert(/not right/.test(await o.locator(tid('otp-error')).innerText()), 'wrong password message');
+    await o.fill(tid('otp-password'), PASSWORD);
+    await o.click(tid('otp-login'));
+    await o.waitForURL(/\/account/, { timeout: 15_000 });
+    await o.locator(tid('nav-account')).waitFor();
+    await shot('15g-password-signin-mobile', o);
+    // The first browser sees two devices and signs the other one out.
+    await page.reload();
+    await page.locator(tid('session-other')).first().waitFor({ timeout: 15_000 });
+    await shot('15h-security');
+    await page.locator(`${tid('session-other')} [data-testid^="session-drop-"]`).first().click();
+    await page.waitForFunction(() => /signed out/.test(document.querySelector('[data-testid="sessions-msg"]')?.textContent || ''), null, { timeout: 10_000 });
+    await o.goto(`${WEB}/account`);
+    await o.locator(tid('otp')).waitFor({ timeout: 15_000 });
+    await other.close();
+  });
+
+  await step('email sign-in with a code, verify a mobile number, password lockout', async () => {
+    const ctx2 = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    const e = await ctx2.newPage();
+    e.on('pageerror', (x) => consoleErrors.push(String(x)));
+    const email = `e2e${run}@example.com`;
+    await e.goto(`${WEB}/signin`);
+    await e.click(tid('otp-channel-email'));
+    await e.fill(tid('otp-name'), 'Esha Email');
+    await e.fill(tid('otp-email'), email);
+    await e.click(tid('otp-send'));
+    const code = (await e.locator(tid('otp-dev-code')).textContent({ timeout: 10_000 })).trim();
+    await e.fill(tid('otp-code'), code);
+    await e.click(tid('otp-verify'));
+    await e.waitForURL(/\/account/, { timeout: 15_000 });
+    await e.goto(`${WEB}/account/security`);
+    await e.locator(tid('ident-email-card')).waitFor({ timeout: 15_000 });
+    assert(/Verified/.test(await e.locator(tid('ident-email-status')).innerText()), 'email verified');
+    await e.click(tid('ident-phone-edit'));
+    await e.fill(tid('ident-phone-input'), phone(80));
+    await e.click(tid('ident-phone-send'));
+    const pcode = (await e.locator(tid('ident-phone-dev-code')).textContent({ timeout: 10_000 })).trim();
+    await e.fill(tid('ident-phone-code'), pcode);
+    await e.click(tid('ident-phone-verify'));
+    await e.waitForFunction(() => /Verified/.test(document.querySelector('[data-testid="ident-phone-status"]')?.textContent || ''), null, { timeout: 10_000 });
+    await shot('15i-security-mobile', e);
+    await ctx2.close();
+    // Wrong passwords lock password sign-in; the customer is offered a code instead.
+    const ctx3 = await browser.newContext();
+    const l = await ctx3.newPage();
+    await l.goto(`${WEB}/signin`);
+    await l.click(tid('otp-channel-email'));
+    await l.click(tid('otp-use-password'));
+    await l.fill(tid('otp-email'), email);
+    let locked = false;
+    for (let i = 0; i < 8 && !locked; i++) {
+      await l.fill(tid('otp-password'), `Wrong-Passw0rd${i}`);
+      await l.click(tid('otp-login'));
+      await l.waitForFunction((n) => {
+        const el = document.querySelector('[data-testid="otp-error"]');
+        return el && el.getAttribute('data-try') !== String(n) && !document.querySelector('[data-testid="otp-login"][aria-busy="true"]');
+      }, i, { timeout: 10_000 }).catch(() => {});
+      await l.waitForTimeout(300);
+      locked = /locked/.test(await l.locator(tid('otp-error')).innerText());
+    }
+    assert(locked, 'password sign-in locked after wrong passwords');
+    await shot('15j-lockout', l);
+    await l.locator(tid('otp-error')).locator('button').click();
+    await l.locator(tid('otp-send')).waitFor();
+    await ctx3.close();
   });
 
   // ------------------------------------------------------------------ team collection
@@ -469,14 +839,19 @@ async function main() {
     await page.click(tid('team-reopen'));
     await page.locator(tid('team-lock')).waitFor();
     await page.click(tid('team-checkout'));
-    await page.waitForURL(/\/checkout/);
+    await page.waitForURL(/\/configure/);
     await page.locator(tid('collection-banner')).waitFor();
     assert(await page.locator(tid('roster-name-0')).inputValue() === 'Nila', 'roster from the team list');
-    await page.fill(tid('addr-line1'), '12 Anna Salai');
-    await page.fill(tid('addr-city'), 'Chennai');
-    await page.selectOption(tid('addr-state'), 'TN');
-    await page.fill(tid('addr-pincode'), '600002');
     await page.locator(tid('price-total')).waitFor({ timeout: 20_000 });
+    // A team list is ordered on its own (Buy now), to the saved address.
+    await page.click(tid('buy-now'));
+    await page.waitForURL(/\/checkout\?buy=1/);
+    await page.locator(tid('collection-banner')).waitFor();
+    await page.locator(tid('address-book')).waitFor({ timeout: 15_000 });
+    await page.locator(tid('price-total')).waitFor({ timeout: 20_000 });
+    // The last payment method (cash on delivery) is remembered; this one is paid online.
+    assert(await page.locator(`${tid('pay-cod')} input`).isChecked(), 'last payment method remembered');
+    await page.click(tid('pay-online'));
     await page.click(tid('place-order'));
     await page.waitForURL(/\/pay/, { timeout: 60_000 });
     await page.click(tid('demo-pay'));
@@ -525,9 +900,13 @@ async function main() {
     await g.locator(tid('order')).waitFor();
     await g.waitForFunction(() => !document.querySelector('[data-testid="order"]')?.hasAttribute('disabled'), null, { timeout: 30_000 });
     await g.click(tid('order'));
-    await g.waitForURL(/\/checkout/);
+    await g.waitForURL(/\/configure/);
     await g.selectOption(tid('single-size'), 'L');
     await g.fill(tid('single-qty'), '2');
+    await g.locator(tid('price-total')).waitFor({ timeout: 20_000 });
+    await shot('22-configure-mobile', g);
+    await g.click(tid('buy-now'));
+    await g.waitForURL(/\/checkout\?buy=1/);
     await g.click(tid('method-pickup'));
     await g.locator(tid('pickup-info')).waitFor();
     await g.click(tid('place-order'));
@@ -538,9 +917,25 @@ async function main() {
     await shot('22-checkout-mobile', g);
     await g.click(tid('place-order'));
     await g.waitForURL(/\/pay/, { timeout: 60_000 });
-    const gid = decodeURIComponent(g.url().split('/order/')[1].split('/')[0]);
     await g.click(tid('demo-pay'));
-    await g.locator(tid('confirmation-number')).waitFor({ timeout: 30_000 });
+    await g.locator(tid('checkout-number')).waitFor({ timeout: 30_000 });
+    assert(/Keep the order IDs/.test(await g.locator(tid('screen-checkout-done')).innerText()), 'guest hint');
+    const gid = (await g.locator('[data-testid^="checkout-order-ord"]').first().getAttribute('data-testid')).replace('checkout-order-', '');
+    await shot('22b-checkout-done-mobile', g);
+    // Shop, product and cart fit a phone screen too.
+    await g.goto(`${WEB}/shop`);
+    await g.locator(tid('product-grid')).waitFor({ timeout: 15_000 });
+    await shot('22c-shop-mobile', g);
+    await g.goto(`${WEB}/shop/royal-strikers`);
+    await g.locator(tid('product-title')).waitFor();
+    await g.click(tid('size-S'));
+    await g.click(tid('add-to-cart'));
+    await g.locator(tid('added-to-cart')).waitFor();
+    await shot('22d-product-mobile', g);
+    await g.goto(`${WEB}/cart`);
+    await g.locator(tid('cart-item-0')).waitFor({ timeout: 15_000 });
+    await g.locator(tid('cart-totals-total')).waitFor({ timeout: 15_000 });
+    await shot('22e-cart-mobile', g);
     await g.goto(`${WEB}/track?order=${encodeURIComponent(gid)}`);
     await g.fill(tid('track-phone'), '9999999999');
     await g.click(tid('track-submit'));

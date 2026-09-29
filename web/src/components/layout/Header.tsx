@@ -1,9 +1,12 @@
 'use client';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
+import { CartLink, NotificationBell, SearchBox } from '@/components/market/HeaderBits';
+import { PincodeChip } from '@/components/market/PincodeChip';
 import { useSession } from '@/components/providers/session';
 import { Button, cx } from '@/components/ui';
+import { UserIcon } from '@/components/ui/icons';
 import { isLanguage, LANGUAGE_OPTIONS } from '@/i18n';
 import { useI18n } from '@/i18n/provider';
 import s from './layout.module.css';
@@ -19,6 +22,7 @@ export function Header() {
   const setOpen = (f: (o: boolean) => boolean) => setOpenOn(f(open) ? path : null);
 
   const links = [
+    { href: '/shop', label: t('navShop') },
     { href: '/design', label: t('navDesign') },
     { href: '/teams', label: t('navTeams') },
     { href: '/track', label: t('navTrack') },
@@ -31,7 +35,7 @@ export function Header() {
       <div className={cx('container', s.bar)}>
         <Link href="/" className={s.logo} aria-label="UrJersey home">
           <span className={s.logoMark} aria-hidden>UJ</span>
-          UrJersey
+          <span className={s.logoWord}>UrJersey</span>
         </Link>
         <nav className={cx(s.nav, open && s.navOpen)} aria-label="Main" id="main-nav">
           {links.map((l) => (
@@ -40,6 +44,7 @@ export function Header() {
               {l.label}
             </Link>
           ))}
+          {me ? <Link href="/account/wishlist" className={cx(s.navLink, path?.startsWith('/account/wishlist') && s.navLinkOn)}>{t('wishlistTitle')}</Link> : null}
         </nav>
         <div className={s.right}>
           <label className="visually-hidden" htmlFor="lang-select">Language</label>
@@ -52,15 +57,27 @@ export function Header() {
             }}>
             {LANGUAGE_OPTIONS.map((o) => <option key={o.code} value={o.code} lang={o.code}>{o.label}</option>)}
           </select>
-          {loading ? null : me ? (
-            <Button kind="secondary" size="sm" href="/account" testId="nav-account">{t('navAccount')}</Button>
+          <NotificationBell />
+          {loading ? <span className={s.accountSlot} /> : me ? (
+            <Link href="/account" className={s.account} data-testid="nav-account" aria-label={t('navAccount')}>
+              <UserIcon size={20} /><span className={s.accountText}>{t('navAccount')}</span>
+            </Link>
           ) : (
-            <Button kind="secondary" size="sm" href={`/signin?next=${encodeURIComponent(path ?? '/')}`} testId="nav-signin">
-              {t('navSignIn')}
-            </Button>
+            <Link href={`/signin?next=${encodeURIComponent(path ?? '/')}`} className={s.account} data-testid="nav-signin" aria-label={t('navSignIn')}>
+              <UserIcon size={20} /><span className={s.accountText}>{t('navSignIn')}</span>
+            </Link>
           )}
+          <CartLink />
           <Button kind="ghost" size="sm" className={s.menuBtn} aria-expanded={open} aria-controls="main-nav"
             onClick={() => setOpen((o) => !o)}>☰ <span className="visually-hidden">{t('navMenu')}</span></Button>
+        </div>
+      </div>
+      <div className={s.subbar}>
+        <div className={cx('container', s.subInner)}>
+          <PincodeChip />
+          <div className={s.searchSlot}>
+            <Suspense fallback={null}><SearchBox /></Suspense>
+          </div>
         </div>
       </div>
     </header>

@@ -277,3 +277,18 @@
   font-size: 13px;
   color: var(--muted);
 }
+.deliveryBox {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  margin: 4px 0 8px;
+}
+.good {
+  color: var(--pass);
+}
+.buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}

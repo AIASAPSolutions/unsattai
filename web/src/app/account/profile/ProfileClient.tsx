@@ -67,7 +67,7 @@ function ProfileForm({ me }: { me: Me }) {
       <Card title={t('accDetails')}>
         <form className="stack" onSubmit={(e) => { e.preventDefault(); if (!emailErr) void save({ name: name.trim(), email: email.trim(), marketing_opt_in: optIn }, 'profile'); }}>
           <TextField label={t('customerName')} value={name} onValue={setName} maxLength={80} autoComplete="name" testId="profile-name" />
-          <TextField label={t('phone')} value={me.phone} readOnly hint={t('accPhoneFixed')} testId="profile-phone" />
+          <TextField label={t('phone')} value={me.phone} readOnly hint={t('accPhoneChangeHere')} testId="profile-phone" />
           <TextField label={t('email')} value={email} onValue={setEmail} type="email" maxLength={120} optional={t('optional')}
             autoComplete="email" error={emailErr} testId="profile-email" />
           <Checkbox checked={optIn} onChange={setOptIn} testId="profile-optin">{t('accMarketing')}</Checkbox>

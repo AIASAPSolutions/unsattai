@@ -278,7 +278,7 @@ Prices every item (each with its seller and dates) and the whole cart. No sign-i
 - `problems` at the top lists every item's problems as `"Item 2: ..."`. An empty list means the cart can be checked out.
 - `cod_available` is true when every item can be paid on delivery. `totals.cod_fee` is non-zero only with `payment_method: "cod"`; the fee is charged once per cart, on the first item (the others show 0).
 - `delivery_by` is the latest delivery date over the items.
-- One delivery charge per seller: it is worked out on that seller's pieces and goods value together (so the free-delivery threshold applies to the combined value), sits on the seller's first item, and the seller's other items show `shipping.amount: 0` with `shipping.combined: true`. Pickup is one fee per cart. Taxes stay per item, because every item becomes its own order and invoice.
+- One delivery charge per seller: it is worked out on that seller's pieces and goods value together (so the free-delivery threshold applies to the combined value), sits on the seller's first item, and the seller's other items show `shipping.amount: 0`. `shipping.combined: true` marks every item that shares one charge with other items of the same seller, including the one that carries it. Each item also has `slug` and `image_url` (null for custom designs). Pickup is one fee per cart. Taxes stay per item, because every item becomes its own order and invoice.
 
 ### Checkout
 

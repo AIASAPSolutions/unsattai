@@ -9,8 +9,9 @@
 .bar {
   display: flex;
   align-items: center;
-  gap: 20px;
-  min-height: 64px;
+  gap: 16px;
+  min-height: 60px;
+  flex-wrap: wrap;
 }
 .logo {
   display: inline-flex;
@@ -36,16 +37,15 @@
 .nav {
   display: flex;
   align-items: center;
-  gap: 4px;
-  flex: 1;
+  gap: 2px;
 }
 .navLink {
-  padding: 8px 12px;
+  padding: 8px 10px;
   border-radius: 8px;
   text-decoration: none;
   color: var(--ink-2);
   font-weight: 600;
-  font-size: 0.95rem;
+  font-size: 0.93rem;
   white-space: nowrap;
 }
 .navLink:hover,
@@ -53,31 +53,69 @@
   background: rgba(19, 34, 90, 0.07);
   color: var(--brand);
 }
+.searchSlot {
+  flex: 1;
+  min-width: 220px;
+  max-width: 760px;
+  margin-left: auto;
+}
 .right {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  margin-left: auto;
 }
 .lang {
   min-height: 36px;
   border: 1px solid var(--line-2);
   border-radius: 8px;
-  padding: 0 8px;
+  padding: 0 6px;
   background: var(--surface);
   font-size: 0.9rem;
+  max-width: 96px;
+}
+.account {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line-2);
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 650;
+  font-size: 0.9rem;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.account:hover {
+  border-color: var(--ink-2);
+}
+.accountSlot {
+  width: 40px;
+}
+.subbar {
+  background: var(--brand);
+  color: #fff;
+}
+.subInner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  min-height: 40px;
+  padding-top: 6px;
+  padding-bottom: 6px;
 }
 button.menuBtn {
   display: none;
 }
-@media (max-width: 900px) {
-  button.menuBtn {
-    display: inline-flex;
-    margin-left: auto;
-  }
+@media (max-width: 1180px) {
   .nav {
     display: none;
     position: absolute;
-    top: 64px;
+    top: 60px;
     left: 0;
     right: 0;
     background: var(--surface);
@@ -86,15 +124,44 @@ button.menuBtn {
     align-items: stretch;
     padding: 8px 16px 16px;
     box-shadow: var(--shadow);
+    z-index: 55;
   }
   .navOpen {
     display: flex;
   }
-  .right {
-    gap: 6px;
+  button.menuBtn {
+    display: inline-flex;
   }
-  .hideSm {
+}
+@media (max-width: 760px) {
+  .bar {
+    gap: 8px 10px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+  .searchSlot {
+    flex-basis: 100%;
+    max-width: none;
+  }
+  .accountText {
     display: none;
+  }
+  .account {
+    padding: 0 9px;
+  }
+  .right {
+    gap: 4px;
+  }
+  .nav {
+    top: 56px;
+  }
+}
+@media (max-width: 420px) {
+  .logoWord {
+    display: none;
+  }
+  .lang {
+    max-width: 100px;
   }
 }
 

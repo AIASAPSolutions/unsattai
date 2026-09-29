@@ -4,6 +4,7 @@
 > - Done: 1 (the public order view has `fulfilment.shipment` with carrier, tracking number, tracking link and dates), 2 (`GET /me/tickets/{id}`), 3 (`/orders/{number}/track?phone=` accepts the order number), 4 (timeline events carry `params`), 5 (orders, payment, invoice and print files are limited to the customer, the device that placed the order, staff, or someone with the order's phone number), 6 (`edit_key` is no longer sent to the organiser), 9 (`/shop/quote` returns `estimate_express` when express is off).
 > - Open: 7 (size chart). 8 is a settings change in the operations app.
 > - The web store still uses its earlier workarounds for 1 to 4 and 9. They keep working, and can be switched to the new fields later.
+> - New with the marketplace upgrade: 11 (quote items carry `slug` and `image_url`) and 12 (the API guide now documents what `combined` means) are done; 10 is open.
 
 The web store (`web/`) uses the API as it is today. Each item below says what we need,
 why, the shape we propose, and what the web app does in the meantime. Nothing under
@@ -70,3 +71,22 @@ why, the shape we propose, and what the web app does in the meantime. Nothing un
 - **Endpoint:** always return `estimate_rush` (or `estimate_standard` and `estimate_rush`) from `POST /shop/quote`, not only `estimate_standard` when rush is on.
 - **Why:** checkout shows "Standard: date · Express: date" before the customer turns express on.
 - **Workaround:** when express is off the web app also calls `GET /shop/delivery-estimate?rush=true` alongside each quote.
+
+## 10. Team lists through `POST /checkout`
+
+- **Endpoint:** accept `collection_id` on a cart item (or on the checkout body) in `POST /checkout` and `POST /shop/cart/quote`, and close the team list when the checkout is placed, as `POST /orders` does today.
+- **Why:** everything else is ordered through the cart and `POST /checkout` (one checkout number, orders grouped by seller, cash on delivery). A team list is the one thing that still has to use the older `POST /orders`.
+- **Workaround:** a team list can only be ordered with **Buy now** (not added to the cart). The checkout page then places it with `POST /orders` (`collection_id`, `payment_method`, `idempotency_key`) and continues to `/order/{id}/pay` or `/order/{id}`.
+
+## 11. Product details for cart items
+
+- **Endpoint:** add `slug` and `image_url` to each `POST /shop/cart/quote` item (and to `GET /me/cart` items with a `product_id`), or allow `GET /shop/products?ids=prd_1,prd_2`.
+- **Why:** the cart and checkout show each ready-made item's picture and link to its page. The cart item and the quote only carry `product_id` and `title`.
+- **Workaround:** the web app loads the first 60 products once (`GET /shop/products?size=60`) and looks items up there. A cart item for a product outside that list shows its title from the quote, a placeholder picture and no link.
+
+## 12. `shipping.combined` on every item of a seller
+
+- **Endpoint:** `POST /shop/cart/quote`.
+- **Why:** the API guide says the seller's first item carries the charge and "the seller's other items show `shipping.amount: 0` with `shipping.combined: true`". In practice every item of a seller with more than one item has `combined: true`, including the first one that carries the charge.
+- **Proposed:** set `combined: true` only on the items whose charge moved to another item (or document the current meaning: "shares one charge with other items").
+- **Workaround:** the web app does not use the flag; it groups by `seller.id` and sums `shipping.amount` per seller.

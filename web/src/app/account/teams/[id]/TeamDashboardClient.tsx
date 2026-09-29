@@ -75,7 +75,7 @@ export function TeamDashboardClient({ id }: { id: string }) {
       mode: 'team', fabric: c.fabric, collectionId: c.id, collectionTitle: c.title,
       rows: c.entries.map((e) => ({ key: rowKey(), player_name: e.player_name, number: e.number, size: e.size, quantity: e.quantity })),
     });
-    router.push('/checkout');
+    router.push('/configure');
   };
 
   return (

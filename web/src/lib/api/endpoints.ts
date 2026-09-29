@@ -1,6 +1,7 @@
-import { parseErrorBody, request, withRetry } from './client';
+import { ApiError, parseErrorBody, request, withRetry } from './client';
 import type {
-  Address, AiAllowance, BackgroundRemoval, Catalogue, Collection, CollectionEntry, Design, DesignSpec, Estimate,
+  Address, AiAllowance, ApiCartItem, CartQuote, CartQuoteRequest, Checkout, CheckoutRequest, NotificationPage, ProductDetail,
+  ProductList, ProductQuery, PublicOffer, Review, ReturnRecord, Serviceability, Session, Wishlist, OrderReview, BackgroundRemoval, Catalogue, Collection, CollectionEntry, Design, DesignSpec, Estimate,
   FromImageRequest, FromImageResponse, GenerateRequest, GenerateResponse, Language, LogoSuggestResponse, Me, Meta,
   Order, OrderRequest, OrderSummary, OtpRequestResponse, Palette, PanelsResponse, Preview, PublicCollection,
   PublicQuote, Quote, QuoteRequest, RefineResponse, Reorder, SavedDesign, Size, Ticket, UnderstandRequest,
@@ -48,8 +49,49 @@ export const api = {
     message: string; spec?: DesignSpec | null;
   }) => request<{ ok: boolean; reference: string }>('POST', 'shop/enquiries', { body }),
 
+  // marketplace: delivery, products, cart and checkout
+  serviceability: (q: { pincode: string; garment?: string; fabric?: string; pieces?: number; rush?: boolean }, signal?: AbortSignal) =>
+    request<Serviceability>('GET', 'shop/serviceability', { query: q, signal }),
+  offers: () => request<{ currency: string; items: PublicOffer[] }>('GET', 'shop/offers'),
+  products: (q: ProductQuery, signal?: AbortSignal) => request<ProductList>('GET', 'shop/products', { query: { ...q }, signal }),
+  product: (slug: string) => request<ProductDetail>('GET', `shop/products/${enc(slug)}`),
+  productReviews: (slug: string, page = 1) =>
+    request<{ items: Review[]; total: number; page: number; pages: number }>('GET', `shop/products/${enc(slug)}/reviews`, { query: { page } }),
+  cartQuote: (body: CartQuoteRequest, signal?: AbortSignal) => request<CartQuote>('POST', 'shop/cart/quote', { body, signal }),
+  checkout: (body: CheckoutRequest) => withRetry(() => request<Checkout>('POST', 'checkout', { body, timeoutMs: 90_000 })),
+  getCheckout: (id: string) => request<Checkout>('GET', `checkouts/${enc(id)}`),
+  payCheckout: (id: string) => withRetry(() => request<Checkout>('POST', `checkouts/${enc(id)}/pay`)),
+  myCart: () => request<{ items: ApiCartItem[]; max_items: number }>('GET', 'me/cart'),
+  putCart: (items: ApiCartItem[]) => request<{ items: ApiCartItem[]; max_items: number }>('PUT', 'me/cart', { body: { items } }),
+  mergeCart: (items: ApiCartItem[]) =>
+    request<{ items: ApiCartItem[]; max_items: number }>('POST', 'me/cart/merge', { body: { items } }),
+  wishlist: () => request<Wishlist>('GET', 'me/wishlist'),
+  wishlistAdd: (productId: string) => request<Wishlist>('POST', 'me/wishlist', { body: { product_id: productId } }),
+  wishlistRemove: (productId: string) => request<Wishlist>('DELETE', `me/wishlist/${enc(productId)}`),
+  cancelOrder: (id: string, reason: string) => request<Order>('POST', `me/orders/${enc(id)}/cancel`, { body: { reason } }),
+  requestReturn: (id: string, body: { reason: string; details: string; lines?: { line: number; quantity: number }[] | null }) =>
+    request<{ return: ReturnRecord; order: Order }>('POST', `me/orders/${enc(id)}/returns`, { body }),
+  review: (id: string, body: { rating: number; title: string; body: string }) =>
+    request<{ review: OrderReview; order: Order }>('POST', `me/orders/${enc(id)}/review`, { body }),
+  notifications: (page = 1, unreadOnly = false) =>
+    request<NotificationPage>('GET', 'me/notifications', { query: { page, unread_only: unreadOnly } }),
+  markRead: (body: { ids: string[] } | { all: true }) =>
+    request<{ ok: boolean; marked: number; unread: number }>('POST', 'me/notifications/read', { body }),
+
+  // account security
+  setPassword: (next: string, current?: string) =>
+    request<{ ok: boolean; other_sessions_signed_out: number }>('POST', 'me/password', { body: { new: next, ...(current ? { current } : {}) } }),
+  requestIdentifier: (body: { phone: string } | { email: string }) =>
+    request<OtpRequestResponse>('POST', 'me/identifiers/request', { body }),
+  verifyIdentifier: (body: ({ phone: string } | { email: string }) & { code: string }) =>
+    request<Me>('POST', 'me/identifiers/verify', { body }),
+  sessions: () => request<{ items: Session[] }>('GET', 'me/sessions'),
+  dropSession: (id: string) => request<{ ok: boolean }>('DELETE', `me/sessions/${enc(id)}`),
+  revokeOtherSessions: () => request<{ ok: boolean; signed_out: number }>('POST', 'me/sessions/revoke-others'),
+
   // sign-in and account
-  requestOtp: (phone: string) => request<OtpRequestResponse>('POST', 'auth/otp/request', { body: { phone } }),
+  requestOtp: (to: string | { phone: string } | { email: string }) =>
+    request<OtpRequestResponse>('POST', 'auth/otp/request', { body: typeof to === 'string' ? { phone: to } : to }),
   me: () => request<Me>('GET', 'me'),
   updateMe: (body: Partial<Pick<Me, 'name' | 'email' | 'marketing_opt_in'>> & { addresses?: Address[] }) =>
     request<Me>('PATCH', 'me', { body }),
@@ -90,15 +132,32 @@ export const api = {
   replyTicket: (id: string, body: string) => request<Ticket>('POST', `me/tickets/${enc(id)}/reply`, { body: { body } }),
 };
 
-/** Our own session routes (httpOnly cookie), not the API proxy. */
-export async function verifyOtp(phone: string, code: string, name: string): Promise<{ customer: Me }> {
-  const res = await fetch('/api/session/verify', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin',
-    body: JSON.stringify({ phone, code, name }),
-  });
+async function sessionRoute(path: string, body: unknown): Promise<{ customer: Me }> {
+  let res: Response;
+  try {
+    res = await fetch(path, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(body),
+    });
+  } catch {
+    throw new ApiError('network', 'Can\'t reach UrJersey right now.');
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw parseErrorBody(res.status, data);
   return data as { customer: Me };
+}
+
+/**
+ * Our own session routes (httpOnly cookie), not the API proxy. `to` is a phone number
+ * (string, for older callers) or { phone } / { email }.
+ */
+export function verifyOtp(to: string | { phone: string } | { email: string }, code: string, name: string): Promise<{ customer: Me }> {
+  const who = typeof to === 'string' ? { phone: to } : to;
+  return sessionRoute('/api/session/verify', { ...who, code, name });
+}
+
+/** Password sign-in with a mobile number or email; the cookie is set by the route. */
+export function passwordLogin(identifier: string, password: string): Promise<{ customer: Me }> {
+  return sessionRoute('/api/session/login', { identifier, password });
 }
 
 export async function signOut(): Promise<void> {

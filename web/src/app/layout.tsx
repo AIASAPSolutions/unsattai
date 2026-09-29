@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { Footer } from '@/components/layout/Footer';
 import { Header } from '@/components/layout/Header';
 import { SessionProvider } from '@/components/providers/session';
+import { ShopSync } from '@/components/providers/shop';
 import { I18nProvider } from '@/i18n/provider';
 import { serverT } from '@/i18n/server';
 import { loadCatalogue } from '@/lib/server/catalogue';
@@ -30,6 +31,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
       <body>
         <I18nProvider initial={lang}>
           <SessionProvider>
+            <ShopSync />
             <Header />
             <main id="main" tabIndex={-1}>{children}</main>
             <Footer t={t} catalogue={catalogue} />

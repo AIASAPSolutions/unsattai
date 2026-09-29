@@ -8,19 +8,24 @@ import webEn, { type WebStrings } from './web/en';
 import webHi from './web/hi';
 import webTa from './web/ta';
 import webTe from './web/te';
+import marketEn, { type MarketStrings } from './market/en';
+import marketHi from './market/hi';
+import marketTa from './market/ta';
+import marketTe from './market/te';
 
 // Customer-facing text in English, Hindi, Telugu and Tamil. The mobile app's strings
-// (./app, copied from app/src/i18n) are reused as they are; web-only strings live in ./web.
+// (./app, copied from app/src/i18n) are reused as they are; web-only strings live in ./web and
+// marketplace strings (shop, cart, checkout, accounts, after-sales) in ./market.
 
-export type Strings = AppStrings & WebStrings;
+export type Strings = AppStrings & WebStrings & MarketStrings;
 export type StringKey = keyof Strings;
 
-const en: Strings = { ...appEn, ...webEn };
+const en: Strings = { ...appEn, ...webEn, ...marketEn };
 export const DICTS: Record<Language, Strings> = {
   en,
-  hi: { ...appHi, ...webHi },
-  te: { ...appTe, ...webTe },
-  ta: { ...appTa, ...webTa },
+  hi: { ...appHi, ...webHi, ...marketHi },
+  te: { ...appTe, ...webTe, ...marketTe },
+  ta: { ...appTa, ...webTa, ...marketTa },
 };
 
 export const LANGUAGES: Language[] = ['en', 'hi', 'te', 'ta'];

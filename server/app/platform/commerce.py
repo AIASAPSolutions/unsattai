@@ -187,8 +187,10 @@ def cart_quote(store: PlatformStore, body: CartQuoteIn, today: date | None = Non
         est = planning.promise(store, q["pieces"], body.rush, q["shipping"].get("transit_days", 0), today, seller=seller) \
             if seller else None
         q["estimate"] = est
+        slug = (product or {}).get("slug")
         items.append({"index": i, "product_id": it.product_id or None, "title": (product or {}).get("title")
-                      or spec.style_name, "garment": spec.garment, "seller": q.get("seller"), "quote": q,
+                      or spec.style_name, "slug": slug,
+                      "image_url": f"/api/v1/shop/products/{slug}/mockup.svg" if slug else None, "garment": spec.garment, "seller": q.get("seller"), "quote": q,
                       "coupon_share": share, "charges": charges[i], "delivery_date": (est or {}).get("delivery_date"),
                       "problems": q["problems"]})
         problems += [f"Item {i + 1}: {p}" for p in q["problems"]]

@@ -10,10 +10,13 @@ import s from './account.module.css';
 
 const NAV = [
   { href: '/account', key: 'accOrders', exact: true },
+  { href: '/account/wishlist', key: 'wishlistTitle' },
+  { href: '/account/notifications', key: 'notificationsTitle' },
   { href: '/account/designs', key: 'accDesigns' },
   { href: '/account/teams', key: 'accTeams' },
   { href: '/account/support', key: 'accSupport' },
   { href: '/account/profile', key: 'accProfile' },
+  { href: '/account/security', key: 'accSecurity' },
 ] as const;
 
 /** Account pages need a signed-in customer; signing in happens in place, without leaving the page. */
@@ -42,7 +45,7 @@ export function AccountShell({ children }: { children: ReactNode }) {
       <div className={s.top}>
         <div>
           <h1 style={{ margin: 0 }}>{t('navAccount')}</h1>
-          <p className="muted" style={{ margin: 0 }} data-testid="account-who">{me.name || me.phone} · <span className="tnum">{me.phone}</span></p>
+          <p className="muted" style={{ margin: 0 }} data-testid="account-who">{me.name || me.phone || me.email}{me.phone ? <> · <span className="tnum">{me.phone}</span></> : null}{me.email ? ` · ${me.email}` : ''}</p>
         </div>
         <Button kind="ghost" onClick={async () => { await signOut(); router.push('/'); }} testId="sign-out">{t('navSignOut')}</Button>
       </div>

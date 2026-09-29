@@ -395,6 +395,8 @@ def test_cart_quote_splits_the_coupon_by_value(env):
     assert [x["quote"]["coupon"]["amount"] for x in q["items"]] == shares
     assert q["totals"]["total"] == round(sum(x["quote"]["total"] for x in q["items"]), 2)
     assert all(x["seller"]["id"] == "sel_house" and x["delivery_date"] for x in q["items"])
+    for x in q["items"]:
+        assert (x["slug"] and x["image_url"].endswith("/mockup.svg")) if x["product_id"] else x["image_url"] is None
     offers = c.get("/api/v1/shop/offers").json()["items"]
     assert offers[0]["code"] == "WELCOME10" and offers[0]["title"]
 

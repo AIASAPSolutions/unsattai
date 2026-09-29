@@ -43,7 +43,7 @@ export function OrdersClient() {
       ) : state.orders.length === 0 ? (
         <Empty title={t('accNoOrders')} testId="orders-empty">
           <p>{t('accNoOrdersText')}</p>
-          <Button href="/design">{t('heroCta')}</Button>
+          <Button href="/shop">{t('navShop')}</Button>
         </Empty>
       ) : (
         <>
@@ -55,6 +55,7 @@ export function OrdersClient() {
                     <div className={s.itemTitle}>{o.number || o.id}{o.team_name ? ` · ${o.team_name}` : ''}</div>
                     <div className={s.itemMeta}>
                       {formatDate(o.created_at.slice(0, 10), lang, true)} · {t(`garment_${o.garment}` as 'garment_jersey')} · {t('piecesN', { n: o.pieces })}
+                      {o.seller_name ? ` · ${t('soldBy', { seller: o.seller_name })}` : ''}{o.payment_method === 'cod' ? ` · ${t('payCod')}` : ''}
                       {o.promised_delivery_date && o.fulfilment_status !== 'delivered' && o.fulfilment_status !== 'cancelled'
                         ? ` · ${t('promisedDelivery', { date: formatDate(o.promised_delivery_date, lang) })}` : ''}
                     </div>

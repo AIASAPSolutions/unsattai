@@ -1,0 +1,61 @@
+# UrJersey on one server: API + web store + operations app behind Caddy (HTTPS).
+# Usage: cp .env.example .env && edit .env && docker compose up -d --build
+name: urjersey
+
+services:
+  api:
+    build:
+      context: ../server
+      dockerfile: ../deploy/api.Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_PATH: /data/urjersey.db
+      CORS_ORIGINS: https://${OPS_DOMAIN},https://${SHOP_DOMAIN}
+    volumes:
+      - api-data:/data
+    expose: ["8000"]
+
+  web:
+    build:
+      context: ../web
+      dockerfile: ../deploy/web.Dockerfile
+      args:
+        NEXT_PUBLIC_SITE_URL: https://${SHOP_DOMAIN}
+    restart: unless-stopped
+    environment:
+      UJ_API_URL: http://api:8000          # inside the server network; never leaves the machine
+      UJ_API_KEY: ${API_KEY_WEB:-}
+    depends_on:
+      api:
+        condition: service_healthy
+    expose: ["3000"]
+
+  caddy:
+    build:
+      context: ../ops
+      dockerfile: ../deploy/caddy.Dockerfile
+      additional_contexts:
+        config: .
+      args:
+        VITE_API_BASE_URL: https://${API_DOMAIN}
+        VITE_WEB_STORE_URL: https://${SHOP_DOMAIN}
+    restart: unless-stopped
+    environment:
+      SHOP_DOMAIN: ${SHOP_DOMAIN}
+      API_DOMAIN: ${API_DOMAIN}
+      OPS_DOMAIN: ${OPS_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [api, web]
+
+volumes:
+  api-data:
+  caddy-data:
+  caddy-config:

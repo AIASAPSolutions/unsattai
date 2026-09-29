@@ -47,9 +47,11 @@ export interface CheckoutDraft {
   idempotencyKey: string | null;
   /** Payload the key was issued for: a changed order gets a new key, a retry reuses it. */
   keyFor: string | null;
+  /** The cart item being edited (Edit in the cart), or null for a new item. */
+  cartKey?: string | null;
 }
 
-export type DesignSource = 'generated' | 'picture' | 'saved' | 'reorder' | 'shared' | 'team';
+export type DesignSource = 'generated' | 'picture' | 'saved' | 'reorder' | 'shared' | 'team' | 'product';
 
 export interface FlowState {
   brief: Brief;
@@ -196,7 +198,7 @@ export const flow = {
   /** Open a design in the studio. A new design resets the checkout's order key but keeps contact details. */
   openSpec: (spec: DesignSpec, designId: string | null, source: DesignSource) => set({
     designId: designId || null, source, history: createHistory(spec), gestureBase: null,
-    checkout: { ...get().checkout, idempotencyKey: null, keyFor: null, collectionId: '', collectionTitle: '' },
+    checkout: { ...get().checkout, idempotencyKey: null, keyFor: null, collectionId: '', collectionTitle: '', cartKey: null },
   }),
 
   openDesign: (design: Design, source: DesignSource = 'generated') => flow.openSpec(design.spec, design.id, source),

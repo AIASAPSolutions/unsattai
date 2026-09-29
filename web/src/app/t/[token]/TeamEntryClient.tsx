@@ -9,7 +9,7 @@ import { SIZES, TEXT_LIMITS, type CollectionEntry, type PublicCollection, type S
 import { formatDate, formatMoney } from '@/lib/price';
 import { local } from '@/lib/store';
 import { cleanNumber } from '@/lib/validation';
-import { SizeChart } from '../../checkout/RosterEditor';
+import { SizeChart } from '../../configure/RosterEditor';
 import s from './team.module.css';
 
 interface SavedEntry {

@@ -44,7 +44,7 @@ export function ConfirmationClient({ id }: { id: string }) {
             {t(pickup ? 'promisedPickup' : 'promisedDelivery', { date: formatDate(promised, lang, true) })}
           </p>
         ) : null}
-        {order.payment?.demo ? <p className="small muted">{t('paidDemo', { ref: order.payment.reference })}</p> : null}
+        {order.payment?.demo ? <p className="small muted">{t('paidDemo', { ref: order.payment.reference ?? '' })}</p> : null}
         <div className={s.actions}>
           {!paid ? <Button href={`/order/${encodeURIComponent(order.id)}/pay`} testId="go-pay">{t('payment')}</Button> : null}
           <ExternalButton href={invoiceUrl(order.id)} testId="confirmation-invoice">{paid ? t('saveInvoice') : t('saveProforma')} ↗</ExternalButton>

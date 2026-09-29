@@ -1,10 +1,12 @@
 import type { Metadata } from 'next';
+import { ProductStrip } from '@/components/market/ProductStrip';
 import { EnquiryForm } from '@/components/shop/EnquiryForm';
 import { GarmentArt } from '@/components/shop/GarmentArt';
 import { Banner, Button, Card } from '@/components/ui';
 import { serverT } from '@/i18n/server';
-import { GARMENTS } from '@/lib/api/types';
+import { GARMENTS, type ProductList } from '@/lib/api/types';
 import { formatMoney, formatPercent, fromPrice } from '@/lib/price';
+import { serverApi } from '@/lib/server/api';
 import { loadCatalogue } from '@/lib/server/catalogue';
 import s from './home.module.css';
 
@@ -17,6 +19,7 @@ export const metadata: Metadata = {
 export default async function Home() {
   const { t, lang } = await serverT();
   const cat = await loadCatalogue();
+  const shop = await serverApi<ProductList>('shop/products?sort=popular&size=8', { revalidate: 120 }).catch(() => null);
   const maxTier = cat ? Math.max(...cat.quantity_tiers.map((x) => x.discount)) : 0;
   const colours: [string, string][] = [['#13225a', '#f2a900'], ['#0f766e', '#f8fafc'], ['#9f1239', '#fde047']];
 
@@ -52,6 +55,19 @@ export default async function Home() {
           </ol>
         </div>
       </section>
+
+      {shop?.items.length ? (
+        <section className={s.section} aria-labelledby="shop-title">
+          <div className="container">
+            <div className={s.sectionHead}>
+              <h2 id="shop-title">{t('homeShopTitle')}</h2>
+              <p className="muted">{t('homeShopText')}</p>
+            </div>
+            <ProductStrip products={shop.items} testId="home-products" />
+            <div style={{ marginTop: 20 }}><Button kind="secondary" href="/shop" testId="home-shop-all">{t('homeShopCta')}</Button></div>
+          </div>
+        </section>
+      ) : null}
 
       <section className={s.section} aria-labelledby="garments-title">
         <div className="container">

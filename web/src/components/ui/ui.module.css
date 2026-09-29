@@ -434,3 +434,89 @@ textarea.input {
   display: inline-block;
   flex: none;
 }
+
+/* ---------- popover */
+.popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 60;
+  width: min(340px, calc(100vw - 24px));
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 16px 40px rgba(15, 24, 48, 0.18);
+  padding: 14px;
+  text-align: left;
+  font-size: 0.95rem;
+}
+.popEnd {
+  left: auto;
+  right: 0;
+}
+.popWide {
+  width: min(400px, calc(100vw - 24px));
+}
+@media (max-width: 600px) {
+  .popover {
+    position: fixed;
+    top: 112px;
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-height: calc(100vh - 130px);
+    overflow-y: auto;
+  }
+}
+
+/* ---------- badge */
+.badge {
+  position: absolute;
+  top: -4px;
+  right: -6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #1c1400;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 18px;
+  text-align: center;
+}
+
+/* ---------- read-only rating */
+.ratingRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.ratingStars {
+  position: relative;
+  display: inline-block;
+  color: #d4d8e2;
+  letter-spacing: 1px;
+  line-height: 1;
+}
+.ratingStars > span {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  color: var(--accent);
+}
+.ratingMd {
+  font-size: 1rem;
+}
+.ratingNum {
+  font-weight: 700;
+  color: var(--ink-2);
+}
+.ratingCount {
+  color: var(--muted);
+}

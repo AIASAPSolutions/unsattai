@@ -6,7 +6,8 @@ import { Banner, Card, Skeleton, SvgImg, cx } from '@/components/ui';
 import { useI18n } from '@/i18n/provider';
 import { api } from '@/lib/api/endpoints';
 import type { Order } from '@/lib/api/types';
-import { formatDate, formatDateTime } from '@/lib/price';
+import { formatDate, formatDateTime, formatMoney } from '@/lib/price';
+import { tMaybe } from '@/i18n';
 import { stateName } from '@/lib/states';
 import s from './orderDetail.module.css';
 
@@ -24,11 +25,22 @@ export function OrderMockup({ order, className }: { order: Order; className?: st
 }
 
 /** Everything a customer can see about one order: status, dates, progress, shipments, lines and price. */
-const EVENT_KEYS = ['placed', 'paid', 'planned', 'hold', 'resumed', 'ready', 'delivered', 'cancelled'] as const;
+const EVENT_KEYS = [
+  'placed', 'paid', 'planned', 'hold', 'resumed', 'ready', 'delivered', 'cancelled', 'cod_confirmed', 'cod_collected',
+  'return_requested', 'return_approved', 'return_picked_up', 'return_rejected', 'reviewed', 'returned',
+] as const;
 
-/** Timeline texts come from the server in English; the ones without parameters are translated here. */
-export function eventText(t: ReturnType<typeof useI18n>['t'], e: { code: string; text: string }): string {
-  return (EVENT_KEYS as readonly string[]).includes(e.code) ? t(`ev_${e.code}` as 'ev_placed') : e.text;
+/** Timeline texts come from the server in English; known codes are translated here, using their params. */
+export function eventText(t: ReturnType<typeof useI18n>['t'], e: { code: string; text: string; params?: Record<string, unknown> }): string {
+  const p = e.params ?? {};
+  if ((EVENT_KEYS as readonly string[]).includes(e.code)) return t(`ev_${e.code}` as 'ev_placed');
+  if (e.code === 'stage' && typeof p.stage === 'string') return t('ev_stage', { stage: p.stage });
+  if (e.code === 'dispatched' && typeof p.carrier === 'string') {
+    return p.tracking ? t('ev_dispatched_tracking', { carrier: p.carrier, tracking: String(p.tracking) }) : t('ev_dispatched', { carrier: p.carrier });
+  }
+  if (e.code === 'refund' && p.amount !== undefined) return t('ev_refund', { amount: String(p.amount) });
+  if (e.code === 'return_resolved') return t(p.resolution === 'replacement' ? 'ev_return_replaced' : 'ev_return_refunded');
+  return e.text;
 }
 
 export function OrderDetail({ order, extraActions }: { order: Order; extraActions?: React.ReactNode }) {
@@ -42,7 +54,7 @@ export function OrderDetail({ order, extraActions }: { order: Order; extraAction
   const stages = f?.stages ?? [];
   const doneCount = stages.filter((x) => x.done_at).length;
   const timeline = [...(order.timeline ?? [])].reverse();
-  const paid = !!order.payment;
+  const paid = !!order.payment && order.payment_method !== 'cod';
 
   return (
     <div className="stack" style={{ gap: 20 }} data-testid="order-detail">
@@ -79,6 +91,17 @@ export function OrderDetail({ order, extraActions }: { order: Order; extraAction
             <div className={s.fact}>{order.total_pieces}</div>
             <div className="small">{t(`garment_${order.garment}` as 'garment_jersey')}{order.pricing ? ` · ${order.pricing.fabric.name}` : ''}</div>
           </div>
+          {order.seller?.name ? (
+            <div>
+              <div className="small muted">{t('seller')}</div>
+              <div className={s.fact} data-testid="order-seller">{order.seller.name}</div>
+              <div className="small" data-testid="order-payment">
+                {order.payment_method === 'cod'
+                  ? (order.payment?.collected ? t('codCollected') : t('payCod'))
+                  : paid ? t('paidOnline') : t('fstatus_awaiting_payment')}
+              </div>
+            </div>
+          ) : null}
           {addr && !pickup ? (
             <div>
               <div className="small muted">{t('shippingAddress')}</div>
@@ -92,13 +115,13 @@ export function OrderDetail({ order, extraActions }: { order: Order; extraAction
         </div>
         <div className={s.actions}>
           <a className={s.btnLink} href={invoiceUrl(order.id)} target="_blank" rel="noopener" data-testid="invoice-link">
-            {paid ? t('saveInvoice') : t('saveProforma')} ↗
+            {paid || order.payment?.collected ? t('saveInvoice') : t('saveProforma')} ↗
           </a>
           {extraActions}
         </div>
       </Card>
 
-      {stages.length && paid && status !== 'cancelled' ? (
+      {stages.length && !!order.payment && status !== 'cancelled' ? (
         <Card title={t('progress')} sub={t('of', { a: doneCount, b: stages.length })} testId="order-progress">
           <ol className={s.stages}>
             {stages.map((st, i) => {
@@ -117,23 +140,57 @@ export function OrderDetail({ order, extraActions }: { order: Order; extraAction
         </Card>
       ) : null}
 
-      {order.shipments?.length || f?.dispatched_at ? (
+      {f?.shipment || f?.dispatched_at ? (
         <Card title={t('shipmentTitle')} testId="order-shipments">
-          {f?.dispatched_at ? <p style={{ margin: 0 }}>{t('dispatchedOn', { date: formatDateTime(f.dispatched_at, lang) })}</p> : null}
-          {timeline.filter((e) => e.code === 'dispatched').slice(0, 3).map((e) => (
-            <p key={`${e.at}-${e.code}`} style={{ margin: '4px 0 0' }}>{e.text}</p>
-          ))}
-          {order.shipments?.length ? (
-            <p className="small muted" style={{ marginBottom: 0 }}>{t('shipmentRefs', { refs: order.shipments.join(', ') })}</p>
-          ) : null}
+          {f?.shipment ? (
+            <div className="stack" style={{ gap: 4 }} data-testid="shipment-details">
+              <div><strong>{f.shipment.carrier_name}</strong>{f.shipment.tracking_no ? <> · {t('trackingNo')}: <span className="tnum" data-testid="tracking-no">{f.shipment.tracking_no}</span></> : null}</div>
+              <div className="small">{t(`shp_${f.shipment.status}` as 'shp_planned')}</div>
+              {f.shipment.planned_date && !f.shipment.dispatched_at ? <div className="small">{t('plannedDispatch', { date: formatDate(f.shipment.planned_date, lang) })}</div> : null}
+              {f.shipment.dispatched_at ? <div className="small">{t('dispatchedOn', { date: formatDateTime(f.shipment.dispatched_at, lang) })}</div> : null}
+              {f.shipment.delivered_at ? <div className="small">{t('deliveredOn', { date: formatDateTime(f.shipment.delivered_at, lang) })}</div> : null}
+              {f.shipment.tracking_url ? (
+                <a href={f.shipment.tracking_url} target="_blank" rel="noopener noreferrer" data-testid="tracking-link">{t('trackParcel')} ↗</a>
+              ) : null}
+            </div>
+          ) : f?.dispatched_at ? <p style={{ margin: 0 }}>{t('dispatchedOn', { date: formatDateTime(f.dispatched_at, lang) })}</p> : null}
+        </Card>
+      ) : null}
+
+      {order.returns?.length || order.refunds?.length || order.review ? (
+        <Card title={t('afterSales')} testId="order-aftersales">
+          <div className="stack" style={{ gap: 10 }}>
+            {(order.returns ?? []).map((r) => (
+              <div key={r.id} data-testid="return-record">
+                <strong>{t('returnN', { n: r.number })}</strong> · {t(`rstatus_${r.status}` as 'rstatus_requested')}
+                <div className="small">{tMaybe(t, `reason_${r.reason}`, r.reason)}{r.details ? ` · ${r.details}` : ''}</div>
+                {r.note ? <div className="small muted">{r.note}</div> : null}
+              </div>
+            ))}
+            {(order.refunds ?? []).map((r) => (
+              <div key={r.id} className="small" data-testid="refund-record">
+                {t('refundOf', { amount: formatMoney(r.amount, order.pricing?.currency ?? 'INR', lang) })} · {formatDateTime(r.at, lang)}
+                {r.method === 'demo' ? ` · ${t('refundDemo')}` : ''}
+              </div>
+            ))}
+            {order.review ? (
+              <div data-testid="order-review">
+                <strong>{t('yourReview')}</strong> <span aria-label={t('ratingOf', { avg: order.review.rating, n: 1 })}>{'★'.repeat(order.review.rating)}{'☆'.repeat(5 - order.review.rating)}</span>
+                {order.review.title ? <div>{order.review.title}</div> : null}
+                {order.review.body ? <div className="small">{order.review.body}</div> : null}
+                {order.review.hidden ? <div className="small muted">{t('reviewHidden')}</div> : null}
+              </div>
+            ) : null}
+          </div>
         </Card>
       ) : null}
 
       {timeline.length ? (
         <Card title={t('updates')} testId="order-timeline">
           <ol className={s.timeline}>
-            {timeline.map((e) => (
-              <li key={`${e.at}-${e.code}`}>
+            {timeline.map((e, i) => (
+              // Several events can share a time and code (stages done together), so the position is part of the key.
+              <li key={`${timeline.length - i}-${e.at}-${e.code}`}>
                 <time dateTime={e.at} className="small muted">{formatDateTime(e.at, lang)}</time>
                 <div>{eventText(t, e)}</div>
               </li>

@@ -1,161 +1,124 @@
 'use client';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
-import { OtpSignIn } from '@/components/account/OtpSignIn';
-import { FlowSteps } from '@/components/design/FlowSteps';
+import { SignInForm } from '@/components/account/OtpSignIn';
+import { CartTotals, entryTitle, ItemThumb, Offers } from '@/components/market/CartBits';
 import { useCatalogue } from '@/components/providers/data';
+import { usePincode, useProductIndex } from '@/components/providers/shop';
 import { useSession } from '@/components/providers/session';
-import { EnquiryForm } from '@/components/shop/EnquiryForm';
 import { AddressFields } from '@/components/shop/AddressFields';
-import { PriceSummary } from '@/components/shop/PriceSummary';
-import {
-  Banner, Button, Card, Checkbox, Empty, ErrorState, Loading, Modal, SelectField, Skeleton, Spinner, SvgImg, Tabs, TextField, cx,
-} from '@/components/ui';
+import { Banner, Button, Card, Checkbox, Empty, Loading, Skeleton, Spinner, Tabs, TextField, cx } from '@/components/ui';
 import { errorMessage, type StringKey } from '@/i18n';
 import { useI18n } from '@/i18n/provider';
-import { ApiError, isAbort } from '@/lib/api/client';
+import { ApiError } from '@/lib/api/client';
 import { api } from '@/lib/api/endpoints';
-import { SIZES, type Address, type OrderFailure, type Preview, type QuoteRequest, type Size } from '@/lib/api/types';
-import { currentSpec, flow, rowKey, useFlow } from '@/lib/flow';
+import type { Address, CheckoutItemError, Me } from '@/lib/api/types';
+import { cartPieces, linesSummary, type CartEntry } from '@/lib/cart';
 import {
-  BULK_PIECES, buildItems, orderPayload, payloadHash, rowsForFailure, validateAddress, validateCustomer, validateItems, type DraftIssue,
-} from '@/lib/order';
-import { formatDate, formatMoney, formatPercent, quoteLines } from '@/lib/price';
-import { totalPieces } from '@/lib/roster';
-import { STATES } from '@/lib/states';
-import { checkPincode } from '@/lib/validation';
-import s from './checkout.module.css';
-import { RosterEditor, SizeChart, type RowIssues } from './RosterEditor';
-import { useQuote } from './useQuote';
+  cartQuoteRequest, checkoutHash, checkoutIssues, checkoutItemErrors, checkoutPayload, codBlock, groupBySeller, type CheckoutDraft,
+} from '@/lib/checkout';
+import { flow, EMPTY_ADDRESS } from '@/lib/flow';
+import { orderPayload, payloadHash } from '@/lib/order';
+import { reasonKey } from '@/lib/pincode';
+import { formatDate, formatMoney } from '@/lib/price';
+import { buyNow, cart, checkoutDraft, useCart, useShop } from '@/lib/shopStore';
+import { stateName } from '@/lib/states';
+import { useCartQuote } from '@/lib/useCartQuote';
+import s from '@/components/market/market.module.css';
 
-const ROW_MSG: Record<'player_name' | 'number' | 'quantity', StringKey> = { player_name: 'tooLong', number: 'digitsOnly', quantity: 'qtyRange' };
 const CUST_MSG: Record<'name' | 'phone' | 'email', StringKey> = { name: 'required', phone: 'otpPhoneInvalid', email: 'invalid' };
 
 function sameAddress(a: Address, b: Address) {
   return a.line1.trim() === b.line1.trim() && a.pincode === b.pincode && a.city.trim().toLowerCase() === b.city.trim().toLowerCase();
 }
 
+/** Which saved address is chosen: the one picked, else the one matching the draft, else the first (default). */
+function chosenIndex(me: Me | null, draft: CheckoutDraft): number {
+  if (!me?.addresses.length) return -1;
+  if (draft.addressIndex >= 0 && draft.addressIndex < me.addresses.length) return draft.addressIndex;
+  if (draft.addressIndex === -2) return -1; // "new address" chosen
+  const hit = me.addresses.findIndex((a) => sameAddress(a, draft.address));
+  if (hit >= 0) return hit;
+  return draft.address.line1.trim() ? -1 : 0;
+}
+
 export function CheckoutClient() {
   const { t, lang } = useI18n();
   const router = useRouter();
-  const spec = useFlow(currentSpec);
-  const designId = useFlow((st) => st.designId);
-  const draft = useFlow((st) => st.checkout);
-  const { catalogue, error: catalogueError, retry: retryCatalogue } = useCatalogue();
+  const params = useSearchParams();
   const { me, loading: meLoading } = useSession();
+  const { catalogue } = useCatalogue();
+  const index = useProductIndex();
+  const pin = usePincode();
+  const { items: cartItems, ready: cartReady } = useCart();
+  const bn = useShop((st) => st.buyNow);
+  const draft = useShop((st) => st.checkout);
+
+  const isBuyNow = params.get('buy') === '1' && !!bn;
+  const items: CartEntry[] = useMemo(() => (isBuyNow && bn ? [bn.entry] : cartItems), [isBuyNow, bn, cartItems]);
+  const collection = isBuyNow ? bn?.collection ?? null : null;
 
   const [contactTab, setContactTab] = useState<'guest' | 'signin'>('guest');
   const [attempted, setAttempted] = useState(false);
   const [placing, setPlacing] = useState(false);
-  const [placed, setPlaced] = useState(false);
+  const [leaving, setLeaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [failures, setFailures] = useState<OrderFailure[]>([]);
-  const [couponInput, setCouponInput] = useState(draft.coupon);
-  const [bulkOpen, setBulkOpen] = useState(false);
-  const [chartOpen, setChartOpen] = useState(false);
-  const [preview, setPreview] = useState<{ data: Preview | null; error: unknown; forSpec: unknown }>({ data: null, error: null, forSpec: null });
+  const [itemErrors, setItemErrors] = useState<CheckoutItemError[]>([]);
 
-  const garment = spec?.garment ?? 'jersey';
-  const fabrics = useMemo(() => (catalogue?.fabrics ?? []).filter((f) => f.garments.includes(garment)), [catalogue, garment]);
-  // A fabric chosen for another garment (e.g. "pro" for shorts) falls back to the first one that fits.
-  const fabric = fabrics.some((f) => f.id === draft.fabric) ? draft.fabric : (fabrics[0]?.id ?? draft.fabric);
-
-  const items = useMemo(() => (spec ? buildItems(draft, spec) : []), [draft, spec]);
-  const pieces = totalPieces(items);
-  const sizes = useMemo(() => [...new Set(items.map((i) => i.size))].sort((a, b) => SIZES.indexOf(a) - SIZES.indexOf(b)), [items]);
-  const sizeKey = sizes.join(',');
-
+  const idx = chosenIndex(me, draft);
+  const address = me && idx >= 0 ? { ...EMPTY_ADDRESS, ...me.addresses[idx] } : draft.address;
   const customer = me
-    ? { name: draft.customer.name || me.name, phone: me.phone, email: draft.customer.email || me.email }
+    ? { name: draft.customer.name || me.name, phone: me.phone || draft.customer.phone, email: draft.customer.email || me.email }
     : draft.customer;
+  const effective: CheckoutDraft = { ...draft, address, customer };
 
-  // ------------------------------------------------------------ issues (shown after the first attempt)
-  const itemIssues = validateItems(items, draft.mode);
-  const addressIssues = draft.method === 'ship' ? validateAddress(draft.address) : [];
-  const customerIssues = validateCustomer(customer);
-  const collectionNeedsSignIn = !!draft.collectionId && !me;
-  const allIssues: DraftIssue[] = [...itemIssues, ...addressIssues, ...customerIssues];
-
-  const rowIssues: RowIssues = {};
-  for (const i of itemIssues) if (i.kind === 'row') (rowIssues[i.index] ??= {})[i.field] = t(ROW_MSG[i.field]);
-  const custErr = (f: keyof typeof CUST_MSG) =>
-    attempted && customerIssues.some((i) => i.kind === 'customer' && i.field === f) ? t(CUST_MSG[f]) : null;
-
-  const failedRows: Record<number, string> = {};
-  for (const f of failures) {
-    for (const i of rowsForFailure(items, f)) failedRows[i] = f.checks.map((c) => c.message).join(' ');
-  }
-
-  // ------------------------------------------------------------ preview and print checks for the sizes ordered
-  useEffect(() => {
-    if (!spec) return;
-    const controller = new AbortController();
-    const timer = setTimeout(() => {
-      api.render(spec, sizeKey ? (sizeKey.split(',') as Size[]) : [], controller.signal)
-        .then((data) => setPreview({ data, error: null, forSpec: spec }))
-        .catch((e) => !isAbort(e) && setPreview((p) => ({ ...p, error: e })));
-    }, 300);
-    return () => {
-      clearTimeout(timer);
-      controller.abort();
-    };
-  }, [spec, sizeKey]);
-  const checksFail = preview.data ? !preview.data.manufacturing_ready : false;
-
-  // ------------------------------------------------------------ live price
-  const quoteReq: QuoteRequest | null = useMemo(() => {
-    if (!spec || !catalogue) return null;
-    const lines = quoteLines(items.filter((it, i) => it.quantity >= 1 && !itemIssues.some((x) => x.kind === 'row' && x.index === i)));
-    if (!lines.length) return null;
-    const pin = draft.address.pincode.trim();
-    return {
-      garment: spec.garment, fabric, logos: Math.min(4, spec.elements.filter((e) => e.type === 'logo').length), lines,
-      delivery: {
-        method: draft.method,
-        pincode: draft.method === 'ship' && !checkPincode(pin) ? pin : '',
-        state: draft.method === 'ship' && STATES.some((x) => x.code === draft.address.state) ? draft.address.state : '',
-      },
-      rush: draft.rush && !!catalogue.rush.enabled, coupon: draft.coupon,
-    };
-    // itemIssues is derived from items; listing items is enough.
+  const req = useMemo(() => cartQuoteRequest(items, effective, pin.pincode),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [spec, catalogue, items, fabric, draft.method, draft.address.pincode, draft.address.state, draft.rush, draft.coupon]);
-  const q = useQuote(quoteReq);
-  const quote = quoteReq ? q.quote : null;
+    [items, draft.method, address.pincode, address.state, draft.coupon, draft.rush, draft.payment, pin.pincode]);
+  const q = useCartQuote(req, { express: !!catalogue?.rush.enabled });
+  const quote = q.quote && q.quote.items.length === items.length ? q.quote : null;
+  const groups = quote ? groupBySeller(items, quote) : [];
+  const cod = catalogue?.cod ?? null;
+  const codWhy = codBlock(quote, cod);
 
-  if (placed) return <Loading label={t('openingPayment')} testId="opening-payment" />;
+  // Cash on delivery chosen but not possible any more (another PIN code or a bigger order): switch back to online.
+  useEffect(() => {
+    if (draft.payment === 'cod' && codWhy && quote) checkoutDraft.set({ payment: 'online' });
+  }, [draft.payment, codWhy, quote]);
 
-  if (!spec) {
+  if (leaving) return <Loading label={t('openingPayment')} testId="opening-payment" />;
+  if (!cartReady || meLoading) return <Loading label={t('loading')} />;
+  if (!items.length) {
     return (
       <div className="container page">
-        <Empty title={t('checkoutEmpty')} testId="checkout-empty">
-          <p>{t('checkoutEmptyText')}</p>
-          <Button href="/design">{t('heroCta')}</Button>
+        <Empty icon="🛒" title={t('checkoutNothing')} testId="checkout-empty">
+          <p>{t('checkoutNothingText')}</p>
+          <div className="row" style={{ justifyContent: 'center' }}>
+            <Button href="/shop">{t('navShop')}</Button>
+            <Button kind="secondary" href="/design">{t('heroCta')}</Button>
+          </div>
         </Empty>
       </div>
     );
   }
 
-  const set = flow.setCheckout;
-  const setCustomer = (patch: Partial<typeof draft.customer>) => set((c) => ({ customer: { ...c.customer, ...patch } }));
-  const pct = (r: number) => formatPercent(r, lang).replace('%', '').trim();
-  const money = (n: number) => formatMoney(n, catalogue?.currency ?? 'INR', lang);
-
-  const switchMode = (mode: 'single' | 'team') => {
-    if (mode === draft.mode) return;
-    if (mode === 'team' && draft.rows.length === 0) {
-      // Start the roster with the studio's own player so nothing typed there is lost.
-      const ty = spec.typography;
-      set({ mode, rows: [{ key: rowKey(), player_name: ty.player_name, number: ty.number, size: draft.single.size, quantity: 1 }] });
-    } else set({ mode });
-  };
+  const set = checkoutDraft.set;
+  const setCustomer = (patch: Partial<CheckoutDraft['customer']>) => set((c) => ({ customer: { ...c.customer, ...patch } }));
+  const money = (n: number) => formatMoney(n, quote?.currency ?? catalogue?.currency ?? 'INR', lang);
+  const issues = checkoutIssues(effective);
+  const custErr = (f: keyof typeof CUST_MSG) =>
+    attempted && issues.some((i) => i.kind === 'customer' && i.field === f) ? t(CUST_MSG[f]) : null;
+  const needsSignIn = !!collection && !me;
+  const rushEnabled = !!catalogue?.rush.enabled;
+  // "Fix the highlighted fields" goes away once they are fixed.
+  const shownError = error === t('fixErrors') && !issues.length && !needsSignIn ? null : error;
 
   const submit = async () => {
     setAttempted(true);
     setError(null);
-    setFailures([]);
-    if (allIssues.length || collectionNeedsSignIn) {
-      setError(collectionNeedsSignIn ? t('teamNeedsSignIn') : t('fixErrors'));
+    setItemErrors([]);
+    if (issues.length || needsSignIn) {
+      setError(needsSignIn ? t('teamNeedsSignIn') : t('fixErrors'));
       requestAnimationFrame(() => {
         const el = document.querySelector<HTMLElement>('[aria-invalid="true"]');
         el?.focus();
@@ -163,206 +126,99 @@ export function CheckoutClient() {
       });
       return;
     }
-    if (checksFail) {
-      setError(t('orderBlocked'));
+    if (quote?.problems.length) {
+      setError(t('cartHasProblems'));
       return;
     }
-    const id = flow.ensureDesignId();
-    const address = { ...draft.address, name: draft.address.name || customer.name, phone: draft.address.phone || customer.phone };
-    const payload = orderPayload({
-      designId: designId ?? id, spec, items, customer, language: lang,
-      draft: { ...draft, fabric, address, rush: draft.rush && !!catalogue?.rush.enabled },
-    });
-    const key = flow.keyForPayload(payloadHash(payload));
     setPlacing(true);
     try {
-      const order = await api.createOrder({ ...payload, idempotency_key: key });
-      if (me && draft.method === 'ship' && draft.saveAddress && !me.addresses.some((a) => sameAddress(a, address))) {
-        await api.updateMe({ addresses: [...me.addresses, payload.delivery!.address!].slice(-5) }).catch(() => undefined);
+      if (collection && items[0].spec) {
+        // Team lists are ordered as one order that closes the list (POST /orders with collection_id).
+        const e = items[0];
+        const payload = {
+          ...orderPayload({
+            designId: e.design_id || flow.ensureDesignId(), spec: e.spec!, items: e.lines, customer, language: lang,
+            draft: { fabric: e.fabric, rush: draft.rush, coupon: draft.coupon, method: draft.method, address, collectionId: collection.id },
+          }),
+          payment_method: draft.payment,
+        };
+        const key = checkoutDraft.keyFor(payloadHash(payload));
+        const order = await api.createOrder({ ...payload, idempotency_key: key });
+        await afterPlaced();
+        buyNow.clear();
+        flow.setCheckout({ collectionId: '', collectionTitle: '' });
+        router.push(draft.payment === 'online' && !order.payment ? `/order/${encodeURIComponent(order.id)}/pay` : `/order/${encodeURIComponent(order.id)}`);
+        return;
       }
-      setPlaced(true);
-      router.push(`/order/${encodeURIComponent(order.id)}/pay`);
-      setTimeout(() => flow.orderPlaced(), 400);
+      const payload = checkoutPayload({ items, draft: effective, language: lang });
+      const key = checkoutDraft.keyFor(checkoutHash(payload));
+      const ck = await api.checkout({ ...payload, idempotency_key: key });
+      await afterPlaced();
+      if (isBuyNow) buyNow.clear();
+      else cart.removeMany(items.map((e) => e.key));
+      router.push(ck.payment_method === 'online' && ck.status !== 'paid'
+        ? `/checkout/${encodeURIComponent(ck.id)}/pay` : `/checkout/${encodeURIComponent(ck.id)}`);
     } catch (e) {
-      if (e instanceof ApiError && e.kind === 'blocked') {
-        const d = e.data as { failures?: OrderFailure[] };
-        setFailures(d.failures ?? []);
-        setError(t('orderBlockedServer'));
-      } else {
-        setError(errorMessage(t, e));
-      }
-    } finally {
+      const errs = e instanceof ApiError ? checkoutItemErrors(e.data) : [];
+      setItemErrors(errs);
+      setError(errs.length ? t('checkoutItemsFailed') : errorMessage(t, e));
       setPlacing(false);
     }
   };
 
-  // ------------------------------------------------------------ express dates
-  const dateOf = (e?: { delivery_date: string; ready_date: string } | null) =>
-    e ? formatDate(draft.method === 'pickup' ? e.ready_date : e.delivery_date, lang) : null;
-  const std = quote ? (draft.rush ? quote.estimate_standard : quote.estimate) : null;
-  const exp = quote ? (draft.rush ? quote.estimate : q.expressEstimate) : null;
-  const stdDate = dateOf(std);
-  const expDate = dateOf(exp);
+  async function afterPlaced() {
+    setLeaving(true);
+    if (me && draft.method === 'ship' && idx < 0 && draft.saveAddress && !me.addresses.some((a) => sameAddress(a, address))) {
+      const a = { ...address, name: address.name || customer.name, phone: address.phone || customer.phone };
+      await api.updateMe({ addresses: [...me.addresses, a].slice(-10) }).catch(() => undefined);
+    }
+    checkoutDraft.placed();
+  }
 
-  const fabricName = (id: string) => fabrics.find((f) => f.id === id)?.name ?? id;
+  const itemError = (i: number) => itemErrors.find((x) => x.index === i);
+  const titleOf = (e: CartEntry, qTitle?: string) => entryTitle(e, e.product_id ? index?.get(e.product_id) : null, qTitle) || (e.product_id ? t('readyMade') : t('checkoutYourDesign'));
 
   return (
     <div className="container page" data-testid="screen-checkout">
-      <FlowSteps current={4} />
       <div className="row" style={{ justifyContent: 'space-between', marginBottom: 12 }}>
         <h1 style={{ margin: 0 }}>{t('checkoutTitle')}</h1>
-        <Button kind="ghost" href="/studio">← {t('backToStudio')}</Button>
+        {!isBuyNow ? <Button kind="ghost" href="/cart">← {t('backToCart')}</Button> : null}
       </div>
+      {collection ? <Banner tone="info" testId="collection-banner">{t('collectionBanner', { title: collection.title })}</Banner> : null}
 
-      {draft.collectionId ? (
-        <Banner tone="info" testId="collection-banner"
-          action={t('collectionClear')} onAction={() => set({ collectionId: '', collectionTitle: '' })}>
-          {t('collectionBanner', { title: draft.collectionTitle })}
-        </Banner>
-      ) : null}
-
-      <div className={s.layout}>
+      <div className={s.cartLayout}>
         <div className="stack" style={{ gap: 20 }}>
-          {/* ---------------------------------------------------- 1. pieces */}
-          <Card title={t('stepPieces')}>
-            <Tabs value={draft.mode} onChange={switchMode} label={t('orderTitle')} testId="mode"
-              options={[{ value: 'single', label: t('single') }, { value: 'team', label: t('teamRoster') }]} />
-            <div style={{ height: 14 }} />
-            {draft.mode === 'single' ? (
+          {/* ---------------------------------------------------- 1. who */}
+          <Card title={t('ckStepAccount')} testId="contact">
+            {me ? (
               <div className="stack">
-                <div className={s.grid2}>
-                  <SelectField label={t('size')} value={draft.single.size} testId="single-size"
-                    onValue={(v) => set((c) => ({ single: { ...c.single, size: v as Size } }))}>
-                    {SIZES.map((z) => <option key={z} value={z}>{z}</option>)}
-                  </SelectField>
-                  <TextField label={t('quantity')} type="number" min={1} max={500} value={draft.single.quantity || ''} testId="single-qty"
-                    error={attempted && itemIssues.some((i) => i.kind === 'row') ? t('qtyRange') : null}
-                    onValue={(v) => set((c) => ({ single: { ...c.single, quantity: Math.max(0, Math.min(500, Math.floor(Number(v) || 0))) } }))} />
-                </div>
-                <p className="small muted" style={{ margin: 0 }}>
-                  {spec.typography.player_name || spec.typography.number
-                    ? t('singlePrinted', { name: [spec.typography.player_name, spec.typography.number].filter(Boolean).join(' ') })
-                    : t('singleNoName')}
+                <p style={{ margin: 0 }} data-testid="signed-in-as">
+                  {t('signedInAs', { name: me.name || me.phone || me.email })}
+                  {me.phone ? <> · <span className="tnum">{me.phone}</span></> : null}{me.email ? ` · ${me.email}` : ''}
                 </p>
-                <button type="button" className={s.linkBtn} onClick={() => setChartOpen(true)} data-testid="size-chart-single">{t('sizeChart')}</button>
-              </div>
-            ) : (
-              <RosterEditor rows={draft.rows} onChange={(rows) => set({ rows })} issues={attempted ? rowIssues : {}}
-                failed={failedRows} defaultSize={draft.single.size} />
-            )}
-            {attempted && itemIssues.some((i) => i.kind === 'emptyRoster') ? <Banner tone="fail">{t('emptyRoster')}</Banner> : null}
-            {itemIssues.some((i) => i.kind === 'tooManyLines' || i.kind === 'tooManyPieces') ? <Banner tone="fail">{t('tooManyLines')}</Banner> : null}
-            {pieces > BULK_PIECES ? (
-              <div style={{ marginTop: 12 }}>
-                <Banner tone="info" testId="bulk-banner" action={t('bulkBannerCta')} onAction={() => setBulkOpen(true)}>
-                  {t('bulkBanner', { n: pieces })}
-                </Banner>
-              </div>
-            ) : null}
-          </Card>
-
-          {/* ---------------------------------------------------- 2. fabric and options */}
-          <Card title={t('stepOptions')}>
-            <fieldset className={s.fieldset}>
-              <legend className={s.legend}>{t('fabric')}</legend>
-              {!catalogue && !catalogueError ? <Skeleton height={64} /> : null}
-              {catalogueError ? <ErrorState message={errorMessage(t, catalogueError)} retryLabel={t('retry')} onRetry={retryCatalogue} /> : null}
-              <div className={s.options} role="radiogroup" aria-label={t('fabric')}>
-                {fabrics.map((f) => (
-                  <label key={f.id} className={cx(s.option, fabric === f.id && s.optionOn)} data-testid={`fabric-${f.id}`}>
-                    <input type="radio" name="fabric" value={f.id} checked={fabric === f.id} onChange={() => set({ fabric: f.id })} />
-                    <span className={s.optionName}>{f.name}</span>
-                    <span className="small muted">{f.surcharge > 0 ? t('fabricSurcharge', { amount: money(f.surcharge) }) : t('included')}</span>
-                  </label>
-                ))}
-              </div>
-            </fieldset>
-
-            {catalogue?.rush.enabled ? (
-              <div className={s.express} data-testid="express">
-                <Checkbox checked={draft.rush} onChange={(v) => set({ rush: v })} testId="express-toggle">
-                  <strong>{catalogue.rush.label || t('expressLabel')}</strong>
-                </Checkbox>
-                <p className="small" style={{ margin: '4px 0 0 28px' }} data-testid="express-dates">
-                  {stdDate && expDate
-                    ? stdDate === expDate
-                      ? t('expressSameDate', { pct: pct(catalogue.rush.fee_rate) })
-                      : t('expressDates', { pct: pct(catalogue.rush.fee_rate), standard: stdDate, express: expDate })
-                    : t('expressHint', { pct: pct(catalogue.rush.fee_rate) })}
-                </p>
-              </div>
-            ) : null}
-
-            <div className={s.coupon}>
-              <TextField label={t('couponCode')} value={couponInput} optional={t('optional')} maxLength={24} testId="coupon"
-                onValue={(v) => setCouponInput(v.toUpperCase().replace(/\s/g, ''))}
-                onKeyDown={(e) => { if (e.key === 'Enter') set({ coupon: couponInput }); }} />
-              {draft.coupon && draft.coupon === couponInput ? (
-                <Button kind="secondary" onClick={() => { setCouponInput(''); set({ coupon: '' }); }} testId="coupon-remove">{t('couponRemove')}</Button>
-              ) : (
-                <Button kind="secondary" disabled={!couponInput} onClick={() => set({ coupon: couponInput })} testId="coupon-apply">{t('couponApply')}</Button>
-              )}
-            </div>
-            {draft.coupon && quote?.coupon?.error ? <Banner tone="warn" testId="coupon-error">{t('couponInvalid')} {quote.coupon.error}</Banner> : null}
-            {draft.coupon && quote?.coupon && quote.coupon.amount > 0 ? (
-              <Banner tone="pass" testId="coupon-ok">{t('couponSaves', { code: quote.coupon.code, amount: money(quote.coupon.amount) })}</Banner>
-            ) : null}
-          </Card>
-
-          {/* ---------------------------------------------------- 3. delivery */}
-          <Card title={t('stepDelivery')}>
-            <Tabs value={draft.method} onChange={(m) => set({ method: m })} label={t('delivery')} testId="method"
-              options={[{ value: 'ship', label: t('shipToAddress') },
-                ...(catalogue?.pickup.enabled ?? true ? [{ value: 'pickup' as const, label: t('pickup') }] : [])]} />
-            <div style={{ height: 14 }} />
-            {draft.method === 'pickup' ? (
-              <p style={{ margin: 0 }} data-testid="pickup-info">{t('pickupAt', { label: catalogue?.pickup.label ?? '' })}</p>
-            ) : (
-              <div className="stack">
-                {me?.addresses.length ? (
-                  <div className={s.saved} role="group" aria-label={t('savedAddresses')}>
-                    <span className="small muted">{t('savedAddresses')}</span>
-                    {me.addresses.map((a, i) => (
-                      <button key={`${a.line1}-${a.pincode}-${i}`} type="button" data-testid={`saved-address-${i}`}
-                        className={cx(s.savedAddr, sameAddress(a, draft.address) && s.savedOn)}
-                        onClick={() => set({ address: { ...a } })}>
-                        <strong>{a.name || me.name}</strong> · {a.line1}, {a.city} {a.pincode}
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
-                <AddressFields value={draft.address} onChange={(address) => set({ address })} showErrors={attempted} testId="addr" />
-                {me ? (
-                  <Checkbox checked={draft.saveAddress} onChange={(v) => set({ saveAddress: v })} testId="save-address">
-                    {t('saveAddressToAccount')}
-                  </Checkbox>
-                ) : null}
-              </div>
-            )}
-          </Card>
-
-          {/* ---------------------------------------------------- 4. contact */}
-          <Card title={t('stepContact')} testId="contact">
-            {meLoading ? <Spinner /> : me ? (
-              <div className="stack">
-                <p style={{ margin: 0 }} data-testid="signed-in-as">{t('signedInAs', { name: me.name || me.phone })} · <span className="tnum">{me.phone}</span></p>
                 <div className={s.grid2}>
                   <TextField label={t('customerName')} value={customer.name} autoComplete="name" maxLength={80}
                     onValue={(v) => setCustomer({ name: v })} error={custErr('name')} testId="cust-name" />
-                  <TextField label={t('email')} value={customer.email} type="email" autoComplete="email" optional={t('optional')}
-                    maxLength={120} onValue={(v) => setCustomer({ email: v })} error={custErr('email')} testId="cust-email" />
+                  {me.phone ? (
+                    <TextField label={t('email')} value={customer.email} type="email" autoComplete="email" optional={t('optional')}
+                      maxLength={120} onValue={(v) => setCustomer({ email: v })} error={custErr('email')} testId="cust-email" />
+                  ) : (
+                    <TextField label={t('phone')} value={customer.phone} type="tel" autoComplete="tel" maxLength={24}
+                      onValue={(v) => setCustomer({ phone: v })} error={custErr('phone')} hint={t('phoneForDelivery')} testId="cust-phone" />
+                  )}
                 </div>
               </div>
             ) : (
               <>
-                <Tabs value={draft.collectionId ? 'signin' : contactTab} onChange={setContactTab} label={t('stepContact')} testId="contact-tab"
+                <Tabs value={collection ? 'signin' : contactTab} onChange={setContactTab} label={t('ckStepAccount')} testId="contact-tab"
                   options={[{ value: 'guest', label: t('contactGuest') }, { value: 'signin', label: t('contactSignIn') }]} />
                 <div style={{ height: 14 }} />
-                {contactTab === 'signin' || draft.collectionId ? (
+                {contactTab === 'signin' || collection ? (
                   <div className="stack">
-                    {draft.collectionId ? <Banner tone="info">{t('teamNeedsSignIn')}</Banner> : null}
-                    <OtpSignIn testId="checkout-otp" initialPhone={draft.customer.phone} initialName={draft.customer.name}
-                      onSignedIn={(m) => setCustomer({ name: draft.customer.name || m.name, email: draft.customer.email || m.email, phone: m.phone })} />
+                    {collection ? <Banner tone="info">{t('teamNeedsSignIn')}</Banner> : null}
+                    <p className="small muted" style={{ margin: 0 }}>{t('signInCartMerges')}</p>
+                    <SignInForm testId="checkout-otp" initialPhone={draft.customer.phone} initialName={draft.customer.name}
+                      onSignedIn={(m) => setCustomer({ name: draft.customer.name || m.name, email: draft.customer.email || m.email, phone: m.phone || draft.customer.phone })} />
                   </div>
                 ) : (
                   <div className="stack">
@@ -380,76 +236,176 @@ export function CheckoutClient() {
               </>
             )}
           </Card>
+
+          {/* ---------------------------------------------------- 2. address */}
+          <Card title={t('ckStepAddress')} testId="delivery">
+            <Tabs value={draft.method} onChange={(m) => set({ method: m })} label={t('delivery')} testId="method"
+              options={[{ value: 'ship', label: t('shipToAddress') },
+                ...(catalogue?.pickup.enabled ?? true ? [{ value: 'pickup' as const, label: t('pickup') }] : [])]} />
+            <div style={{ height: 14 }} />
+            {draft.method === 'pickup' ? (
+              <p style={{ margin: 0 }} data-testid="pickup-info">{t('pickupAt', { label: catalogue?.pickup.label ?? '' })}</p>
+            ) : (
+              <div className="stack">
+                {me?.addresses.length ? (
+                  <div className={s.radioCards} role="radiogroup" aria-label={t('savedAddresses')} data-testid="address-book">
+                    {me.addresses.map((a, i) => (
+                      <label key={`${a.line1}-${a.pincode}-${i}`} className={cx(s.radioCard, idx === i && s.radioOn)} data-testid={`saved-address-${i}`}>
+                        <input type="radio" name="address" checked={idx === i} onChange={() => set({ addressIndex: i })} />
+                        <span>
+                          <strong>{a.name || me.name}</strong>{a.phone ? ` · ${a.phone}` : ''}{i === 0 ? <span className="small muted"> · {t('defaultAddress')}</span> : null}<br />
+                          <span className="small">{a.line1}{a.line2 ? `, ${a.line2}` : ''}, {a.city}, {stateName(a.state)} {a.pincode}</span>
+                        </span>
+                      </label>
+                    ))}
+                    <label className={cx(s.radioCard, idx < 0 && s.radioOn)} data-testid="new-address">
+                      <input type="radio" name="address" checked={idx < 0}
+                        onChange={() => set({ addressIndex: -2, address: sameAddress(draft.address, me.addresses[0]) ? EMPTY_ADDRESS : draft.address })} />
+                      <span><strong>{t('addNewAddress')}</strong></span>
+                    </label>
+                  </div>
+                ) : null}
+                {!me?.addresses.length || idx < 0 ? (
+                  <>
+                    <AddressFields value={draft.address} onChange={(a) => set({ address: a, addressIndex: me?.addresses.length ? -2 : -1 })}
+                      showErrors={attempted} testId="addr" />
+                    {me ? (
+                      <Checkbox checked={draft.saveAddress} onChange={(v) => set({ saveAddress: v })} testId="save-address">
+                        {t('saveAddressToAccount')}
+                      </Checkbox>
+                    ) : null}
+                  </>
+                ) : null}
+              </div>
+            )}
+          </Card>
+
+          {/* ---------------------------------------------------- 3. items and dates by seller */}
+          <Card title={t('ckStepItems')} sub={quote?.delivery_by ? t('allDeliveredBy', { date: formatDate(quote.delivery_by, lang) }) : undefined} testId="seller-groups">
+            {!quote ? (
+              q.status === 'error' ? <Banner tone="warn" action={t('retry')} onAction={q.retry}>{errorMessage(t, q.error)}</Banner>
+                : <Skeleton height={120} />
+            ) : groups.map((g) => (
+              <section key={g.sellerId || 'none'} className={s.sellerGroup} data-testid={`seller-group-${g.sellerId || 'none'}`}
+                aria-label={g.sellerName ? t('soldBy', { seller: g.sellerName }) : t('noSeller')}>
+                <div className={s.sellerHead}>
+                  <strong>{g.sellerName ? t('soldBy', { seller: g.sellerName }) : t('noSeller')}</strong>
+                  {g.deliveryDate ? (
+                    <span className="small" style={{ color: 'var(--pass)', fontWeight: 700 }}>
+                      {draft.method === 'pickup' ? t('readyBy', { date: formatDate(g.deliveryDate, lang) }) : t('deliveryBy', { date: formatDate(g.deliveryDate, lang) })}
+                    </span>
+                  ) : null}
+                </div>
+                <ul className={s.groupItems}>
+                  {g.items.map(({ index: i, entry, quote: qi }) => {
+                    const err = itemError(i);
+                    const reason = qi.quote.seller_problem ? reasonKey(qi.quote.seller_problem) : null;
+                    return (
+                      <li key={entry.key} data-testid={`ck-item-${i}`}>
+                        <ItemThumb entry={entry} product={entry.product_id ? index?.get(entry.product_id) : null} alt="" />
+                        <div style={{ minWidth: 0 }}>
+                          <div className={s.itemTitle}>{titleOf(entry, qi.title)}</div>
+                          <div className="small muted">{linesSummary(entry.lines)}</div>
+                          {reason ? <div className="small" style={{ color: 'var(--fail)' }}>{t(reason, { pincode: address.pincode || pin.pincode })}</div> : null}
+                          {qi.problems.length && !reason ? <div className="small" style={{ color: 'var(--fail)' }}>{qi.problems.join(' ')}</div> : null}
+                          {err ? (
+                            <div className="small" style={{ color: 'var(--fail)', fontWeight: 600 }} data-testid={`ck-item-error-${i}`}>
+                              {err.message}
+                              {err.failures?.length ? ` ${err.failures.map((f) => `${t('line', { n: f.line })}: ${f.checks.map((c) => c.message).join(' ')}`).join(' · ')}` : ''}
+                            </div>
+                          ) : null}
+                        </div>
+                        <span className="tnum" style={{ fontWeight: 700 }}>{money(qi.quote.total)}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+                {draft.method === 'ship' ? (
+                  <p className="small muted" style={{ margin: '8px 0 0' }} data-testid="group-shipping">
+                    {g.shipping > 0 ? t('groupDeliveryCharge', { amount: money(g.shipping) }) : t('groupFreeDelivery')}
+                  </p>
+                ) : null}
+              </section>
+            ))}
+            {rushEnabled ? (
+              <div className={s.sellerGroup} style={{ marginTop: 12 }} data-testid="express">
+                <Checkbox checked={draft.rush} onChange={(v) => set({ rush: v })} testId="express-toggle">
+                  <strong>{catalogue?.rush.label || t('expressLabel')}</strong>
+                </Checkbox>
+                <p className="small" style={{ margin: '4px 0 0 28px' }} data-testid="express-dates">
+                  {quote?.delivery_by && (draft.rush || q.expressBy)
+                    ? draft.rush
+                      ? t('expressOn', { pct: Math.round((catalogue?.rush.fee_rate ?? 0) * 100), date: formatDate(quote.delivery_by, lang) })
+                      : q.expressBy === quote.delivery_by
+                        ? t('expressSameDate', { pct: Math.round((catalogue?.rush.fee_rate ?? 0) * 100) })
+                        : t('expressDates', { pct: Math.round((catalogue?.rush.fee_rate ?? 0) * 100), standard: formatDate(quote.delivery_by, lang), express: formatDate(q.expressBy, lang) })
+                    : t('expressHint', { pct: Math.round((catalogue?.rush.fee_rate ?? 0) * 100) })}
+                </p>
+              </div>
+            ) : null}
+          </Card>
+
+          {/* ---------------------------------------------------- 4. offers */}
+          <Card testId="checkout-offers-card">
+            <Offers applied={draft.coupon} quote={quote} onApply={(code) => set({ coupon: code })} testId="checkout-offers" />
+          </Card>
+
+          {/* ---------------------------------------------------- 5. payment */}
+          <Card title={t('ckStepPayment')} testId="payment">
+            <div className={s.radioCards} role="radiogroup" aria-label={t('ckStepPayment')}>
+              <label className={cx(s.radioCard, draft.payment === 'online' && s.radioOn)} data-testid="pay-online">
+                <input type="radio" name="payment" checked={draft.payment === 'online'} onChange={() => set({ payment: 'online' })} />
+                <span>
+                  <strong>{t('payOnline')}</strong><br />
+                  <span className="small muted">{t('payOnlineHint')}</span>
+                </span>
+              </label>
+              <label className={cx(s.radioCard, draft.payment === 'cod' && s.radioOn, codWhy && s.radioOff)} data-testid="pay-cod">
+                <input type="radio" name="payment" checked={draft.payment === 'cod'} disabled={!!codWhy} onChange={() => set({ payment: 'cod' })} />
+                <span>
+                  <strong>{t('payCod')}</strong>{cod?.fee ? <span className="small"> · {t('codFeeN', { amount: money(cod.fee) })}</span> : null}<br />
+                  <span className="small muted" data-testid="cod-note">
+                    {codWhy === 'disabled' ? t('codOff')
+                      : codWhy === 'limit' ? t('codLimit', { amount: money(cod?.max_order_value ?? 0) })
+                        : codWhy === 'area' ? t('codArea')
+                          : cod?.max_order_value ? t('codHint', { amount: money(cod.max_order_value) }) : t('codHintNoLimit')}
+                  </span>
+                </span>
+              </label>
+            </div>
+          </Card>
         </div>
 
         {/* ---------------------------------------------------- summary */}
         <aside className={s.aside} aria-label={t('priceTitle')}>
-          <Card>
-            <div className={s.summaryHead}>
-              {preview.data ? (
-                <SvgImg svg={preview.data.mockup_svg} alt={spec.style_name || t('checkoutYourDesign')} className={s.thumb} testId="checkout-mockup" />
-              ) : <Skeleton height={96} className={s.thumb} />}
-              <div>
-                <div className={s.designName}>{spec.typography.team_name || spec.style_name || t('checkoutYourDesign')}</div>
-                <div className="small muted">{t(`garment_${garment}` as StringKey)} · {fabricName(fabric)}</div>
-                <a className="small" href="/studio">{t('edit')}</a>
-              </div>
-            </div>
-
-            {checksFail ? (
-              <Banner tone="fail" testId="checks-blocked" action={t('backToStudio')} onAction={() => router.push('/studio')}>
-                {t('orderBlocked')}
-              </Banner>
+          <Card title={t('orderSummary')}>
+            <p className="small muted" style={{ marginTop: 0 }}>{t('cartItemsN', { n: items.length })} · {t('piecesN', { n: cartPieces(items) })}</p>
+            {draft.method === 'ship' && address.pincode ? (
+              <p className="small" style={{ marginTop: 0 }} data-testid="ship-to">{t('deliverTo')} {address.city ? `${address.city} ` : ''}{address.pincode}</p>
             ) : null}
-
-            <h2 className={s.priceTitle}>{t('priceTitle')} {q.status === 'loading' && quote ? <span className="small muted">· {t('updatingPrice')}</span> : null}</h2>
-            {!quoteReq ? (
-              <p className="small muted" data-testid="price-pending">{t('pricePending')}</p>
-            ) : quote ? (
-              <PriceSummary quote={quote} updating={q.status === 'loading'} />
-            ) : q.status === 'error' ? (
+            {quote ? <CartTotals quote={quote} testId="price" /> : q.status === 'error' ? (
               <Banner tone="warn" action={t('retry')} onAction={q.retry} testId="price-error">{t('priceUnavailable')}</Banner>
-            ) : (
-              <div className="stack" style={{ gap: 8 }}>
-                <Spinner label={t('pricing')} />
-                <Skeleton height={140} />
-              </div>
-            )}
-            {quote && q.status === 'error' ? <p className="small muted">{t('priceUnavailable')}</p> : null}
-
-            {error && !(error === t('fixErrors') && !allIssues.length) && !(error === t('teamNeedsSignIn') && !collectionNeedsSignIn) ? (
-              <div style={{ marginTop: 12 }}>
-                <Banner tone="fail" live testId="order-error">
-                  <div>{error}</div>
-                  {failures.length ? (
-                    <ul className={s.errList} data-testid="order-failures">
-                      {failures.map((f) => (
-                        <li key={f.line}>
-                          {t('line', { n: f.line })} · {f.size} {[f.player_name, f.number].filter(Boolean).join(' ')}: {f.checks.map((c) => c.message).join(' ')}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                </Banner>
-              </div>
+            ) : <div className="stack" style={{ gap: 8 }}><Spinner label={t('pricing')} /><Skeleton height={140} /></div>}
+            {q.status === 'loading' && quote ? <p className="small muted">{t('updatingPrice')}</p> : null}
+            {quote?.problems.length ? (
+              <ul className="small" style={{ color: 'var(--fail)', paddingLeft: 18 }} data-testid="price-problems">
+                {quote.problems.map((p) => <li key={p}>{p}</li>)}
+              </ul>
             ) : null}
-
+            {shownError ? <div style={{ marginTop: 12 }}><Banner tone="fail" live testId="order-error">{shownError}</Banner></div> : null}
             <div style={{ marginTop: 14 }}>
-              <Button size="lg" block busy={placing} onClick={submit} disabled={checksFail} testId="place-order">
-                {placing ? t('placingOrder') : quote ? t('placeOrderFor', { total: money(quote.total) }) : t('placeOrder')}
+              <Button size="lg" block kind="accent" busy={placing} onClick={submit} testId="place-order">
+                {placing ? t('placingOrder')
+                  : quote ? (draft.payment === 'cod' ? t('placeCodOrder', { total: money(quote.totals.total) }) : t('placeOrderFor', { total: money(quote.totals.total) }))
+                    : t('placeOrder')}
               </Button>
-              <p className={s.demo} data-testid="demo-label">{t('demoNoMoney')}</p>
+              <p className="small" style={{ textAlign: 'center', color: 'var(--warn)', fontWeight: 600, margin: '8px 0 0' }} data-testid="demo-label">
+                {draft.payment === 'cod' ? t('codDemoNote') : t('demoNoMoney')}
+              </p>
             </div>
           </Card>
         </aside>
       </div>
-
-      <Modal open={bulkOpen} onClose={() => setBulkOpen(false)} title={t('enquiryTitle')} testId="bulk-dialog" closeLabel={t('close')}>
-        <EnquiryForm spec={spec} pieces={pieces} compact testId="checkout-enquiry" />
-      </Modal>
-      <Modal open={chartOpen} onClose={() => setChartOpen(false)} title={t('sizeChart')} closeLabel={t('close')}>
-        <SizeChart />
-      </Modal>
     </div>
   );
 }

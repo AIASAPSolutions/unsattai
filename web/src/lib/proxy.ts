@@ -8,12 +8,39 @@ export const LANG_COOKIE = 'uj_lang';
 const DEVICE_RE = /^[A-Za-z0-9_-]{8,64}$/;
 const SEGMENT_RE = /^[A-Za-z0-9._~@:=,+-]+$/;
 
+const ID = '[A-Za-z0-9._~@:=,+-]+';
+
 /**
- * Paths the browser may reach. Staff tools (ops, stats, dataset export, factory queue)
- * are never proxied, and the OTP verify endpoint is only reachable through our own
- * sign-in route so the session token never reaches browser JavaScript.
+ * Paths the browser may reach: an explicit allow-list of customer routes. Everything
+ * else is refused, including staff tools (ops, stats, dataset export, factory queue),
+ * print files and factory uploads. Sign-in (OTP verify and password login) and sign-out
+ * are only reachable through our own /api/session routes, so the session token never
+ * reaches browser JavaScript.
  */
-const BLOCKED = [/^ops(\/|$)/, /^stats$/, /^dataset(\/|$)/, /^factory(\/|$)/, /^auth\/otp\/verify$/];
+export const ALLOWED: RegExp[] = [
+  /^(meta|health)$/,
+  /^brief\/understand$/,
+  /^designs\/(generate|refine|from-image)$/,
+  new RegExp(`^designs\\/${ID}(\\/(feedback|mockup\\.svg))?$`),
+  /^render(\/panels)?$/,
+  /^ai\/allowance$/,
+  /^logos\/(suggest|remove-background)$/,
+  /^orders$/,
+  new RegExp(`^orders\\/${ID}(\\/(payment-confirmed|invoice|track))?$`),
+  /^shop\/(catalogue|quote|delivery-estimate|enquiries|serviceability|offers|products|cart\/quote)$/,
+  new RegExp(`^shop\\/sellers\\/${ID}$`),
+  new RegExp(`^shop\\/products\\/${ID}(\\/(reviews|mockup\\.svg))?$`),
+  /^checkout$/,
+  new RegExp(`^checkouts\\/${ID}(\\/pay)?$`),
+  /^auth\/otp\/request$/,
+  /^me(\/[A-Za-z0-9._~@:=,+-]+)*$/,
+  new RegExp(`^collections(\\/${ID}(\\/entries(\\/${ID})?)?)?$`),
+  new RegExp(`^quotes\\/${ID}(\\/accept)?$`),
+];
+
+/** Never proxied, even if an allow-list entry would match (defence in depth). */
+const BLOCKED = [/^ops(\/|$)/, /^stats$/, /^dataset(\/|$)/, /^factory(\/|$)/, /^auth\/(otp\/verify|login|logout)$/, /^print$/,
+  /\/print\.svg$/, /^orders\/[^/]+\/files(\/|$)/];
 
 export function upstreamPath(segments: string[]): string | null {
   if (!segments.length) return null;
@@ -22,6 +49,7 @@ export function upstreamPath(segments: string[]): string | null {
   }
   const path = segments.join('/');
   if (BLOCKED.some((re) => re.test(path))) return null;
+  if (!ALLOWED.some((re) => re.test(path))) return null;
   return path;
 }
 
@@ -52,6 +80,9 @@ export function upstreamHeaders({ headers, cookies, apiKey }: ProxyInput): Recor
   if (ct) out['Content-Type'] = ct;
   const lang = headers['accept-language'];
   if (lang) out['Accept-Language'] = lang;
+  // The API names signed-in devices from the User-Agent ("Chrome on Android").
+  const ua = headers['user-agent'];
+  if (ua) out['User-Agent'] = ua.slice(0, 300);
   if (apiKey) out['X-API-Key'] = apiKey;
 
   const auth = headers['authorization'];

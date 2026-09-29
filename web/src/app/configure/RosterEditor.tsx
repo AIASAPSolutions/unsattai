@@ -6,7 +6,7 @@ import { SIZES, TEXT_LIMITS, type Size } from '@/lib/api/types';
 import { rowKey, type RosterRow } from '@/lib/flow';
 import { duplicateNumbers, parseRoster, parseRosterCsv, sizeBreakdown, totalPieces, type RosterResult } from '@/lib/roster';
 import { SIZE_CHART } from '@/lib/states';
-import s from './checkout.module.css';
+import s from './configure.module.css';
 
 const CSV_MAX_BYTES = 200_000;
 
