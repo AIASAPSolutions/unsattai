@@ -11,7 +11,7 @@ jobs:
     name: SonarCloud Scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # Full history — SonarCloud uses it for blame / new-code-period analysis.
           fetch-depth: 0
