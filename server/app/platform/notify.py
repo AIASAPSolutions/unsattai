@@ -29,13 +29,13 @@ import httpx
 from ..config import env_int, env_str, is_production
 from .db import PlatformStore, now, sortable_id
 
-log = logging.getLogger("urjersey.notify")
+log = logging.getLogger("unsattai.notify")
 
 TIMEOUT = 10
 
 
 def brand() -> str:
-    return env_str("BRAND_NAME", "UrJersey")
+    return env_str("BRAND_NAME", "Unsattai")
 
 
 def sms_provider() -> str:

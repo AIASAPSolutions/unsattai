@@ -4,7 +4,7 @@ import { PictureClient } from './PictureClient';
 
 export const metadata: Metadata = {
   title: 'Design from a picture',
-  description: 'Made a jersey picture in another AI tool? Upload it and UrJersey rebuilds it as a print-ready design you can edit and order.',
+  description: 'Made a jersey picture in another AI tool? Upload it and Unsattai rebuilds it as a print-ready design you can edit and order.',
   alternates: { canonical: '/design/picture' },
 };
 

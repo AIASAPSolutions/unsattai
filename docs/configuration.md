@@ -45,10 +45,10 @@ A blank value means "use the default".
 | Variable | Default | What it does |
 |---|---|---|
 | `APP_ENV` | `development` | `production` turns off every development shortcut (sign-in codes are never returned) and warns about missing settings in the log |
-| `DB_PATH` | `server/data/designs.db` | The SQLite database file. On a server, put it on a disk that survives restarts (`/data/urjersey.db` in Docker). |
+| `DB_PATH` | `server/data/designs.db` | The SQLite database file. On a server, put it on a disk that survives restarts (`/data/unsattai.db` in Docker). |
 | `CORS_ORIGINS` | `*` | Browser addresses allowed to call the API, comma-separated. Production: `https://ops.yourdomain,https://shop.yourdomain` |
 | `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING` or `ERROR` |
-| `BRAND_NAME` | `UrJersey` | The name in SMS, emails and sign-in codes |
+| `BRAND_NAME` | `Unsattai` | The name in SMS, emails and sign-in codes |
 | `PUBLIC_SHOP_URL` | (none) | The web store's address. Order emails then get a "View your order" button. |
 | `MAX_UPLOAD_MB` | `12` | Largest request (logos and pictures) |
 | `MAX_CART_ITEMS` | `20` | Items per cart |
@@ -96,7 +96,7 @@ A blank value means "use the default".
 | Variable | What it does |
 |---|---|
 | `EMAIL_PROVIDER` | `log` (default), `smtp`, `resend` or `webhook`. When it is blank, a set `SMTP_HOST` means `smtp`. |
-| `EMAIL_FROM` | Sender, e.g. `UrJersey <no-reply@yourdomain>`. It must be an address your email service lets you send from. |
+| `EMAIL_FROM` | Sender, e.g. `Unsattai <no-reply@yourdomain>`. It must be an address your email service lets you send from. |
 | `EMAIL_REPLY_TO` | Where replies go (optional) |
 | `EMAIL_BRAND_COLOUR` | Header colour of the HTML email (default `#14225c`) |
 | `EMAIL_FOOTER` | Small print at the bottom |
@@ -137,10 +137,10 @@ Emails are sent as plain text with a matching HTML version. Codes are shown larg
 
 | Variable | What it does |
 |---|---|
-| `UJ_API_URL` | Where the store's own server reaches the API. On one server: `http://api:8000`; elsewhere, the API's address. The browser never calls it directly. |
-| `UJ_API_KEY` | Only when the API sets `API_KEYS`. Stays on the store's server. |
+| `UNSATTAI_API_URL` | Where the store's own server reaches the API. On one server: `http://api:8000`; elsewhere, the API's address. The browser never calls it directly. |
+| `UNSATTAI_API_KEY` | Only when the API sets `API_KEYS`. Stays on the store's server. |
 | `NEXT_PUBLIC_SITE_URL` | The store's public address, for share links, SEO and the sitemap. Needed when it is built. |
-| `UJ_COOKIE_SECURE` | Blank = HTTPS-only sign-in cookies in production. `0` only to try a production build over plain http. |
+| `UNSATTAI_COOKIE_SECURE` | Blank = HTTPS-only sign-in cookies in production. `0` only to try a production build over plain http. |
 | `PORT` | Port to listen on (default 3000; set by hosting platforms) |
 
 ## Operations app (`ops/`)
@@ -159,7 +159,7 @@ These are built into the app. Change them, then rebuild (`docker compose up -d -
 |---|---|
 | `EXPO_PUBLIC_API_URL` | The API's public address. Empty locally = the computer running Expo, port 8000. Users can also change it on the Settings screen. |
 | `EXPO_PUBLIC_CHECKOUT_URL` | Optional payment page for orders |
-| `APP_NAME`, `APP_SLUG`, `APP_SCHEME`, `APP_VERSION` | Name on the phone, Expo project slug, link scheme (`urjersey://`), version |
+| `APP_NAME`, `APP_SLUG`, `APP_SCHEME`, `APP_VERSION` | Name on the phone, Expo project slug, link scheme (`unsattai://`), version |
 | `IOS_BUNDLE_ID`, `ANDROID_PACKAGE` | Store identifiers. Choose them once before the first store upload; they can't be changed after. |
 | `EAS_PROJECT_ID`, `EXPO_OWNER` | From `eas init` |
 | `APP_ALLOW_HTTP` | `1` allows plain http for local testing. Use `0` for store builds. |

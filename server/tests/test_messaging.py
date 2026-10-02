@@ -87,7 +87,7 @@ def app_env(tmp_path, monkeypatch):
 
 def _smtp_env(smtp, **extra):
     return {"EMAIL_PROVIDER": "smtp", "SMTP_HOST": "127.0.0.1", "SMTP_PORT": smtp.server_address[1],
-            "SMTP_SECURITY": "none", "EMAIL_FROM": "UrJersey <no-reply@urjersey.test>", **extra}
+            "SMTP_SECURITY": "none", "EMAIL_FROM": "Unsattai <no-reply@unsattai.test>", **extra}
 
 
 def test_email_code_goes_over_smtp_and_signs_in(app_env, smtp):
@@ -96,7 +96,7 @@ def test_email_code_goes_over_smtp_and_signs_in(app_env, smtp):
     assert r.status_code == 200 and r.json()["sent"] is True
     code = r.json()["dev_code"]
     (to, msg), = smtp.messages
-    assert to == ["buyer@example.com"] and msg["From"] == "UrJersey <no-reply@urjersey.test>"
+    assert to == ["buyer@example.com"] and msg["From"] == "Unsattai <no-reply@unsattai.test>"
     assert code in msg["Subject"] and "Kit Co" in msg["Subject"] and smtp.auth
     plain = msg.get_body(("plain",)).get_content()
     html = msg.get_body(("html",)).get_content()
@@ -114,7 +114,7 @@ def test_production_never_returns_the_code(app_env, smtp):
 
 
 def test_order_emails_carry_a_link_and_are_marked_sent(app_env, smtp):
-    c, _ = app_env(PUBLIC_SHOP_URL="https://shop.urjersey.test/", **_smtp_env(smtp))
+    c, _ = app_env(PUBLIC_SHOP_URL="https://shop.unsattai.test/", **_smtp_env(smtp))
     h = staff(c)
     code = c.post("/api/v1/auth/otp/request", json={"phone": PHONE}).json()["dev_code"]
     ch = {"Authorization": "Bearer " + c.post("/api/v1/auth/otp/verify",
@@ -126,7 +126,7 @@ def test_order_emails_carry_a_link_and_are_marked_sent(app_env, smtp):
     deliver(c, h, o["id"])
     subjects = [m["Subject"] for _, m in smtp.messages]
     assert len(subjects) == 4 and all(o["number"] in s for s in subjects)
-    link = f"https://shop.urjersey.test/account/orders/{o['id']}"
+    link = f"https://shop.unsattai.test/account/orders/{o['id']}"
     assert all(link in m.get_body(("html",)).get_content() for _, m in smtp.messages)
     out = c.get("/api/v1/ops/messages", headers=h, params={"order_id": o["id"], "channel": "email"}).json()
     assert {m["status"] for m in out["items"]} == {"sent"}
@@ -149,7 +149,7 @@ def test_sms_providers_send_the_right_requests(app_env, monkeypatch):
     url, kw = calls[-1]
     assert url == "https://control.msg91.com/api/v5/flow" and kw["headers"]["authkey"] == "k1"
     assert kw["json"]["template_id"] == "tpl_otp" and kw["json"]["sender"] == "URJRSY"
-    assert kw["json"]["recipients"] == [{"mobiles": "919876543210", "otp": code, "minutes": "10", "brand": "UrJersey"}]
+    assert kw["json"]["recipients"] == [{"mobiles": "919876543210", "otp": code, "minutes": "10", "brand": "Unsattai"}]
 
     monkeypatch.setenv("SMS_PROVIDER", "twilio")
     monkeypatch.setenv("TWILIO_ACCOUNT_SID", "AC1")
@@ -183,7 +183,7 @@ def test_ops_can_see_and_test_the_messaging_settings(app_env, smtp):
     assert any("MSG91_AUTH_KEY" in p for p in info["problems"])
     r = c.post("/api/v1/ops/messaging/test", headers=h, json={"channel": "email", "to": "owner@example.com"})
     assert r.json() == {"channel": "email", "to": "owner@example.com", "provider": "smtp", "result": "sent"}
-    assert smtp.messages[-1][1]["Subject"] == "UrJersey test email"
+    assert smtp.messages[-1][1]["Subject"] == "Unsattai test email"
     bad = c.post("/api/v1/ops/messaging/test", headers=h, json={"channel": "sms", "to": "12345"})
     assert bad.status_code == 422
     assert c.get("/api/v1/ops/messaging").status_code == 401

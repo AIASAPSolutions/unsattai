@@ -68,7 +68,7 @@ export function ShareSheet({ spec, visible, onClose }: { spec: DesignSpec; visib
                 <SvgImage xml={svg} aspect={svgAspect(svg)} label={spec.style_name} />
                 <View style={styles.brand}>
                   <T variant="label" color={colors.navy}>{spec.style_name}</T>
-                  <T variant="label" color={colors.brand}>UrJersey</T>
+                  <T variant="label" color={colors.brand}>Unsattai</T>
                 </View>
               </View>
             )}

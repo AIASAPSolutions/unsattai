@@ -3,7 +3,7 @@ import { SharedDesignClient } from './SharedDesignClient';
 
 export const metadata: Metadata = {
   title: 'Shared design',
-  description: 'A custom kit designed on UrJersey. Open a copy in the studio and make it your own.',
+  description: 'A custom kit designed on Unsattai. Open a copy in the studio and make it your own.',
   robots: { index: false },
 };
 

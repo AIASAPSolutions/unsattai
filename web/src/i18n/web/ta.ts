@@ -65,7 +65,7 @@ const web: WebStrings = {
 
   // generic
   signInNeeded: 'தொடர உள்நுழையுங்கள்.',
-  errNetworkWeb: 'இப்போது UrJersey-ஐ அடைய முடியவில்லை. இணைப்பைச் சரிபார்த்து மீண்டும் முயலுங்கள்.',
+  errNetworkWeb: 'இப்போது Unsattai-ஐ அடைய முடியவில்லை. இணைப்பைச் சரிபார்த்து மீண்டும் முயலுங்கள்.',
   errAuthWeb: 'அனுமதி இல்லை: {detail}',
   notFoundTitle: 'பக்கம் கிடைக்கவில்லை',
   notFoundText: 'இந்தப் பக்கம் இல்லை அல்லது வேறு இடத்துக்கு மாறியுள்ளது.',
@@ -274,7 +274,7 @@ const web: WebStrings = {
   tstatus_resolved: 'தீர்க்கப்பட்டது',
   tstatus_closed: 'மூடப்பட்டது',
   accYou: 'நீங்கள்',
-  accTeam: 'UrJersey குழு',
+  accTeam: 'Unsattai குழு',
   accTicketClosed: 'இந்தக் கோரிக்கை மூடப்பட்டது. மேலும் உதவி தேவைப்பட்டால் புதிய கோரிக்கையைத் தொடங்குங்கள்.',
   accReply: 'பதில்',
   accSendReply: 'பதிலை அனுப்பு',

@@ -7,7 +7,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-ADMIN = ("owner@urjersey.test", "Str0ngPassw0rd")
+ADMIN = ("owner@unsattai.test", "Str0ngPassw0rd")
 
 
 @pytest.fixture()

@@ -137,7 +137,7 @@ export const useCart = create<CartState>()(
       };
     },
     {
-      name: 'urjersey.cart',
+      name: 'unsattai.cart',
       storage: draftStorage,
       version: 1,
       partialize: (s) => ({

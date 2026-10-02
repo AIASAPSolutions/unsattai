@@ -21,7 +21,7 @@ export function createStore<S extends object>(initial: S, persist?: { key: strin
   const emit = () => listeners.forEach((l) => l());
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
-  const pendingKey = persist ? `uj.pending.${persist.key}` : '';
+  const pendingKey = persist ? `unsattai.pending.${persist.key}` : '';
   const save = () => {
     if (!persist) return;
     const value = persist.pick(state);
@@ -97,7 +97,7 @@ export function useHydrated(store: Pick<Store<object>, 'subscribe' | 'hydrated'>
 
 // ----------------------------------------------------------------- key-value persistence
 
-const DB = 'urjersey';
+const DB = 'unsattai';
 const OS = 'kv';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -138,7 +138,7 @@ export async function kvGet<T>(key: string): Promise<T | undefined> {
     });
   } catch {
     try {
-      const raw = localStorage.getItem(`uj.${key}`);
+      const raw = localStorage.getItem(`unsattai.${key}`);
       return raw ? (JSON.parse(raw) as T) : undefined;
     } catch {
       return undefined;
@@ -157,7 +157,7 @@ export async function kvSet(key: string, value: unknown): Promise<void> {
     });
   } catch {
     try {
-      localStorage.setItem(`uj.${key}`, JSON.stringify(value));
+      localStorage.setItem(`unsattai.${key}`, JSON.stringify(value));
     } catch {
       /* quota: the draft just isn't kept */
     }
@@ -185,7 +185,7 @@ function lsRemove(key: string) {
 export const local = {
   get<T>(key: string, fallback: T): T {
     try {
-      const raw = localStorage.getItem(`uj.${key}`);
+      const raw = localStorage.getItem(`unsattai.${key}`);
       return raw ? (JSON.parse(raw) as T) : fallback;
     } catch {
       return fallback;
@@ -193,7 +193,7 @@ export const local = {
   },
   set(key: string, value: unknown): void {
     try {
-      localStorage.setItem(`uj.${key}`, JSON.stringify(value));
+      localStorage.setItem(`unsattai.${key}`, JSON.stringify(value));
     } catch {
       /* ignore */
     }

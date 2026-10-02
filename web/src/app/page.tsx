@@ -11,7 +11,7 @@ import { loadCatalogue } from '@/lib/server/catalogue';
 import s from './home.module.css';
 
 export const metadata: Metadata = {
-  title: { absolute: 'UrJersey · Design custom jerseys and team kits' },
+  title: { absolute: 'Unsattai · Design custom jerseys and team kits' },
   description: 'Describe your kit in your own words, pick from four designs, edit it in the studio and order for one player or a whole team. Live prices, quantity discounts and delivery dates.',
   alternates: { canonical: '/' },
 };

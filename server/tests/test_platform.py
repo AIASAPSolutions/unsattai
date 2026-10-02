@@ -7,7 +7,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-ADMIN = ("owner@urjersey.test", "Str0ngPassw0rd")
+ADMIN = ("owner@unsattai.test", "Str0ngPassw0rd")
 ADDRESS = {"name": "Asha", "phone": "+91 98765 43210", "line1": "12 Stadium Road", "city": "Chennai", "state": "TN",
            "pincode": "600028"}
 
@@ -95,7 +95,7 @@ def test_order_is_priced_numbered_scheduled_and_tracked(env):
     r = c.post("/api/v1/orders", json=order_body(spec, coupon="WELCOME10"))
     assert r.status_code == 201
     o = r.json()
-    assert o["number"].startswith("UJ-") and o["pricing"]["pieces"] == 3 and o["delivery"]["zone"] == "home"
+    assert o["number"].startswith("US-") and o["pricing"]["pieces"] == 3 and o["delivery"]["zone"] == "home"
     assert o["fulfilment"]["status"] == "awaiting_payment" and o["fulfilment"]["estimate"]["delivery_date"]
     assert o["timeline"][0]["code"] == "placed" and "events" not in o
     paid = c.post(f"/api/v1/orders/{o['id']}/payment-confirmed", json={"demo": True}).json()
@@ -360,9 +360,9 @@ def test_returned_shipment_lockout_quote_expiry_and_filters(env):
     assert back["timeline"][-1]["code"] == "returned"
 
     # A new role or password signs the person out at once.
-    new = c.post("/api/v1/ops/staff", headers=h, json={"email": "p@urjersey.test", "name": "P", "role": "production",
+    new = c.post("/api/v1/ops/staff", headers=h, json={"email": "p@unsattai.test", "name": "P", "role": "production",
                                                         "password": "Pr0ductionPass"}).json()
-    hp = staff(c, "p@urjersey.test", "Pr0ductionPass")
+    hp = staff(c, "p@unsattai.test", "Pr0ductionPass")
     assert c.get("/api/v1/ops/me", headers=hp).status_code == 200
     c.patch(f"/api/v1/ops/staff/{new['id']}", headers=h, json={"password": "N3wProductionPass"})
     assert c.get("/api/v1/ops/me", headers=hp).status_code == 401
@@ -381,10 +381,10 @@ def test_returned_shipment_lockout_quote_expiry_and_filters(env):
 
 def test_orders_are_only_shown_to_their_owner(env):
     c, store, spec = env
-    mine = {"X-Device-Id": "uj-phone-a"}
+    mine = {"X-Device-Id": "unsattai-phone-a"}
     o = c.post("/api/v1/orders", json=order_body(spec, key="key_own_1"), headers=mine).json()
     assert c.get(f"/api/v1/orders/{o['id']}", headers=mine).status_code == 200
-    stranger = {"X-Device-Id": "uj-phone-b"}
+    stranger = {"X-Device-Id": "unsattai-phone-b"}
     assert c.get(f"/api/v1/orders/{o['id']}", headers=stranger).status_code == 404
     assert c.post(f"/api/v1/orders/{o['id']}/payment-confirmed", json={"demo": True}, headers=stranger).status_code == 404
     assert c.get(f"/api/v1/orders/{o['id']}/invoice", headers=stranger).status_code == 404

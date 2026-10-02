@@ -1,4 +1,4 @@
-/** Shapes returned by the UrJersey API (only the fields the ops app reads). */
+/** Shapes returned by the Unsattai API (only the fields the ops app reads). */
 import type { Role } from './permissions';
 
 export type Garment = 'jersey' | 'vneck' | 'shorts';

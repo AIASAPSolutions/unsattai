@@ -13,10 +13,10 @@ const site = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
 
 export const metadata: Metadata = {
   metadataBase: new URL(site),
-  title: { default: 'UrJersey · Design your own team kit', template: '%s · UrJersey' },
+  title: { default: 'Unsattai · Design your own team kit', template: '%s · Unsattai' },
   description: 'Design custom jerseys, V-necks and shorts in English, Hindi, Telugu or Tamil. Print-ready checks, live team pricing and delivery dates.',
-  applicationName: 'UrJersey',
-  openGraph: { type: 'website', siteName: 'UrJersey', title: 'UrJersey · Design your own team kit',
+  applicationName: 'Unsattai',
+  openGraph: { type: 'website', siteName: 'Unsattai', title: 'Unsattai · Design your own team kit',
     description: 'Custom sportswear designed by you: jerseys, V-necks and shorts for players and whole teams.' },
   twitter: { card: 'summary' },
 };

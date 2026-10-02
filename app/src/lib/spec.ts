@@ -157,6 +157,6 @@ export function describeSpec(spec: DesignSpec, labels: {
   if (logos) lines.push(`Logos: ${logos}`);
   if (texts) lines.push(`Extra text layers: ${texts}`);
   if (spec.rationale) lines.push('', spec.rationale);
-  lines.push('', 'Designed with UrJersey');
+  lines.push('', 'Designed with Unsattai');
   return lines.join('\n');
 }

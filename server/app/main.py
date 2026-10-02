@@ -1,4 +1,4 @@
-"""UrJersey API: the design engine behind the UrJersey mobile app.
+"""Unsattai API: the design engine behind the Unsattai mobile app.
 
 JSON over HTTP under /api/v1, optionally protected by X-API-Key. The mobile app
 is the only client; there is no web UI here.
@@ -42,7 +42,7 @@ logging.basicConfig(level=env_str("LOG_LEVEL", "INFO").upper())
 VERSION = "1.0.0"
 MAX_BODY_BYTES = env_int("MAX_UPLOAD_MB", 12) * 1_000_000   # four 1.5 MB logos as base64 plus the spec
 
-app = FastAPI(title="UrJersey API", version=VERSION)
+app = FastAPI(title="Unsattai API", version=VERSION)
 app.add_middleware(CORSMiddleware, allow_origins=list(settings.cors_origins), allow_methods=["*"],
                    allow_headers=["*"])
 store = PlatformStore(settings.db_path)
@@ -51,9 +51,9 @@ security.bootstrap_admin(store)
 sellers.ensure_house(store)
 catalog.seed_products(store)
 for _problem in notify.check_config():
-    logging.getLogger("urjersey").warning("Messaging settings: %s", _problem)
+    logging.getLogger("unsattai").warning("Messaging settings: %s", _problem)
 if security.otp_echo():
-    logging.getLogger("urjersey").warning("OTP_DEV_ECHO is on: sign-in codes are returned by the API. "
+    logging.getLogger("unsattai").warning("OTP_DEV_ECHO is on: sign-in codes are returned by the API. "
                                           "Set APP_ENV=production on a real server.")
 
 
@@ -95,7 +95,7 @@ KEY = [Depends(require_key)]
 
 @app.get("/api/v1/health")
 def health():
-    return {"status": "ok", "app": "UrJersey API", "version": VERSION, "default_provider": settings.provider,
+    return {"status": "ok", "app": "Unsattai API", "version": VERSION, "default_provider": settings.provider,
             "providers": {name: p.available() for name, p in PROVIDERS.items()},
             "factory_connected": bool(settings.factory_url), "auth_required": bool(settings.api_keys),
             "ai_edits": ai_edit.provider(), "messaging": notify.status(),

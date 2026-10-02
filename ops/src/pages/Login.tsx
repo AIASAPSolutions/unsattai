@@ -35,7 +35,7 @@ export function LoginPage() {
             <span className="brand-mark" style={{ width: 36, height: 36, borderRadius: 9, background: '#1f5fbf', display: 'grid', placeItems: 'center' }}>
               <svg viewBox="0 0 32 32" width="24" height="24"><path d="M9 8l4-2h6l4 2 3 5-4 2v11H10V15l-4-2z" fill="white" /></svg>
             </span>
-            <div><h1>UrJersey Ops</h1><div className="muted small">Staff sign-in</div></div>
+            <div><h1>Unsattai Ops</h1><div className="muted small">Staff sign-in</div></div>
           </div>
           {notice && <Alert tone="warn">{notice}</Alert>}
           {error && <Alert tone="error">{error}</Alert>}

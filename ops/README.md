@@ -1,10 +1,10 @@
-# UrJersey Ops
+# Unsattai Ops
 
-UrJersey Ops is the back office for UrJersey staff. It covers orders, production planning,
+Unsattai Ops is the back office for Unsattai staff. It covers orders, production planning,
 delivery, the marketplace (sellers, products, returns, reviews, messages, cash on delivery), CRM
 and quotes, settings, staff and reports. Partner sellers use the same app with a seller login
 and see only their own work (the "seller portal"). It is a single-page app (React 19,
-TypeScript, Vite, React Router) that talks to the UrJersey API under `/api/v1/ops/*`.
+TypeScript, Vite, React Router) that talks to the Unsattai API under `/api/v1/ops/*`.
 It has two runtime dependencies besides React: `react-router-dom`, and `recharts`, which is used
 only by Reports and loaded only when that screen opens.
 
@@ -94,7 +94,7 @@ The `settings` permission can edit every section.
    `index.html` with `no-cache`.
 4. Add the ops origin to the API's `CORS_ORIGINS`. The default `*` works, but a production API
    should list its origins.
-5. Serve the app over HTTPS on its own subdomain, for example `ops.urjersey.com`.
+5. Serve the app over HTTPS on its own subdomain, for example `ops.unsattai.com`.
 
 ## Screens
 

@@ -31,7 +31,7 @@ why, the shape we propose, and what the web app does in the meantime. Nothing un
 ## 3. Track by order number
 
 - **Endpoint:** accept the order number as well as the id in `GET /api/v1/orders/{id_or_number}/track?phone=`.
-- **Why:** confirmations and invoices show the number (`UJ-00001`) most prominently, but tracking only works with the internal id (`ord_…`).
+- **Why:** confirmations and invoices show the number (`US-00001`) most prominently, but tracking only works with the internal id (`ord_…`).
 - **Workaround:** the confirmation page, order pages and invoice link show "Order ID (for tracking): ord_…" next to the number, and the track form asks for the order ID.
 
 ## 4. Timeline events with parameters

@@ -51,7 +51,7 @@ export default function SettingsScreen() {
       // /meta needs the key when the server requires one, so this also checks the key.
       await api.meta();
       setUrl(getApiUrl());
-      setResult({ tone: 'pass', text: t('connected', { app: 'UrJersey API', version: h.version }) });
+      setResult({ tone: 'pass', text: t('connected', { app: 'Unsattai API', version: h.version }) });
     } catch (e) {
       setResult({ tone: 'fail', text: errorMessage(t, e) });
     } finally {
@@ -102,7 +102,7 @@ export default function SettingsScreen() {
       </Card>
 
       <Card title={t('about')}>
-        <T variant="body">UrJersey {Constants.expoConfig?.version ?? ''}</T>
+        <T variant="body">Unsattai {Constants.expoConfig?.version ?? ''}</T>
         <T variant="caption" style={{ marginTop: space(2) }}>{t('staffOnly')}</T>
       </Card>
     </Screen>

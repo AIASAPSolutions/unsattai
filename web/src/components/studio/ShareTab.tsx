@@ -33,7 +33,7 @@ export function ShareTab({ spec }: { spec: DesignSpec }) {
     setNote(null);
     try {
       const svg = mock ?? (await api.render(spec)).mockup_svg;
-      downloadBlob(await svgToPng(svg), `urjersey-${slug(spec.style_name)}.png`);
+      downloadBlob(await svgToPng(svg), `unsattai-${slug(spec.style_name)}.png`);
       setNote({ tone: 'pass', text: t('pngSaved') });
     } catch (e) {
       setNote({ tone: 'fail', text: errorMessage(t, e) });

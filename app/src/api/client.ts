@@ -100,10 +100,10 @@ export function setSessionExpiredHandler(fn: (() => void) | null): void {
   onSessionExpired = fn;
 }
 
-/** The server names the session's device from this, e.g. "UrJersey app on Android". Browsers send their own. */
+/** The server names the session's device from this, e.g. "Unsattai app on Android". Browsers send their own. */
 export function appUserAgent(os: string = Platform.OS): string | null {
-  if (os === 'android') return 'UrJersey app on Android';
-  if (os === 'ios') return 'UrJersey app on iPhone';
+  if (os === 'android') return 'Unsattai app on Android';
+  if (os === 'ios') return 'Unsattai app on iPhone';
   return null;
 }
 
@@ -143,7 +143,7 @@ export async function request<T>(method: Method, path: string, opts: RequestOpti
   } catch (e) {
     if (opts.signal?.aborted) throw e;
     if (controller.signal.aborted) throw new ApiError('timeout', `The server at ${base} took too long to answer.`);
-    throw new ApiError('network', `Can't reach the UrJersey server at ${base}.`);
+    throw new ApiError('network', `Can't reach the Unsattai server at ${base}.`);
   } finally {
     clearTimeout(timeout);
     opts.signal?.removeEventListener('abort', onAbort);

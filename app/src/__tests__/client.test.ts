@@ -43,7 +43,7 @@ describe('request serialization', () => {
     await request('GET', '/api/v1/health');
     await request('GET', '/api/v1/ai/allowance');
     const ids = calls.map((c) => (c.init.headers as Record<string, string>)['X-Device-Id']);
-    expect(ids[0]).toMatch(/^uj-[0-9a-f]{32}$/);
+    expect(ids[0]).toMatch(/^unsattai-[0-9a-f]{32}$/);
     expect(ids[1]).toBe(ids[0]);
   });
 

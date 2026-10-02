@@ -1,8 +1,8 @@
-# UrJersey architecture review
+# Unsattai architecture review
 
-A decision document for the business owner and the engineering team that will take UrJersey to production.
+A decision document for the business owner and the engineering team that will take Unsattai to production.
 
-**Scope.** UrJersey is meant to become a production platform: customer mobile app, customer web store, AI design generation, CRM, order management, payment, inventory, a production partner app, shipping and notifications. This review covers the single-server architecture as it stands on branch `main` (September 2026). It then sets out what should change, in what order and where in the code.
+**Scope.** Unsattai is meant to become a production platform: customer mobile app, customer web store, AI design generation, CRM, order management, payment, inventory, a production partner app, shipping and notifications. This review covers the single-server architecture as it stands on branch `main` (September 2026). It then sets out what should change, in what order and where in the code.
 
 **How to read it.** Sections 1 to 11 each say where things are today, what changes and in what order. Section 12 lists what stays on the server and what moves out from day one. Sections 13 and 14 give the MVP and scale-up architectures, and section 15 is the phased checklist.
 
@@ -54,7 +54,7 @@ A decision document for the business owner and the engineering team that will ta
                 │         ├─► Claude API (generate, edit, vision)      │
                 │         ├─► SMS / email providers (notify.py)        │
                 │         └─► FACTORY_URL or TEST queue (orders.py)    │
-                │  SQLite file on a volume: /data/urjersey.db          │
+                │  SQLite file on a volume: /data/unsattai.db          │
                 └──────────────────────────────────────────────────────┘
        cron: deploy/backup.sh (daily, 14 copies on the same disk; rclone to R2 documented, not scripted)
 ```
@@ -241,11 +241,11 @@ Use **Cloudflare R2** (S3-compatible, no egress fees, free tier) or S3 Mumbai, w
 
 | Bucket | Contents | Access | Retention |
 |---|---|---|---|
-| `uj-uploads` | customer logos, reference pictures | private. Uploads through presigned PUT URLs (5-minute expiry, content-type and size bound); reads through presigned GET URLs (15 min) | while the design or order exists, plus the legal retention period |
-| `uj-production` | frozen print files (SVG, and PDF later) per order line and panel, shipping labels | private. Partners get presigned GET URLs issued only after a scoped permission check | at least 3 years (disputes, reprints) |
-| `uj-documents` | tax invoices (PDF), credit notes | private. Presigned GET for the customer or staff | at least 8 years (GST record keeping; confirm with your accountant) |
-| `uj-backups` | database dumps, config snapshots | write-only credentials on the server; object lock or versioning on | 35 days daily, 12 monthly |
-| `uj-public` (via CDN) | product images, marketing assets | public through Cloudflare CDN | as needed |
+| `unsattai-uploads` | customer logos, reference pictures | private. Uploads through presigned PUT URLs (5-minute expiry, content-type and size bound); reads through presigned GET URLs (15 min) | while the design or order exists, plus the legal retention period |
+| `unsattai-production` | frozen print files (SVG, and PDF later) per order line and panel, shipping labels | private. Partners get presigned GET URLs issued only after a scoped permission check | at least 3 years (disputes, reprints) |
+| `unsattai-documents` | tax invoices (PDF), credit notes | private. Presigned GET for the customer or staff | at least 8 years (GST record keeping; confirm with your accountant) |
+| `unsattai-backups` | database dumps, config snapshots | write-only credentials on the server; object lock or versioning on | 35 days daily, 12 monthly |
+| `unsattai-public` (via CDN) | product images, marketing assets | public through Cloudflare CDN | as needed |
 
 Rules:
 
@@ -253,7 +253,7 @@ Rules:
 - **Freeze print files when an order is paid.** Rendering is deterministic, but the engine code changes over time (`engine/` is being edited right now). The file a factory printed must be the file you can show in a dispute. The worker renders all files after payment (section 4), stores them, and records their hashes on the order.
 - **Freeze invoices as PDF** when issued. A tax invoice must not change if the template does.
 - **Validate uploads server-side** after upload: MIME sniffing, pixel limits (`background.py` already caps at 4096²), strip EXIF, and run an optional malware scan.
-- **Turn on bucket versioning** for `uj-production` and `uj-documents`, and object lock for `uj-backups`.
+- **Turn on bucket versioning** for `unsattai-production` and `unsattai-documents`, and object lock for `unsattai-backups`.
 
 Code changes:
 
@@ -408,7 +408,7 @@ App/Web             API                          Razorpay                 Worker
   - With a courier aggregator, COD money arrives by **remittance**. Record the remittance id and match it per AWB; a missing remittance after N days raises an alert.
   - Keep the existing COD eligibility rules in `pricing.py` and `sellers.py`.
   - Consider a small prepaid token or OTP confirmation for high-value COD to reduce return-to-origin (RTO) losses.
-- **PCI scope:** see section 11. Hosted checkout keeps card data off UrJersey servers entirely.
+- **PCI scope:** see section 11. Hosted checkout keeps card data off Unsattai servers entirely.
 
 ---
 
@@ -543,7 +543,7 @@ This is a sound start. The risk is that partner scoping depends on **each route 
 
 **Service-to-service auth and API keys:**
 
-- **Web store → API:** the Next.js server proxies with `UJ_API_KEY` (`deploy/docker-compose.yml`). That is a genuine secret because it never reaches browsers. Keep it; give it a scope (`client=web`).
+- **Web store → API:** the Next.js server proxies with `UNSATTAI_API_KEY` (`deploy/docker-compose.yml`). That is a genuine secret because it never reaches browsers. Keep it; give it a scope (`client=web`).
 - **Mobile app → API:** a key embedded in a public app is **not a secret**. Treat it as a client identifier for analytics and rate limits only. Security comes from customer tokens and server-side checks. Consider Play Integrity / App Attest later to slow down scripted abuse of AI and OTP routes.
 - **API → factory / partners:** today a bearer `FACTORY_TOKEN`. Target: a per-partner API credential, with an HMAC-signed body and timestamp for outbound webhooks to partners.
 - **Partners/factory → API** (status callbacks): per-partner API keys stored hashed in an `api_keys` table (`prefix, hash, partner_id, scopes, created_by, last_used_at, expires_at, revoked_at`). They are shown once, rotatable, and scoped (e.g. `production:write`).
@@ -572,8 +572,8 @@ This is a sound start. The risk is that partner scoping depends on **each route 
 
 ### What to do
 
-1. **Database:** turn on managed PITR from day one. In addition, a nightly `pg_dump -Fc` to `uj-backups` (R2, object lock, a separate account or token that can only write), so you are not dependent on one vendor's backups.
-2. **Object storage:** versioning on `uj-production` and `uj-documents`, and lifecycle rules for old versions. For scale-up, replicate the critical buckets to a second provider or region.
+1. **Database:** turn on managed PITR from day one. In addition, a nightly `pg_dump -Fc` to `unsattai-backups` (R2, object lock, a separate account or token that can only write), so you are not dependent on one vendor's backups.
+2. **Object storage:** versioning on `unsattai-production` and `unsattai-documents`, and lifecycle rules for old versions. For scale-up, replicate the critical buckets to a second provider or region.
 3. **Configuration:** `.env` lives in a secrets manager (section 11), and compose files and Caddyfile are in git. The server should be rebuildable from git plus secrets in under an hour, so write that runbook (`docs/runbook-restore.md`).
 4. **Restore drills:** monthly at MVP, as a scripted drill that:
    - restores the latest PITR point into a scratch database;
@@ -646,7 +646,7 @@ The ops dashboard should show these counts at the top.
    - Next.js ISR for product pages.
    - An in-process LRU for settings (`config.get` reads settings often).
    - Redis only if a measured hot spot needs it.
-8. **CDN** for the ops SPA, web static assets, product images (`uj-public`) and presigned downloads of large print files.
+8. **CDN** for the ops SPA, web static assets, product images (`unsattai-public`) and presigned downloads of large print files.
 9. **Read replicas** only when reporting or ops dashboards measurably load the primary. Route read-only report endpoints to a replica. For typical volumes this is Phase 3, not before.
 
 ### What scales first
@@ -721,7 +721,7 @@ Implement coarse limits at Cloudflare or Caddy and fine limits in the app, store
 
 The DPDP Rules were notified in November 2025, with most obligations phasing in over about 18 months. Confirm the current dates with counsel.
 
-| Obligation | What it means for UrJersey |
+| Obligation | What it means for Unsattai |
 |---|---|
 | Notice and consent | A clear notice at sign-up and checkout covering what is collected (name, phone, email, addresses, uploaded images, designs), why, and with whom it is shared (partners, couriers, gateway, SMS/email providers, Anthropic for AI). Separate, optional consent for marketing (`marketing_opt_in` exists) and for using designs and briefs as **AI training data**. |
 | Purpose limitation and minimisation | Partners get only what production and shipping need. Don't send customer phone or name to the Claude API; today only design briefs and images go there, so check that uploads don't carry personal data and strip EXIF. |
@@ -733,7 +733,7 @@ The DPDP Rules were notified in November 2025, with most obligations phasing in 
 
 ### PCI scope
 
-Use hosted or standard Checkout (Razorpay Checkout, Cashfree hosted or drop-in) so **card data never touches UrJersey servers or apps**. That keeps you at the lightest self-assessment level (SAQ A for redirect/iframe on web; confirm the SDK's classification for mobile). Never log gateway payloads containing card or VPA details beyond what is needed; store only ids, method type and last 4 if provided.
+Use hosted or standard Checkout (Razorpay Checkout, Cashfree hosted or drop-in) so **card data never touches Unsattai servers or apps**. That keeps you at the lightest self-assessment level (SAQ A for redirect/iframe on web; confirm the SDK's classification for mobile). Never log gateway payloads containing card or VPA details beyond what is needed; store only ids, method type and last 4 if provided.
 
 ### Admin 2FA and audit
 
@@ -757,7 +757,7 @@ The only case for staying on SQLite at launch is a closed pilot with manual paym
 | Component | Where at MVP | Reason |
 |---|---|---|
 | API (FastAPI) | **On the server** | Stateless once on Postgres; one VM is enough for early volume; simple deploys |
-| Web store (Next.js) | **On the server** (Vercel or Cloudflare later if SEO or traffic needs it) | Talks to the API over the private network, which keeps `UJ_API_KEY` off the internet |
+| Web store (Next.js) | **On the server** (Vercel or Cloudflare later if SEO or traffic needs it) | Talks to the API over the private network, which keeps `UNSATTAI_API_KEY` off the internet |
 | Ops app (static SPA) | **On the server** via Caddy, CDN in front | Static files; trivial |
 | Queue worker | **On the server**, separate container | Same image; the queue lives in Postgres, so nothing new to run |
 | Caddy (TLS, reverse proxy) | **On the server** | Automatic HTTPS works well; Cloudflare in front |
@@ -978,7 +978,7 @@ Target with a courier aggregator (Shiprocket, or alternatives such as NimbusPost
 1. When an order is `ready`, a `shipping.create_awb` job:
    - books the shipment (pickup location = the partner's address, weight and dimensions from the product, COD amount);
    - stores the AWB and courier;
-   - downloads the label PDF to `uj-production`;
+   - downloads the label PDF to `unsattai-production`;
    - schedules pickup.
 2. **Tracking webhooks** go to `POST /api/v1/webhooks/shiprocket`:
    - authenticate with the token or signature the aggregator supports (confirm the mechanism; Shiprocket uses a configured security token header);

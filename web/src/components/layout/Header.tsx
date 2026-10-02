@@ -33,9 +33,9 @@ export function Header() {
     <header className={s.header}>
       <a href="#main" className="skip-link">{t('skipToContent')}</a>
       <div className={cx('container', s.bar)}>
-        <Link href="/" className={s.logo} aria-label="UrJersey home">
-          <span className={s.logoMark} aria-hidden>UJ</span>
-          <span className={s.logoWord}>UrJersey</span>
+        <Link href="/" className={s.logo} aria-label="Unsattai home">
+          <span className={s.logoMark} aria-hidden>US</span>
+          <span className={s.logoWord}>Unsattai</span>
         </Link>
         <nav className={cx(s.nav, open && s.navOpen)} aria-label="Main" id="main-nav">
           {links.map((l) => (

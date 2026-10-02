@@ -1,8 +1,8 @@
 {
-  "name": "urjersey-ops",
+  "name": "unsattai-ops",
   "private": true,
   "version": "1.0.0",
-  "description": "UrJersey Ops: the staff back-office for pricing, production, delivery, orders and CRM.",
+  "description": "Unsattai Ops: the staff back-office for pricing, production, delivery, orders and CRM.",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,8 +10,8 @@
     "preview": "vite preview",
     "typecheck": "tsc -b",
     "test": "vitest run",
-    "e2e": "NODE_PATH=${NODE_PATH:-$(npm root -g)} node e2e/ops-flow.mjs",
-    "e2e:full": "bash e2e/run.sh"
+    "e2e": "node e2e/ops-flow.mjs",
+    "e2e:full": "node e2e/run.mjs"
   },
   "dependencies": {
     "react": "^19.3.0",

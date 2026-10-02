@@ -1,16 +1,16 @@
 {
-  "name": "urjersey-web",
+  "name": "unsattai-web",
   "version": "1.0.0",
   "private": true,
-  "description": "UrJersey customer web store (Next.js App Router).",
+  "description": "Unsattai customer web store (Next.js App Router).",
   "scripts": {
     "dev": "next dev -p 3000",
     "build": "next build",
-    "start": "next start -p ${PORT:-3000}",
+    "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "e2e": "NODE_PATH=$(npm root -g) node e2e/store-flow.mjs"
+    "e2e": "node e2e/store-flow.mjs"
   },
   "dependencies": {
     "next": "16.3.6",

@@ -21,7 +21,7 @@ describe('translations', () => {
     for (const lang of ['hi', 'te', 'ta'] as const) {
       const same = Object.keys(own).filter((k) => {
         const v = (own as Record<string, string>)[k];
-        return /[a-z]{4}/i.test(v.replace(/\{\w+\}|UrJersey|CSV|PNG|JPEG|WebP|SVG|WhatsApp|Ctrl|Shift|Delete|Tab|ord_|GSM|KB|ID|3D|SMS|mm/g, ''))
+        return /[a-z]{4}/i.test(v.replace(/\{\w+\}|Unsattai|CSV|PNG|JPEG|WebP|SVG|WhatsApp|Ctrl|Shift|Delete|Tab|ord_|GSM|KB|ID|3D|SMS|mm/g, ''))
           && (DICTS[lang] as Record<string, string>)[k] === v;
       });
       expect(same, lang).toEqual([]);

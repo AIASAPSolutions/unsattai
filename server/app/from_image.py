@@ -1,7 +1,7 @@
 """POST /designs/from-image: turn a picture designed elsewhere into an editable, printable design.
 
 A picture from another AI tool is usually 1024-1536 px and full of fake lettering,
-so it is never printed as-is. Instead it is recognised and rebuilt as a UrJersey
+so it is never printed as-is. Instead it is recognised and rebuilt as a Unsattai
 design: vector pattern pieces at full print resolution, real colours measured from
 the picture's pixels, and names and numbers as exact text layers. That design then
 goes through the same editor, manufacturing checks and print files as any other.
@@ -34,7 +34,7 @@ from .providers.base import sanitize
 from .schemas import PATTERNS, FromImageRequest, GenerateRequest
 from .store import Store
 
-log = logging.getLogger("urjersey.from_image")
+log = logging.getLogger("unsattai.from_image")
 
 MAX_IMAGE_BYTES = 6_000_000
 MAX_PIXELS = 6000 * 6000

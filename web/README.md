@@ -1,14 +1,14 @@
-# UrJersey web store
+# Unsattai web store
 
-The customer web store for UrJersey custom sportswear (jerseys, V-necks, shorts), built with
-Next.js (App Router), React 19, strict TypeScript and CSS modules. It talks to the UrJersey
+The customer web store for Unsattai custom sportswear (jerseys, V-necks, shorts), built with
+Next.js (App Router), React 19, strict TypeScript and CSS modules. It talks to the Unsattai
 API in `../server` through its own server-side proxy, so the API key and the customer's
 session token never reach the browser.
 
 ## Run it
 
 ```bash
-cp .env.example .env.local      # set UJ_API_URL (and UJ_API_KEY if the API sets API_KEYS)
+cp .env.example .env.local      # set UNSATTAI_API_URL (and UNSATTAI_API_KEY if the API sets API_KEYS)
 npm install                     # .npmrc sets legacy-peer-deps
 npm run dev                     # http://localhost:3000
 npm run build && npm start      # production (PORT=3000 by default)
@@ -16,8 +16,8 @@ npm run build && npm start      # production (PORT=3000 by default)
 
 | Variable | Default | What it is |
 | --- | --- | --- |
-| `UJ_API_URL` | `http://127.0.0.1:8000` | Where the API listens. Only the web server calls it. |
-| `UJ_API_KEY` | – | Channel key sent as `X-API-Key` by the proxy. Server-side only. |
+| `UNSATTAI_API_URL` | `http://127.0.0.1:8000` | Where the API listens. Only the web server calls it. |
+| `UNSATTAI_API_KEY` | – | Channel key sent as `X-API-Key` by the proxy. Server-side only. |
 | `NEXT_PUBLIC_SITE_URL` | `http://localhost:3000` | Public address, for metadata, sitemap and share links. |
 
 ## Checks
@@ -37,9 +37,9 @@ and Chromium from `PLAYWRIGHT_BROWSERS_PATH`. Run an API with its own database a
 against it:
 
 ```bash
-cd ../server && DB_PATH=/tmp/uj-web-e2e.db DESIGN_PROVIDER=rule AI_EDITS=off \
-  ADMIN_EMAIL=admin@urjersey.test ADMIN_PASSWORD='Adm1nPassword!' .venv/bin/uvicorn app.main:app --port 8100 &
-cd ../web && npm run build && UJ_API_URL=http://127.0.0.1:8100 npx next start -p 3100 &
+cd ../server && DB_PATH=/tmp/unsattai-web-e2e.db DESIGN_PROVIDER=rule AI_EDITS=off \
+  ADMIN_EMAIL=admin@unsattai.test ADMIN_PASSWORD='Adm1nPassword!' .venv/bin/uvicorn app.main:app --port 8100 &
+cd ../web && npm run build && UNSATTAI_API_URL=http://127.0.0.1:8100 npx next start -p 3100 &
 npm run e2e        # WEB_URL / API_URL / ADMIN_EMAIL / ADMIN_PASSWORD can be overridden
 ```
 
@@ -65,9 +65,9 @@ are written to `e2e/shots/`, and every screenshotted screen is checked for horiz
 
 ## How it fits together
 
-- **Proxy** `src/app/api/uj/[...path]/route.ts` (helpers in `src/lib/proxy.ts`): forwards
-  `/api/uj/*` to `${UJ_API_URL}/api/v1/*`, adds `X-API-Key`, turns the httpOnly `uj_session`
-  cookie into `Authorization: Bearer`, passes `X-Device-Id` (minting an httpOnly `uj_device`
+- **Proxy** `src/app/api/unsattai/[...path]/route.ts` (helpers in `src/lib/proxy.ts`): forwards
+  `/api/unsattai/*` to `${UNSATTAI_API_URL}/api/v1/*`, adds `X-API-Key`, turns the httpOnly `unsattai_session`
+  cookie into `Authorization: Bearer`, passes `X-Device-Id` (minting an httpOnly `unsattai_device`
   cookie when missing), and streams status, body and content type back. Staff endpoints
   (`ops/`, `stats`, `dataset/`, `factory/`, print files) and `auth/otp/verify`, `auth/login`,
   `auth/logout` are not reachable; everything else must match the explicit allow-list

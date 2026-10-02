@@ -216,7 +216,7 @@ class Company(_M):
     email: str = Field("", max_length=120)
     phone: str = Field("", max_length=30)
     address: str = Field("", max_length=300)
-    invoice_prefix: str = Field("UJ", pattern=r"^[A-Z0-9-]{1,8}$")
+    invoice_prefix: str = Field("US", pattern=r"^[A-Z0-9-]{1,8}$")
     quote_valid_days: int = Field(14, ge=1, le=365)
     support_hours: str = Field("", max_length=80)
 

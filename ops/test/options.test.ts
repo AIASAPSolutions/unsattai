@@ -139,6 +139,6 @@ describe('meta and health', () => {
   it('treats anything but this machine as a live API', () => {
     expect(isLiveApi('http://127.0.0.1:8200')).toBe(false);
     expect(isLiveApi('http://localhost:8000/')).toBe(false);
-    expect(isLiveApi('https://api.urjersey.in')).toBe(true);
+    expect(isLiveApi('https://api.unsattai.in')).toBe(true);
   });
 });

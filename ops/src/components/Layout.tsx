@@ -30,7 +30,7 @@ export function Layout() {
       <aside className="sidebar" aria-label="Main navigation">
         <div className="brand">
           <span className="brand-mark"><svg viewBox="0 0 32 32" width="20" height="20"><path d="M9 8l4-2h6l4 2 3 5-4 2v11H10V15l-4-2z" fill="white" /></svg></span>
-          <span>UrJersey<small>{isSeller ? 'Seller portal' : 'Operations'}</small></span>
+          <span>Unsattai<small>{isSeller ? 'Seller portal' : 'Operations'}</small></span>
         </div>
         <nav className="nav">
           {groups.map((g, i) => (
@@ -64,7 +64,7 @@ export function Layout() {
           {allowed ? <Outlet /> : (
             <div className="empty" data-testid="not-for-seller">
               <strong>Not available to seller logins</strong>
-              This screen is for UrJersey staff. Your login shows your own orders, production, delivery, returns and cash on delivery.
+              This screen is for Unsattai staff. Your login shows your own orders, production, delivery, returns and cash on delivery.
               <div style={{ marginTop: 10 }}><NavLink to="/dashboard">Go to your home page</NavLink></div>
             </div>
           )}

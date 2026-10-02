@@ -5,7 +5,7 @@ import { SizeGuideClient } from './SizeGuideClient';
 
 export const metadata: Metadata = {
   title: 'Size guide',
-  description: 'Men / unisex, Women and Kids size charts for UrJersey jerseys, V-necks and shorts: chest, length, shoulder, sleeve, waist and hip in cm, and how to measure.',
+  description: 'Men / unisex, Women and Kids size charts for Unsattai jerseys, V-necks and shorts: chest, length, shoulder, sleeve, waist and hip in cm, and how to measure.',
   alternates: { canonical: '/size-guide' },
 };
 

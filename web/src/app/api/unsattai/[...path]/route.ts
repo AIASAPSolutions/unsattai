@@ -1,18 +1,21 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { cookieSecure } from '@/lib/server/cookie';
 import {
-  apiBase, DEVICE_COOKIE, sameOrigin, downstreamHeaders, isValidDeviceId, newDeviceId, upstreamHeaders, upstreamUrl,
+  apiBase, apiKey, DEVICE_COOKIE, sameOrigin, downstreamHeaders, isValidDeviceId, newDeviceId, upstreamHeaders, upstreamUrl,
 } from '@/lib/proxy';
 
-// Browser -> this route -> UrJersey API. The API key and the customer's session token
-// stay on the server; the browser only ever sees /api/uj/... on this origin.
+// Browser -> this route -> Unsattai API. The API key and the customer's session token
+// stay on the server; the browser only ever sees /api/unsattai/... on this origin.
 
 export const dynamic = 'force-dynamic';
 
-type Ctx = { params: Promise<{ path: string[] }> };
+type Ctx = { params: Promise<unknown> };
 
 async function forward(req: NextRequest, ctx: Ctx): Promise<Response> {
-  const { path } = await ctx.params;
+  const params = await ctx.params;
+  const path = (params && typeof params === 'object' && Array.isArray((params as { path?: unknown }).path))
+    ? (params as { path: string[] }).path
+    : [];
   const url = upstreamUrl(apiBase(), path, req.nextUrl.search);
   if (!url) return NextResponse.json({ detail: 'Not found' }, { status: 404 });
   if (!sameOrigin(req.method, req.headers.get('origin'), req.headers.get('x-forwarded-host') ?? req.headers.get('host'))) {
@@ -27,7 +30,7 @@ async function forward(req: NextRequest, ctx: Ctx): Promise<Response> {
   const headers = upstreamHeaders({
     headers: Object.fromEntries(req.headers.entries()),
     cookies: { ...cookies, [DEVICE_COOKIE]: device },
-    apiKey: process.env.UJ_API_KEY || undefined,
+    apiKey: apiKey(),
   });
 
   const hasBody = !['GET', 'HEAD'].includes(req.method);
@@ -42,7 +45,7 @@ async function forward(req: NextRequest, ctx: Ctx): Promise<Response> {
       signal: req.signal,
     });
   } catch {
-    return NextResponse.json({ detail: 'The UrJersey service is not reachable right now.' }, { status: 502 });
+    return NextResponse.json({ detail: 'The Unsattai service is not reachable right now.' }, { status: 502 });
   }
 
   const res = new NextResponse(upstream.body, { status: upstream.status, headers: downstreamHeaders(upstream.headers) });

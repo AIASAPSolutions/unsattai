@@ -1,4 +1,4 @@
-# UrJersey API (FastAPI + SQLite). Build context: server/
+# Unsattai API (FastAPI + SQLite). Build context: server/
 FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 WORKDIR /srv/api
@@ -6,9 +6,9 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt
 COPY app ./app
 # The database lives on a volume so it survives rebuilds and upgrades.
-ENV DB_PATH=/data/urjersey.db
-RUN useradd --system --uid 10001 urjersey && mkdir -p /data && chown urjersey /data
-USER urjersey
+ENV DB_PATH=/data/unsattai.db
+RUN useradd --system --uid 10001 unsattai && mkdir -p /data && chown unsattai /data
+USER unsattai
 # PORT is set by hosting platforms such as Render or Railway; 8000 otherwise.
 ENV PORT=8000
 EXPOSE 8000

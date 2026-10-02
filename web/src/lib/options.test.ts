@@ -51,10 +51,10 @@ describe('garment options', () => {
 
 describe('colourways', () => {
   it('builds the product picture URL with the choices (the original colourway needs no parameter)', () => {
-    expect(productImageUrl('royal strikers')).toBe('/api/uj/shop/products/royal%20strikers/mockup.svg');
-    expect(productImageUrl('rs', { colourway: 'original', sleeves: 'long' })).toBe('/api/uj/shop/products/rs/mockup.svg?sleeves=long');
+    expect(productImageUrl('royal strikers')).toBe('/api/unsattai/shop/products/royal%20strikers/mockup.svg');
+    expect(productImageUrl('rs', { colourway: 'original', sleeves: 'long' })).toBe('/api/unsattai/shop/products/rs/mockup.svg?sleeves=long');
     expect(productImageUrl('rs', { colourway: 'neon', sleeves: 'none', collar: 'polo' }))
-      .toBe('/api/uj/shop/products/rs/mockup.svg?colourway=neon&sleeves=none&collar=polo');
+      .toBe('/api/unsattai/shop/products/rs/mockup.svg?colourway=neon&sleeves=none&collar=polo');
   });
   it('takes swatch colours from the list swatch or the detail palette', () => {
     expect(swatchColours({ id: 'a', name: 'A', swatch: ['#111111', '#222222'] })).toEqual(['#111111', '#222222']);

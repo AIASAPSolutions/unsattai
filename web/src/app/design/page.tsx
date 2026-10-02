@@ -5,7 +5,7 @@ import { BriefClient } from './BriefClient';
 
 export const metadata: Metadata = {
   title: 'Describe your design',
-  description: 'Describe your jersey, V-neck or shorts in English, Hindi, Telugu or Tamil. UrJersey reads it back to you and creates four designs.',
+  description: 'Describe your jersey, V-neck or shorts in English, Hindi, Telugu or Tamil. Unsattai reads it back to you and creates four designs.',
   alternates: { canonical: '/design' },
 };
 

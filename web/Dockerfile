@@ -1,4 +1,4 @@
-# UrJersey web store (Next.js). Build context: web/
+# Unsattai web store (Next.js). Build context: web/
 FROM node:22-slim AS build
 WORKDIR /srv/web
 COPY package.json package-lock.json ./

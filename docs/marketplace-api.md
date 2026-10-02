@@ -56,7 +56,7 @@ GET /api/v1/shop/serviceability?pincode=600028&garment=jersey&pieces=12
   "reason": null,
   "offers": [
     {
-      "seller_id": "sel_house", "seller_name": "UrJersey",
+      "seller_id": "sel_house", "seller_name": "Unsattai",
       "rating": {"average": 4.5, "count": 12},
       "unit_price": 474.05,
       "ship_date": "2026-10-02", "delivery_date": "2026-10-04", "transit_days": 2,
@@ -105,7 +105,7 @@ Public profile for "Sold by": `{"id", "name", "rating": {"average", "count"}, "c
 Query `pincode`, `pieces`, `rush`. Now answers for the recommended seller and says when the PIN code can't be served:
 
 ```json
-{"zone": "Tamil Nadu", "serviceable": true, "seller": {"id": "sel_house", "name": "UrJersey"},
+{"zone": "Tamil Nadu", "serviceable": true, "seller": {"id": "sel_house", "name": "Unsattai"},
  "ship_date": "2026-10-02", "delivery_date": "2026-10-04", "ready_date": "2026-10-01", "production_days": 3}
 ```
 
@@ -170,7 +170,7 @@ The list fields plus:
   "reviews": [
     {"id": "rev_f796c37b8224", "rating": 4, "title": "Good print", "body": "Colours are bright.",
      "customer_name": "Asha K.", "created_at": "2026-09-28T22:23:56+00:00", "verified_purchase": true,
-     "garment": "jersey", "seller_name": "UrJersey"}
+     "garment": "jersey", "seller_name": "Unsattai"}
   ],
   "fabrics": [{"id": "standard", "name": "Dri-fit polyester, 140 GSM", "surcharge": 0},
               {"id": "premium", "name": "Micro-mesh polyester, 160 GSM", "surcharge": 120}]
@@ -254,7 +254,7 @@ Prices every item (each with its seller and dates) and the whole cart. No sign-i
   "items": [
     {
       "index": 0, "product_id": "prd_seed01", "title": "Royal Strikers", "garment": "jersey",
-      "seller": {"id": "sel_house", "name": "UrJersey"},
+      "seller": {"id": "sel_house", "name": "Unsattai"},
       "quote": {"...": "the same shape as POST /shop/quote, including estimate"},
       "coupon_share": 500.0,
       "delivery_date": "2026-10-04",
@@ -434,7 +434,7 @@ Adds `phone_verified`, `email_verified` and `has_password`. `phone` may be `""` 
 ]}
 ```
 
-Newest activity first. `last_seen_at` is updated at most once a minute. `device_label` comes from the `User-Agent` at sign-in, for example `Chrome on Android`, `Safari on iPhone`, `UrJersey app on Android`, or `Unknown device`. A mobile app can include `UrJersey` in its `User-Agent` to be labelled as the app.
+Newest activity first. `last_seen_at` is updated at most once a minute. `device_label` comes from the `User-Agent` at sign-in, for example `Chrome on Android`, `Safari on iPhone`, `Unsattai app on Android`, or `Unknown device`. A mobile app can include `Unsattai` in its `User-Agent` to be labelled as the app.
 
 #### `DELETE /me/sessions/{id}` · `POST /me/sessions/revoke-others`
 
@@ -462,7 +462,7 @@ Every customer order response (`POST /orders`, `GET /orders/{id}`, `GET /me/orde
 
 ```json
 {
-  "seller": {"id": "sel_house", "name": "UrJersey"},
+  "seller": {"id": "sel_house", "name": "Unsattai"},
   "checkout_id": "chk_a6119f0ecd0e",
   "payment_method": "online",
   "can_cancel": true,
@@ -531,8 +531,8 @@ Return statuses: `requested → approved → picked_up → resolved` (`resolutio
 #### `GET /me/notifications?unread_only=false&page=1`
 
 ```json
-{"items": [{"id": "ntf_18d99c3d38cbb70d113c", "code": "placed", "title": "Order UJ-00001 placed",
-            "body": "We have your order UJ-00001. Total INR 5276.78.", "order_id": "ord_4ff60f91a155",
+{"items": [{"id": "ntf_18d99c3d38cbb70d113c", "code": "placed", "title": "Order US-00001 placed",
+            "body": "We have your order US-00001. Total INR 5276.78.", "order_id": "ord_4ff60f91a155",
             "read": false, "created_at": "2026-09-28T22:21:53+00:00"}],
  "total": 1, "unread": 1, "page": 1}
 ```
@@ -711,7 +711,7 @@ Create body: the product fields plus **exactly one** source:
 Return record:
 
 ```json
-{"id": "ret_2e3931d50527", "number": "R-00001", "order_id": "ord_6f2079e65c36", "order_number": "UJ-00001",
+{"id": "ret_2e3931d50527", "number": "R-00001", "order_id": "ord_6f2079e65c36", "order_number": "US-00001",
  "customer_id": "cus_3fd3fda6dfe5", "customer_name": "Asha", "seller_id": "sel_house", "status": "approved",
  "reason": "print_quality", "details": "Number 9 is peeling", "lines": [{"line": 1, "quantity": 1}],
  "resolution": null, "refund_amount": null, "note": "Pickup on Monday",
@@ -739,8 +739,8 @@ Delivering the shipment marks the cash collected automatically.
 Message:
 
 ```json
-{"id": "msg_18d99c3d38f40a570539", "channel": "email", "to": "asha@example.com", "subject": "Order UJ-00001 placed",
- "body": "We have your order UJ-00001. Total INR 5276.78.", "status": "logged", "customer_id": "cus_ae081fb170b8",
+{"id": "msg_18d99c3d38f40a570539", "channel": "email", "to": "asha@example.com", "subject": "Order US-00001 placed",
+ "body": "We have your order US-00001. Total INR 5276.78.", "status": "logged", "customer_id": "cus_ae081fb170b8",
  "order_id": "ord_4ff60f91a155", "event": "placed", "sent_at": "2026-09-28T22:21:53+00:00",
  "created_at": "2026-09-28T22:21:53+00:00", "updated_at": "2026-09-28T22:21:53+00:00"}
 ```
@@ -758,7 +758,7 @@ Seller data is not in settings; use the sellers routes.
 
 ## Typical flows
 
-**Product page.** `GET /shop/products/{slug}` → customer enters a PIN code → `GET /shop/serviceability?pincode=&garment=&pieces=` → show the recommended offer ("Sold by UrJersey · Delivery by Sun 4 Oct") and the others.
+**Product page.** `GET /shop/products/{slug}` → customer enters a PIN code → `GET /shop/serviceability?pincode=&garment=&pieces=` → show the recommended offer ("Sold by Unsattai · Delivery by Sun 4 Oct") and the others.
 
 **Checkout.** Keep the cart (server cart when signed in) → `GET /shop/offers` → `POST /shop/cart/quote` as the customer changes the address, coupon or payment method → `POST /checkout` with a new `idempotency_key` → for online payment, `POST /checkouts/{id}/pay` → show the orders.
 

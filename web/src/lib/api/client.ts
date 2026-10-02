@@ -1,4 +1,4 @@
-// Browser-side API client. Every call goes to this site's own proxy (/api/uj/...),
+// Browser-side API client. Every call goes to this site's own proxy (/api/unsattai/...),
 // which adds the API key, the customer's session and the device id on the server.
 // Error handling is ported from the mobile app (app/src/api/client.ts).
 
@@ -69,7 +69,7 @@ export interface RequestOptions {
 
 export type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
-export const PROXY_BASE = '/api/uj';
+export const PROXY_BASE = '/api/unsattai';
 
 export function buildPath(path: string, query?: RequestOptions['query']): string {
   const clean = path.replace(/^\/+/, '');
@@ -96,7 +96,7 @@ export async function request<T>(method: Method, path: string, opts: RequestOpti
   } catch (e) {
     if (opts.signal?.aborted) throw e;
     if (controller.signal.aborted) throw new ApiError('timeout', 'The server took too long to answer.');
-    throw new ApiError('network', 'Can\'t reach UrJersey right now.');
+    throw new ApiError('network', 'Can\'t reach Unsattai right now.');
   } finally {
     clearTimeout(timeout);
     opts.signal?.removeEventListener('abort', onAbort);

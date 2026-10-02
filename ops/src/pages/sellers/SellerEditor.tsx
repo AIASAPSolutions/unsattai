@@ -102,7 +102,7 @@ export default function SellerEditor() {
           <Button variant="primary" busy={saving} disabled={!isNew && !dirty} onClick={save} data-testid="seller-save">{isNew ? 'Create seller' : 'Save'}</Button>
         </>} />
 
-      {readOnly && <div style={{ marginBottom: 16 }}><Alert tone="info" >{isSeller ? 'This is how UrJersey has set up your unit. Ask your UrJersey contact to change coverage, capacity or prices.' : 'Read only: changing sellers needs the settings permission.'}</Alert></div>}
+      {readOnly && <div style={{ marginBottom: 16 }}><Alert tone="info" >{isSeller ? 'This is how Unsattai has set up your unit. Ask your Unsattai contact to change coverage, capacity or prices.' : 'Read only: changing sellers needs the settings permission.'}</Alert></div>}
       {shown.length > 0 && (
         <div style={{ marginBottom: 16 }}><Alert tone="error">
           <b>{shown.length} value{shown.length > 1 ? 's need' : ' needs'} attention.</b>

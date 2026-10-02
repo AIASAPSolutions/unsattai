@@ -42,11 +42,11 @@ beforeEach(async () => {
 describe('session token', () => {
   it('keeps the token in secure storage and survives a restart', async () => {
     await setSessionToken(' tok-123 ');
-    expect(await SecureStore.getItemAsync('urjersey.session')).toBe('tok-123');
+    expect(await SecureStore.getItemAsync('unsattai.session')).toBe('tok-123');
     resetSessionCache();
     expect(await getSessionToken()).toBe('tok-123');
     await setSessionToken(null);
-    expect(await SecureStore.getItemAsync('urjersey.session')).toBeNull();
+    expect(await SecureStore.getItemAsync('unsattai.session')).toBeNull();
   });
 
   it('keeps the token in memory only on web', async () => {
@@ -54,7 +54,7 @@ describe('session token', () => {
     Object.defineProperty(Platform, 'OS', { value: 'web', configurable: true });
     try {
       await setSessionToken('web-tok');
-      expect(await SecureStore.getItemAsync('urjersey.session')).toBeNull();
+      expect(await SecureStore.getItemAsync('unsattai.session')).toBeNull();
       resetSessionCache();
       expect(await getSessionToken()).toBe('web-tok');
       await setSessionToken(null);

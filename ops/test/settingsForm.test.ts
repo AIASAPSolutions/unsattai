@@ -151,11 +151,11 @@ describe('company and CRM', () => {
     const co = clone(defaults.company) as Company;
     expect(stableJson(formToCompany(companyToForm(co), co).value)).toBe(stableJson(co));
     const f = companyToForm(co);
-    f.invoice_prefix = 'uj-in';
+    f.invoice_prefix = 'us-in';
     f.quote_valid_days = '0';
     f.email = 'nope';
     const r = formToCompany(f);
-    expect(r.value.invoice_prefix).toBe('UJ-IN');
+    expect(r.value.invoice_prefix).toBe('US-IN');
     expect(r.errors.map((e) => e.path)).toEqual(['quote_valid_days', 'email']);
   });
   it('round-trips CRM lists and enforces won/lost', () => {

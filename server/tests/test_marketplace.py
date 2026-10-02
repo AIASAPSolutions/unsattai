@@ -9,7 +9,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-ADMIN = ("owner@urjersey.test", "Str0ngPassw0rd")
+ADMIN = ("owner@unsattai.test", "Str0ngPassw0rd")
 PHONE = "+91 90000 00001"
 ADDRESS = {"name": "Test Buyer", "phone": PHONE, "line1": "1 Test Street", "city": "Chennai", "state": "TN",
            "pincode": "600028"}
@@ -100,7 +100,7 @@ def test_house_seller_is_created_from_the_delivery_zones(env):
     areas = {a["match"]: a["transit_days"] for a in house["service_areas"]}
     assert areas["60"] == 2 and areas["KL"] == 3 and areas["11"] == 4 and areas["*"] == 6
     o = c.post("/api/v1/orders", json=order_body(spec, "key_house_1")).json()
-    assert o["seller"] == {"id": "sel_house", "name": "UrJersey"} and o["delivery"]["transit_days"] == 2
+    assert o["seller"] == {"id": "sel_house", "name": "Unsattai"} and o["delivery"]["transit_days"] == 2
     assert o["payment_method"] == "online" and o["can_cancel"] is True and o["checkout_id"] is None
 
 

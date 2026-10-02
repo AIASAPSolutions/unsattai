@@ -4,26 +4,30 @@ import { MAX_LOCKED_COLORS, PROMPT_LIMIT, SIZES, TEXT_LIMITS, type Size } from '
 
 export type FieldIssue = 'required' | 'tooLong' | 'digits' | 'range' | 'format' | 'tooMany';
 
-export function checkPrompt(prompt: string): FieldIssue | null {
+export function checkPrompt(prompt: string | null | undefined): FieldIssue | null {
+  prompt ??= '';
   const p = prompt.trim();
   if (p.length < 3) return 'required';
   if (prompt.length > PROMPT_LIMIT) return 'tooLong';
   return null;
 }
 
-export function checkTeam(v: string): FieldIssue | null {
+export function checkTeam(v: string | null | undefined): FieldIssue | null {
+  v ??= '';
   return v.length > TEXT_LIMITS.team_name ? 'tooLong' : null;
 }
 
-export function checkPlayer(v: string): FieldIssue | null {
+export function checkPlayer(v: string | null | undefined): FieldIssue | null {
+  v ??= '';
   return v.length > TEXT_LIMITS.player_name ? 'tooLong' : null;
 }
 
-export function cleanNumber(v: string): string {
+export function cleanNumber(v: string | null | undefined): string {
+  v ??= '';
   return normalizeDigits(v).replace(/\s/g, '');
 }
 
-export function checkNumber(v: string): FieldIssue | null {
+export function checkNumber(v: string | null | undefined): FieldIssue | null {
   return /^\d{0,3}$/.test(cleanNumber(v)) ? null : 'digits';
 }
 

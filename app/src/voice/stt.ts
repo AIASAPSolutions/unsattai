@@ -3,7 +3,7 @@ import type { Language } from '../api/types';
 import { SPEECH_LOCALE } from '../i18n';
 
 // Speech-to-text via expo-speech-recognition. It is a native module, so it is
-// only present in a development/production build of UrJersey, not in Expo Go;
+// only present in a development/production build of Unsattai, not in Expo Go;
 // on web it uses the browser's Web Speech API where available. Everything here
 // fails soft: callers get a reason they can show, and typing always works.
 

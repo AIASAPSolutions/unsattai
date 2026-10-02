@@ -45,6 +45,6 @@ export const usePrefs = create<PrefsState>()(
         if (address) set({ address: { ...address } });
       },
     }),
-    { name: 'urjersey.prefs', storage: safeStorage, version: 1 },
+    { name: 'unsattai.prefs', storage: safeStorage, version: 1 },
   ),
 );

@@ -4,7 +4,7 @@ import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
-// Where the UrJersey API lives, in priority order:
+// Where the Unsattai API lives, in priority order:
 //   1. the URL saved on the Settings screen
 //   2. EXPO_PUBLIC_API_URL at build/start time
 //   3. expo.extra.apiUrl in app.json
@@ -13,9 +13,9 @@ import { Platform } from 'react-native';
 // The API key is never bundled: it is typed on the Settings screen and kept in
 // the device's secure storage (Keychain / Keystore).
 
-const URL_KEY = 'urjersey.apiUrl';
-const API_KEY_KEY = 'urjersey.apiKey';
-const DEVICE_KEY = 'urjersey.deviceId';
+const URL_KEY = 'unsattai.apiUrl';
+const API_KEY_KEY = 'unsattai.apiKey';
+const DEVICE_KEY = 'unsattai.deviceId';
 const API_PORT = 8000;
 
 let cachedUrl: string | null = null;
@@ -117,7 +117,7 @@ export function getDeviceId(): Promise<string> {
     } catch {
       /* storage unavailable: use a per-session id */
     }
-    const id = `uj-${Crypto.randomUUID().replace(/-/g, '')}`;
+    const id = `unsattai-${Crypto.randomUUID().replace(/-/g, '')}`;
     AsyncStorage.setItem(DEVICE_KEY, id).catch(() => undefined);
     return id;
   })();

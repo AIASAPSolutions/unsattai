@@ -1,23 +1,42 @@
-// End-to-end run of UrJersey Ops against a local API.
+// End-to-end run of Unsattai Ops against a local API.
 //
 //   API_URL=http://127.0.0.1:8200 OPS_URL=http://127.0.0.1:5200 \
-//   ADMIN_EMAIL=admin@urjersey.test ADMIN_PASSWORD='Adm1nPassword!' \
-//   NODE_PATH=$(npm root -g) node e2e/ops-flow.mjs
+//   ADMIN_EMAIL=admin@unsattai.test ADMIN_PASSWORD='Adm1nPassword!' \
+//   node e2e/ops-flow.mjs
 //
 // Needs Playwright (global install is fine) and a running API + ops build (see e2e/run.sh,
 // which starts both on their own ports and database and stops them afterwards).
 // Seeds data through the public API first, then drives the browser as staff would.
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 
-process.env.PLAYWRIGHT_BROWSERS_PATH ??= '/opt/pw-browsers';
+// Preinstalled browsers on the CI image; elsewhere Playwright's own default location is used.
+if (!process.env.PLAYWRIGHT_BROWSERS_PATH && existsSync('/opt/pw-browsers')) process.env.PLAYWRIGHT_BROWSERS_PATH = '/opt/pw-browsers';
 const require = createRequire(import.meta.url);
-const { chromium } = require('playwright');
+function requirePackage(name) {
+  try {
+    return require(name);
+  } catch (error) {
+    if (!process.env.NODE_PATH) {
+      const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+      process.env.NODE_PATH = execFileSync(npm, ['root', '-g'], { encoding: 'utf8' }).trim();
+      require('node:module')._initPaths();
+    }
+    try {
+      return require(name);
+    } catch {
+      throw error;
+    }
+  }
+}
+const { chromium } = requirePackage('playwright');
 
 const API = (process.env.API_URL ?? 'http://127.0.0.1:8200').replace(/\/$/, '');
 const OPS = (process.env.OPS_URL ?? 'http://127.0.0.1:5200').replace(/\/$/, '');
-const ADMIN = { email: process.env.ADMIN_EMAIL ?? 'admin@urjersey.test', password: process.env.ADMIN_PASSWORD ?? 'Adm1nPassword!' };
-const OUT = new URL('./shots/', import.meta.url).pathname;
+const ADMIN = { email: process.env.ADMIN_EMAIL ?? 'admin@unsattai.test', password: process.env.ADMIN_PASSWORD ?? 'Adm1nPassword!' };
+const OUT = fileURLToPath(new URL('./shots/', import.meta.url));
 mkdirSync(OUT, { recursive: true });
 const RUN = Date.now().toString(36);
 
@@ -378,7 +397,7 @@ try {
 
   await step('sellers: create a seller covering one state, with a blocked PIN code and COD', async () => {
     await page.goto(`${OPS}/sellers`);
-    await tid('sellers-table').getByText('UrJersey').first().waitFor();
+    await tid('sellers-table').getByText('Unsattai').first().waitFor();
     await shot('27-sellers');
     await tid('new-seller').click();
     await page.waitForURL(/\/sellers\/new/);
@@ -799,7 +818,7 @@ try {
     await shot('49-product-colourway');
   });
 
-  const prodEmail = `prod.${RUN}@urjersey.test`;
+  const prodEmail = `prod.${RUN}@unsattai.test`;
   const prodPassword = 'Pr0duction-Pass';
   await step('create a production-role staff user', async () => {
     await page.goto(`${OPS}/staff`);
@@ -854,8 +873,13 @@ try {
   await step('no uncaught errors in the browser', async () => {
     assert(consoleErrors.length === 0, `console errors:\n${consoleErrors.join('\n')}`);
   });
-} catch {
-  // reported by step()
+} catch (e) {
+  // A failing step has already been reported by step(); anything else (e.g. the browser
+  // failing to launch) must not end the run looking like a pass.
+  if (!results.some((r) => !r.ok)) {
+    failures++;
+    console.log(`\nE2E aborted outside a step: ${String(e?.stack ?? e).split('\n').slice(0, 6).join('\n  ')}`);
+  }
 } finally {
   await browser?.close();
   console.log(`\n${results.filter((r) => r.ok).length}/${results.length} steps passed${failures ? `, ${failures} failed` : ''}. Screenshots: ${OUT}`);

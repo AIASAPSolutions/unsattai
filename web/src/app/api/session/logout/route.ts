@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { apiBase, sameOrigin, SESSION_COOKIE } from '@/lib/proxy';
+import { apiBase, apiKey, sameOrigin, SESSION_COOKIE } from '@/lib/proxy';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,7 +10,8 @@ export async function POST(req: NextRequest) {
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   if (token) {
     const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
-    if (process.env.UJ_API_KEY) headers['X-API-Key'] = process.env.UJ_API_KEY;
+    const key = apiKey();
+    if (key) headers['X-API-Key'] = key;
     await fetch(`${apiBase()}/api/v1/auth/logout`, { method: 'POST', headers, cache: 'no-store' }).catch(() => undefined);
   }
   const res = NextResponse.json({ ok: true });

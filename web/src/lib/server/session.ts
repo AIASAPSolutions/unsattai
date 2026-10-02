@@ -1,6 +1,6 @@
 import 'server-only';
 import { NextResponse, type NextRequest } from 'next/server';
-import { apiBase, DEVICE_COOKIE, isValidDeviceId, sameOrigin, SESSION_COOKIE } from '../proxy';
+import { apiBase, apiKey, DEVICE_COOKIE, isValidDeviceId, sameOrigin, SESSION_COOKIE } from '../proxy';
 import { signInBody } from '../signin';
 import { cookieSecure } from './cookie';
 
@@ -22,7 +22,8 @@ export async function signInRoute(req: NextRequest, apiPath: 'auth/otp/verify' |
   if (!body) return NextResponse.json({ detail: 'Invalid request' }, { status: 422 });
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (process.env.UJ_API_KEY) headers['X-API-Key'] = process.env.UJ_API_KEY;
+  const key = apiKey();
+  if (key) headers['X-API-Key'] = key;
   const ua = req.headers.get('user-agent');
   if (ua) headers['User-Agent'] = ua.slice(0, 300);
   const device = req.cookies.get(DEVICE_COOKIE)?.value;
@@ -33,7 +34,7 @@ export async function signInRoute(req: NextRequest, apiPath: 'auth/otp/verify' |
       method: 'POST', headers, body: JSON.stringify(body), cache: 'no-store',
     });
   } catch {
-    return NextResponse.json({ detail: 'The UrJersey service is not reachable right now.' }, { status: 502 });
+    return NextResponse.json({ detail: 'The Unsattai service is not reachable right now.' }, { status: 502 });
   }
   const data = (await upstream.json().catch(() => ({}))) as { token?: string; expires_at?: string; customer?: unknown };
   if (!upstream.ok || !data.token) {

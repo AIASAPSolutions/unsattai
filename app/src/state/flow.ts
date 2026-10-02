@@ -289,7 +289,7 @@ export const useFlow = create<FlowState>()(
       }),
     }),
     {
-      name: 'urjersey.flow',
+      name: 'unsattai.flow',
       storage: draftStorage,
       version: 1,
       // History is rebuilt from the current spec on restore: 60 steps of multi-MB logos is too much to store.

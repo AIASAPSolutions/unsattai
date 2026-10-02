@@ -1,7 +1,7 @@
 import type { Garment } from '../../api/types';
 
-// The prompt a customer can paste into any image AI tool to design outside UrJersey.
-// It asks for exactly the kind of picture UrJersey recognises best: one flat front
+// The prompt a customer can paste into any image AI tool to design outside Unsattai.
+// It asks for exactly the kind of picture Unsattai recognises best: one flat front
 // view on a plain background, bold shapes, and no lettering (names and numbers are
 // added later as exact print layers, so the tool's made-up text never reaches print).
 // Always English: image tools follow English prompts most reliably.

@@ -1,7 +1,7 @@
 import type { Strings } from './en';
 
 const hi: Strings = {
-  appName: 'UrJersey',
+  appName: 'Unsattai',
   tagline: 'अपनी किट ख़ुद डिज़ाइन करें',
 
   continue: 'आगे बढ़ें',
@@ -61,7 +61,7 @@ const hi: Strings = {
   voiceGuideOn: 'आवाज़ गाइड चालू',
   voiceGuideOff: 'आवाज़ गाइड बंद',
   language: 'भाषा',
-  sttUnavailable: 'बोलकर लिखने के लिए UrJersey ऐप बिल्ड चाहिए (Expo Go नहीं)। अभी कीबोर्ड का माइक बटन इस्तेमाल करें।',
+  sttUnavailable: 'बोलकर लिखने के लिए Unsattai ऐप बिल्ड चाहिए (Expo Go नहीं)। अभी कीबोर्ड का माइक बटन इस्तेमाल करें।',
   sttNoPermission: 'माइक्रोफ़ोन की अनुमति बंद है। बोलने के लिए सेटिंग्स में इसे चालू करें।',
   sttLanguageMissing: 'इस डिवाइस पर इस भाषा की स्पीच पहचान इंस्टॉल नहीं है। कीबोर्ड का माइक बटन आज़माएँ।',
   sttError: 'बोलकर लिखना रुक गया: {reason}',
@@ -272,7 +272,7 @@ const hi: Strings = {
   about: 'परिचय',
   staffOnly: 'स्टाफ़ टूल इस ऐप में नहीं हैं।',
 
-  errNetwork: 'UrJersey सर्वर तक नहीं पहुँच पा रहे। कनेक्शन या सेटिंग्स में सर्वर पता जाँचें।',
+  errNetwork: 'Unsattai सर्वर तक नहीं पहुँच पा रहे। कनेक्शन या सेटिंग्स में सर्वर पता जाँचें।',
   errTimeout: 'सर्वर ने जवाब देने में बहुत देर की। फिर कोशिश करें।',
   errAuth: 'सर्वर को सही API कुंजी चाहिए। इसे सेटिंग्स में जोड़ें।',
   errValidation: 'अनुरोध में कुछ सही नहीं है: {detail}',
@@ -303,7 +303,7 @@ const hi: Strings = {
   keyRemoved: 'API की इस डिवाइस से हटा दी गई।',
   // AI edits
   aiLeft: "आज बचे AI बदलाव: {limit} में से {n}",
-  aiHint: "रंग, पैटर्न और नाम जैसे आसान बदलाव तुरंत और मुफ़्त होते हैं। बाकी के लिए UrJersey का AI मदद करता है।",
+  aiHint: "रंग, पैटर्न और नाम जैसे आसान बदलाव तुरंत और मुफ़्त होते हैं। बाकी के लिए Unsattai का AI मदद करता है।",
   refineByAi: "AI",
   errAiQuota: "आज के मुफ़्त AI बदलाव खत्म हो गए। \"कॉलर सुनहरा करो\" जैसे आसान बदलाव अभी भी चलते हैं, और कल या ऑर्डर के बाद और AI बदलाव मिलेंगे।",
   errAiRate: "एक मिनट में बहुत सारे AI बदलाव। थोड़ा रुककर फिर कोशिश करें।",
@@ -311,7 +311,7 @@ const hi: Strings = {
   // design from a picture
   pictureTitle: "तस्वीर से डिज़ाइन",
   pictureEntryTitle: "कहीं और डिज़ाइन किया है?",
-  pictureEntryHint: "हमारा प्रॉम्प्ट किसी भी AI इमेज टूल में इस्तेमाल करें, फिर तस्वीर अपलोड करें। UrJersey उसे प्रिंट के लिए तैयार, बदलने लायक डिज़ाइन में बदल देता है।",
+  pictureEntryHint: "हमारा प्रॉम्प्ट किसी भी AI इमेज टूल में इस्तेमाल करें, फिर तस्वीर अपलोड करें। Unsattai उसे प्रिंट के लिए तैयार, बदलने लायक डिज़ाइन में बदल देता है।",
   pictureEntryCta: "तस्वीर इस्तेमाल करें",
   promptStep: "1. प्रॉम्प्ट लें",
   promptStepHint: "इसे किसी भी AI इमेज टूल में पेस्ट करें, जैसे ChatGPT, Gemini या Microsoft Designer। इसमें पहली स्क्रीन का आइडिया, कपड़ा और रंग शामिल हैं।",
@@ -577,7 +577,7 @@ const hi: Strings = {
   emailInvalid: "सही ईमेल डालें।",
   signedInAs: "{name} के रूप में साइन इन",
   signInPrivacy: "आपका नंबर या ईमेल सिर्फ़ साइन इन और ऑर्डर की जानकारी के लिए है।",
-  accountWelcome: "UrJersey में स्वागत है",
+  accountWelcome: "Unsattai में स्वागत है",
   accountWelcomeHint: "ऑर्डर ट्रैक करने, पते सहेजने और कार्ट व विशलिस्ट रखने के लिए साइन इन करें।",
   signInOrCreate: "साइन इन करें या खाता बनाएँ",
   settingsNote: "भाषा, आवाज़ गाइड, सर्वर",
@@ -654,7 +654,7 @@ const hi: Strings = {
   rstatus_rejected: "मंज़ूर नहीं",
   reason_damaged: "ख़राब", reason_wrong_item: "ग़लत आइटम", reason_print_quality: "प्रिंट की समस्या",
   yourReview: "आपका रिव्यू",
-  reviewHidden: "UrJersey ने छिपाया",
+  reviewHidden: "Unsattai ने छिपाया",
   rateOrder: "इस ऑर्डर को रेट करें",
   reviewTitle: "शीर्षक",
   reviewBody: "आपका रिव्यू",

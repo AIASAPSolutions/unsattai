@@ -117,7 +117,7 @@ changed in `server/`, why, and what the ops app does in the meantime.
   not fetch the artwork it must print.
 - **Proposed:** `GET /ops/orders/{id}/print-files/{name}` under `need("production", seller=True)`,
   scoped to the seller's own orders.
-- **Workaround:** The order screen tells a seller login to ask the UrJersey team for the files.
+- **Workaround:** The order screen tells a seller login to ask the Unsattai team for the files.
 
 ## 16. No rating filter on `/ops/reviews`
 - **Status:** Done on the server and used by the app; the workaround below is removed.

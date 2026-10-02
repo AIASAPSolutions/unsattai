@@ -13,7 +13,7 @@ type Params = Record<string, string | string[] | undefined>;
 const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? '';
 
 /**
- * Reads urjersey://design?prompt=…&garment=…&team=…&lang=…&autostart=1.
+ * Reads unsattai://design?prompt=…&garment=…&team=…&lang=…&autostart=1.
  * Values that are out of range are dropped rather than trimmed silently, and
  * nothing else in the link (such as an API key or server address) is used.
  */

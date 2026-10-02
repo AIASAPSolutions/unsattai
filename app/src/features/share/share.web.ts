@@ -31,7 +31,7 @@ async function svgToPng(svg: string, width = 1200): Promise<Blob> {
 /** Web: rasterises the mock-up SVG; uses the Web Share API when it accepts files, otherwise downloads the PNG. */
 export async function shareImage(_view: RefObject<View | null>, svg: string, title: string): Promise<ShareOutcome> {
   const blob = await svgToPng(svg);
-  const file = new File([blob], 'urjersey-design.png', { type: 'image/png' });
+  const file = new File([blob], 'unsattai-design.png', { type: 'image/png' });
   if (typeof navigator !== 'undefined' && navigator.canShare?.({ files: [file] })) {
     await navigator.share({ files: [file], title });
     return 'shared';

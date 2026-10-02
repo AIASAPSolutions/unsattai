@@ -81,12 +81,12 @@ export function colourwayName(colourways: Colourway[] | undefined, id: string | 
   return colourways?.find((c) => c.id === id)?.name ?? id;
 }
 
-/** A product picture with choices: /api/uj/shop/products/<slug>/mockup.svg?colourway=&sleeves=&collar= */
+/** A product picture with choices: /api/unsattai/shop/products/<slug>/mockup.svg?colourway=&sleeves=&collar= */
 export function productImageUrl(slug: string, choice: { colourway?: string; sleeves?: string; collar?: string } = {}): string {
   const q = new URLSearchParams();
   if (choice.colourway && choice.colourway !== 'original') q.set('colourway', choice.colourway);
   if (choice.sleeves) q.set('sleeves', choice.sleeves);
   if (choice.collar) q.set('collar', choice.collar);
   const s = q.toString();
-  return `/api/uj/shop/products/${encodeURIComponent(slug)}/mockup.svg${s ? `?${s}` : ''}`;
+  return `/api/unsattai/shop/products/${encodeURIComponent(slug)}/mockup.svg${s ? `?${s}` : ''}`;
 }

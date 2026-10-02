@@ -15,7 +15,7 @@ export function pickOffer(data: Serviceability | null, sellerId?: string): Offer
 }
 
 /**
- * "Delivery by Thu, 2 Oct · Sold by UrJersey · Cash on delivery available" for the
+ * "Delivery by Thu, 2 Oct · Sold by Unsattai · Cash on delivery available" for the
  * "Deliver to" PIN code, from /shop/serviceability.
  */
 export function DeliveryLine({ garment, fabric, pieces = 1, sellerId, compact, testId = 'delivery-line' }: {

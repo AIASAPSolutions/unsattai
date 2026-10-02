@@ -34,7 +34,7 @@ export default function StaffPage() {
   }, toast.error);
   return (
     <>
-      <PageHeader title="Staff" subtitle="Who can sign in to UrJersey Ops, and what their role lets them do."
+      <PageHeader title="Staff" subtitle="Who can sign in to Unsattai Ops, and what their role lets them do."
         actions={<Button variant="primary" icon={<IconPlus />} onClick={() => setCreating(true)} data-testid="new-staff">Add staff</Button>} />
       <Card flush>
         <DataTable rows={d.data.items} rowKey={(s) => s.id} testId="staff-table" columns={[

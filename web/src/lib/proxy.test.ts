@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  apiBase, downstreamHeaders, isValidDeviceId, newDeviceId, sameOrigin, SESSION_COOKIE, upstreamHeaders, upstreamPath, upstreamUrl,
+  apiBase, apiKey, downstreamHeaders, isValidDeviceId, newDeviceId, sameOrigin, SESSION_COOKIE, upstreamHeaders, upstreamPath, upstreamUrl,
 } from './proxy';
 
 describe('upstreamPath / upstreamUrl', () => {
@@ -23,7 +23,7 @@ describe('upstreamPath / upstreamUrl', () => {
       'me/wishlist', 'me/wishlist/prd_1', 'me/password', 'me/identifiers/request', 'me/identifiers/verify', 'me/sessions',
       'me/sessions/ses_1', 'me/sessions/revoke-others', 'me/orders/ord_1/cancel', 'me/orders/ord_1/returns',
       'me/orders/ord_1/review', 'me/returns', 'me/notifications', 'me/notifications/read', 'me/checkouts',
-      'orders', 'orders/ord_1', 'orders/ord_1/invoice', 'orders/UJ-00001/track', 'orders/ord_1/payment-confirmed',
+      'orders', 'orders/ord_1', 'orders/ord_1/invoice', 'orders/US-00001/track', 'orders/ord_1/payment-confirmed',
       'collections', 'collections/tok', 'collections/tok/entries', 'collections/tok/entries/e1', 'quotes/tok/accept',
       'designs/generate', 'designs/d1/feedback', 'render/panels', 'meta', 'health', 'shop/size-guide',
     ];
@@ -64,7 +64,7 @@ describe('upstreamHeaders', () => {
   });
   it('passes a valid device id from the header or the cookie', () => {
     expect(upstreamHeaders({ headers: { 'x-device-id': 'dev_12345678' }, cookies: {} })['X-Device-Id']).toBe('dev_12345678');
-    expect(upstreamHeaders({ headers: {}, cookies: { uj_device: 'web_abcdef12' } })['X-Device-Id']).toBe('web_abcdef12');
+    expect(upstreamHeaders({ headers: {}, cookies: { unsattai_device: 'web_abcdef12' } })['X-Device-Id']).toBe('web_abcdef12');
     expect(upstreamHeaders({ headers: { 'x-device-id': 'bad id\n' }, cookies: {} })['X-Device-Id']).toBeUndefined();
   });
   it('passes the user agent so the API can label the device', () => {
@@ -101,7 +101,9 @@ describe('device ids, base url and origin checks', () => {
   });
   it('defaults the API base', () => {
     expect(apiBase({})).toBe('http://127.0.0.1:8000');
-    expect(apiBase({ UJ_API_URL: 'http://x:8100/' })).toBe('http://x:8100');
+    expect(apiBase({ UNSATTAI_API_URL: 'http://x:8100/' })).toBe('http://x:8100');
+    expect(apiKey({ UNSATTAI_API_KEY: 'secret' })).toBe('secret');
+    expect(apiKey({})).toBeUndefined();
   });
   it('refuses cross-site writes', () => {
     expect(sameOrigin('GET', 'https://evil.test', 'shop.test')).toBe(true);

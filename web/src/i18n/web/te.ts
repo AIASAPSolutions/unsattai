@@ -65,7 +65,7 @@ const web: WebStrings = {
 
   // generic
   signInNeeded: 'కొనసాగడానికి సైన్ ఇన్ చేయండి.',
-  errNetworkWeb: 'ప్రస్తుతం UrJerseyని చేరుకోలేకపోతున్నాం. మీ కనెక్షన్ చూసి మళ్ళీ ప్రయత్నించండి.',
+  errNetworkWeb: 'ప్రస్తుతం Unsattaiని చేరుకోలేకపోతున్నాం. మీ కనెక్షన్ చూసి మళ్ళీ ప్రయత్నించండి.',
   errAuthWeb: 'అనుమతి లేదు: {detail}',
   notFoundTitle: 'పేజీ కనబడలేదు',
   notFoundText: 'ఈ పేజీ లేదు లేదా వేరే చోటికి మారింది.',
@@ -274,7 +274,7 @@ const web: WebStrings = {
   tstatus_resolved: 'పరిష్కారమైంది',
   tstatus_closed: 'మూసివేయబడింది',
   accYou: 'మీరు',
-  accTeam: 'UrJersey బృందం',
+  accTeam: 'Unsattai బృందం',
   accTicketClosed: 'ఈ అభ్యర్థన మూసివేయబడింది. ఇంకా సహాయం కావాలంటే కొత్త అభ్యర్థన మొదలుపెట్టండి.',
   accReply: 'జవాబు',
   accSendReply: 'జవాబు పంపండి',

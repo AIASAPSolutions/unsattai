@@ -30,7 +30,7 @@ export const useLocation = create<LocationState>()(
       setPlace: (place) => set({ place }),
       clear: () => set({ pincode: null, place: null }),
     }),
-    { name: 'urjersey.location', storage: safeStorage, version: 1, partialize: (s) => ({ pincode: s.pincode, place: s.place }) },
+    { name: 'unsattai.location', storage: safeStorage, version: 1, partialize: (s) => ({ pincode: s.pincode, place: s.place }) },
   ),
 );
 

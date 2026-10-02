@@ -1,4 +1,4 @@
-# How the UrJersey platform works
+# How the Unsattai platform works
 
 This page covers the business logic the three apps share: sellers and delivery by PIN code, prices, order states, production and delivery planning, customer accounts, products and reviews, the CRM, and staff roles. All of it lives in `server/app/platform/`. The full list of endpoints is in `docs/openapi.json`; the marketplace endpoints are explained with examples in `docs/marketplace-api.md`.
 
@@ -66,7 +66,7 @@ awaiting_payment → queued → in_production → ready → dispatched → deliv
                      (any state before dispatch) → cancelled
 ```
 
-- **Placed.** The order gets a number (for example `UJ-00001`), a customer record, a seller, its prices and an estimated delivery date.
+- **Placed.** The order gets a number (for example `US-00001`), a customer record, a seller, its prices and an estimated delivery date.
 - **Paid.** The order is queued, gets its production stages and a promised ship and delivery date from its seller's plan.
 - **Cash on delivery** orders skip payment and go straight to production. The amount is marked collected when the shipment is delivered, or by hand in the operations app; until then the invoice is a proforma. Cash on delivery needs the price book's `cod.enabled`, the seller area's `cod` flag, and a total within `cod.max_order_value`.
 - **Production** ticks off stages in order. The first stage moves the order to `in_production`, the last one to `ready`. A stage can be undone.

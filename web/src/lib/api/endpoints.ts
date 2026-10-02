@@ -142,7 +142,7 @@ async function sessionRoute(path: string, body: unknown): Promise<{ customer: Me
       method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', body: JSON.stringify(body),
     });
   } catch {
-    throw new ApiError('network', 'Can\'t reach UrJersey right now.');
+    throw new ApiError('network', 'Can\'t reach Unsattai right now.');
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw parseErrorBody(res.status, data);

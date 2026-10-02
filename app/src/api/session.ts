@@ -5,7 +5,7 @@ import { Platform } from 'react-native';
 // storage (Keychain / Keystore) and is never written to AsyncStorage or the draft
 // files. Web has no secure store, so there it is kept in memory for this tab only.
 
-const TOKEN_KEY = 'urjersey.session';
+const TOKEN_KEY = 'unsattai.session';
 
 let cached: string | null | undefined;
 let memory: string | null = null;

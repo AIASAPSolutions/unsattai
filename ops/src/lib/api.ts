@@ -1,8 +1,8 @@
-/** HTTP client for the UrJersey API: bearer token for /ops, X-API-Key where configured. */
+/** HTTP client for the Unsattai API: bearer token for /ops, X-API-Key where configured. */
 import { env } from './env';
 import { ApiError, toApiError } from './errors';
 
-const TOKEN_KEY = 'uj-ops-token';
+const TOKEN_KEY = 'unsattai-ops-token';
 let token: string | null = null;
 try { token = sessionStorage.getItem(TOKEN_KEY); } catch { token = null; }
 

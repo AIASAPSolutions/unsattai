@@ -48,5 +48,5 @@ export function useOrder(id: string, load: (id: string) => Promise<Order>) {
 }
 
 export function invoiceUrl(orderId: string): string {
-  return `/api/uj/orders/${encodeURIComponent(orderId)}/invoice`;
+  return `/api/unsattai/orders/${encodeURIComponent(orderId)}/invoice`;
 }

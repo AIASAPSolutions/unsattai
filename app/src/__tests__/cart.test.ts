@@ -68,13 +68,13 @@ describe('cart rules', () => {
   it('groups quoted items by seller with the latest date', () => {
     const q = {
       items: [
-        { index: 0, seller: { id: 'sel_house', name: 'UrJersey' }, delivery_date: '2026-10-05' },
+        { index: 0, seller: { id: 'sel_house', name: 'Unsattai' }, delivery_date: '2026-10-05' },
         { index: 1, seller: { id: 'sel_fast', name: 'Fast Prints' }, delivery_date: '2026-10-03' },
-        { index: 2, seller: { id: 'sel_house', name: 'UrJersey' }, delivery_date: '2026-10-07' },
+        { index: 2, seller: { id: 'sel_house', name: 'Unsattai' }, delivery_date: '2026-10-07' },
       ],
     } as unknown as CartQuote;
     expect(groupBySeller(q)).toEqual([
-      { seller: { id: 'sel_house', name: 'UrJersey' }, deliveryDate: '2026-10-07', indexes: [0, 2] },
+      { seller: { id: 'sel_house', name: 'Unsattai' }, deliveryDate: '2026-10-07', indexes: [0, 2] },
       { seller: { id: 'sel_fast', name: 'Fast Prints' }, deliveryDate: '2026-10-03', indexes: [1] },
     ]);
   });

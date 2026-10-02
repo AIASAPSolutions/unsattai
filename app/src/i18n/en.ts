@@ -1,5 +1,5 @@
 const en = {
-  appName: 'UrJersey',
+  appName: 'Unsattai',
   tagline: 'Design your own kit',
 
   // common
@@ -62,7 +62,7 @@ const en = {
   voiceGuideOn: 'Voice guide on',
   voiceGuideOff: 'Voice guide off',
   language: 'Language',
-  sttUnavailable: 'Speech input needs the UrJersey app build (not Expo Go). Use your keyboard\'s microphone key instead.',
+  sttUnavailable: 'Speech input needs the Unsattai app build (not Expo Go). Use your keyboard\'s microphone key instead.',
   sttNoPermission: 'Microphone permission is off. Turn it on in Settings to speak your brief.',
   sttLanguageMissing: 'Speech recognition for this language is not installed on this device. Try your keyboard\'s microphone key.',
   sttError: 'Speech input stopped: {reason}',
@@ -282,7 +282,7 @@ const en = {
   staffOnly: 'Staff tools are not part of this app.',
 
   // errors
-  errNetwork: 'Can\'t reach the UrJersey server. Check your connection or the server address in Settings.',
+  errNetwork: 'Can\'t reach the Unsattai server. Check your connection or the server address in Settings.',
   errTimeout: 'The server took too long to answer. Try again.',
   errAuth: 'The server needs a valid API key. Add it in Settings.',
   errValidation: 'Something in the request isn\'t valid: {detail}',
@@ -313,7 +313,7 @@ const en = {
   keyRemoved: 'API key removed from this device.',
   // AI edits
   aiLeft: "AI edits left today: {n} of {limit}",
-  aiHint: "Simple edits like colours, patterns and names are instant and free. For anything else, UrJersey's AI helps.",
+  aiHint: "Simple edits like colours, patterns and names are instant and free. For anything else, Unsattai's AI helps.",
   refineByAi: "AI",
   errAiQuota: "You have used today's free AI edits. Simple edits like \"make the collar gold\" still work, and more AI edits unlock tomorrow or after an order.",
   errAiRate: "Too many AI edits in a minute. Wait a moment and try again.",
@@ -321,7 +321,7 @@ const en = {
   // design from a picture
   pictureTitle: "Design from a picture",
   pictureEntryTitle: "Designed it somewhere else?",
-  pictureEntryHint: "Use our prompt in any AI image tool, then upload the picture. UrJersey rebuilds it as a print-ready design you can edit.",
+  pictureEntryHint: "Use our prompt in any AI image tool, then upload the picture. Unsattai rebuilds it as a print-ready design you can edit.",
   pictureEntryCta: "Use a picture",
   promptStep: "1. Get the prompt",
   promptStepHint: "Paste this into any AI image tool, for example ChatGPT, Gemini or Microsoft Designer. It uses the idea, garment and colours from the first screen.",
@@ -595,7 +595,7 @@ const en = {
   signedInAs: "Signed in as {name}",
   signInPrivacy: "We use your number or email only for sign-in and order updates.",
   // Account
-  accountWelcome: "Welcome to UrJersey",
+  accountWelcome: "Welcome to Unsattai",
   accountWelcomeHint: "Sign in to track orders, save addresses and keep your cart and wishlist.",
   signInOrCreate: "Sign in or create account",
   settingsNote: "Language, voice guide, server",
@@ -673,7 +673,7 @@ const en = {
   rstatus_rejected: "Not accepted",
   reason_damaged: "Damaged", reason_wrong_item: "Wrong item", reason_print_quality: "Print quality problem",
   yourReview: "Your review",
-  reviewHidden: "hidden by UrJersey",
+  reviewHidden: "hidden by Unsattai",
   rateOrder: "Rate this order",
   reviewTitle: "Headline",
   reviewBody: "Your review",

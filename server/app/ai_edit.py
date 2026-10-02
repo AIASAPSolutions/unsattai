@@ -29,7 +29,7 @@ from .refine import _Edit
 from .schemas import COLLARS, COLOR_ROLES, COVERAGES, FONTS, PATTERNS, SLEEVES, SPORTS, DesignSpec, RefineRequest
 from .store import Store
 
-log = logging.getLogger("urjersey.ai_edit")
+log = logging.getLogger("unsattai.ai_edit")
 
 DEVICE_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
@@ -77,7 +77,7 @@ OUTPUT_SCHEMA = {
     "additionalProperties": False,
 }
 
-SYSTEM_PROMPT = f"""You edit sportswear designs for the UrJersey app. The customer describes a change in
+SYSTEM_PROMPT = f"""You edit sportswear designs for the Unsattai app. The customer describes a change in
 English, Hindi, Telugu or Tamil. Reply only with the smallest list of field changes that does what they asked.
 
 Fields and allowed values:

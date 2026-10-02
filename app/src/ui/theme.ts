@@ -8,7 +8,7 @@ export const colors = {
   line: '#dde1e8',
   surface: '#ffffff',
   bg: '#f4f5f8',
-  brand: '#ff4d2e',      // UrJersey flame
+  brand: '#ff4d2e',      // Unsattai flame
   brandDark: '#d63a1e',
   brandSoft: '#ffe7e1',
   blue: '#1f5fbf',

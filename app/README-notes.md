@@ -19,13 +19,13 @@ seller ("Fast Prints", PIN codes starting with 600), block PIN code 194101 for t
 seller, and move one order through production to delivered. So start the API with an admin:
 
 ```sh
-cd ../server && DB_PATH=/tmp/uj-app-e2e.db DESIGN_PROVIDER=rule AI_EDITS=off \
-  ADMIN_EMAIL=admin@urjersey.test ADMIN_PASSWORD='Adm1nPassword!' \
+cd ../server && DB_PATH=/tmp/unsattai-app-e2e.db DESIGN_PROVIDER=rule AI_EDITS=off \
+  ADMIN_EMAIL=admin@unsattai.test ADMIN_PASSWORD='Adm1nPassword!' \
   .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
 
-EXPO_OFFLINE=1 EXPO_PUBLIC_API_URL=http://127.0.0.1:8000 npx expo export --platform web --output-dir /tmp/uj-web
-# serve /tmp/uj-web as a single-page app on 8081, then:
-NODE_PATH=$(npm root -g) SHOTS=/tmp/uj-shots node e2e/web-flow.mjs
+EXPO_OFFLINE=1 EXPO_PUBLIC_API_URL=http://127.0.0.1:8000 npx expo export --platform web --output-dir /tmp/unsattai-web
+# serve /tmp/unsattai-web as a single-page app on 8081, then:
+NODE_PATH=$(npm root -g) SHOTS=/tmp/unsattai-shots node e2e/web-flow.mjs
 ```
 
 Optional environment: `API_URL` (default `http://127.0.0.1:8000`), `ADMIN_EMAIL` and

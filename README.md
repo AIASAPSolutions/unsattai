@@ -1,4 +1,4 @@
-# UrJersey
+# Unsattai
 
 Design your own jersey, V-neck or shorts, check it is print-ready, and order it for one player or a whole team. The business runs production, delivery and customers from one operations app.
 
@@ -6,10 +6,10 @@ This repository has four parts that share one API:
 
 | Folder | Who uses it | What it is |
 | --- | --- | --- |
-| `app/` | Customers on a phone | The UrJersey mobile app: Expo SDK 57, React Native 0.86 (New Architecture), TypeScript, Expo Router. iOS and Android; the same code also runs in a browser for testing. |
+| `app/` | Customers on a phone | The Unsattai mobile app: Expo SDK 57, React Native 0.86 (New Architecture), TypeScript, Expo Router. iOS and Android; the same code also runs in a browser for testing. |
 | `web/` | Customers on a computer or phone browser | The web store: Next.js 16 (App Router), React 19, TypeScript. Everything the app does, plus accounts, saved designs, team links where each player adds their own name and size, bulk enquiries, sales quotes, guest tracking and support tickets. |
 | `ops/` | The business | The operations app: React 19, Vite, TypeScript. Dashboard, orders, production planning, dispatch, CRM (customers, leads, quotes, tickets, tasks, reorders), reports, staff and all settings (prices, production, delivery, company, CRM). |
-| `server/` | All three | The UrJersey API (FastAPI, SQLite). The design engine, pricing, order lifecycle, production and delivery planning, customer and staff accounts, and the CRM. |
+| `server/` | All three | The Unsattai API (FastAPI, SQLite). The design engine, pricing, order lifecycle, production and delivery planning, customer and staff accounts, and the CRM. |
 
 How prices, planning, order states and roles work is explained in [docs/platform.md](docs/platform.md). The full API is in `docs/openapi.json`.
 
@@ -71,11 +71,11 @@ Sign in to the operations app with `ADMIN_EMAIL` / `ADMIN_PASSWORD`, then set yo
 ```bash
 cd app
 npm install
-npx expo run:android      # or: npx expo run:ios  (builds the UrJersey development app)
+npx expo run:android      # or: npx expo run:ios  (builds the Unsattai development app)
 npx expo start            # later runs: just start Metro and open the installed app
 ```
 
-Speech input (`expo-speech-recognition`), the 3D preview (`expo-gl`) and image capture need native code, so use the UrJersey development build above (or `npx eas-cli@latest build --profile development`), not Expo Go. `npm run start:go` still opens Expo Go for quick UI work; speech input then explains that it needs the app build and points to the keyboard's microphone key.
+Speech input (`expo-speech-recognition`), the 3D preview (`expo-gl`) and image capture need native code, so use the Unsattai development build above (or `npx eas-cli@latest build --profile development`), not Expo Go. `npm run start:go` still opens Expo Go for quick UI work; speech input then explains that it needs the app build and points to the keyboard's microphone key.
 
 Browser: `npx expo start --web` (or `npm run export:web` for a static build).
 
@@ -109,18 +109,18 @@ The phone is identified by a random install id (`X-Device-Id`), not by anything 
 
 For customers who prefer another AI tool, the first screen has **Use a picture**:
 
-1. **Get the prompt.** UrJersey writes a prompt from the customer's idea, garment and colours, ready to copy or share into any AI image tool. It asks for one flat front view on a plain background, bold shapes and no lettering, which is what recognises best.
+1. **Get the prompt.** Unsattai writes a prompt from the customer's idea, garment and colours, ready to copy or share into any AI image tool. It asks for one flat front view on a plain background, bold shapes and no lettering, which is what recognises best.
 2. **Upload the picture** (PNG or JPEG; the app shrinks it to 1600 px before sending).
 3. **Recognise.** The server finds the garment, measures its real colours from the pixels, and works out the pattern, its direction and where it sits (full, chest band, top, bottom). When AI is on (`AI_EDITS=claude`), the small vision model also looks at the picture; its colour choices are snapped to the measured colours, and it counts as one AI edit. The same picture is recognised again for free. With `AI_EDITS=slm` or `off`, or when the phone has no AI edits left, the pixel analysis is used alone.
 4. **Pick the closest of three** rebuilt designs and edit it like any other: in the editor, by typing, or by voice.
 
-The picture itself is never printed. Pictures from AI tools are small (about 1024-1536 px, far below 150 DPI across a jersey) and contain made-up lettering, so UrJersey rebuilds the design as vector pattern pieces at full print resolution. Lettering seen in the picture is reported but never copied: names and numbers always come from what the customer typed. The rebuilt design goes through the same manufacturing checks and print files as every other design, so what reaches production is checked, not guessed. A rebuild is the closest match from UrJersey's 12 pattern families, not a pixel copy: very detailed artwork (illustrations, photos) comes out simplified. Upload a crest or illustration as a logo instead.
+The picture itself is never printed. Pictures from AI tools are small (about 1024-1536 px, far below 150 DPI across a jersey) and contain made-up lettering, so Unsattai rebuilds the design as vector pattern pieces at full print resolution. Lettering seen in the picture is reported but never copied: names and numbers always come from what the customer typed. The rebuilt design goes through the same manufacturing checks and print files as every other design, so what reaches production is checked, not guessed. A rebuild is the closest match from Unsattai's 12 pattern families, not a pixel copy: very detailed artwork (illustrations, photos) comes out simplified. Upload a crest or illustration as a logo instead.
 
 ## App links
 
-`urjersey://design?prompt=…&garment=jersey|vneck|shorts&team=…&lang=en|hi|te|ta&autostart=1` prefills the brief and, with `autostart=1`, goes straight to "Here is what we understood". Out-of-range values are dropped, and nothing else in a link is read (no server address, no key).
+`unsattai://design?prompt=…&garment=jersey|vneck|shorts&team=…&lang=en|hi|te|ta&autostart=1` prefills the brief and, with `autostart=1`, goes straight to "Here is what we understood". Out-of-range values are dropped, and nothing else in a link is read (no server address, no key).
 
-`urjersey://orders/<order id>` opens an order's status. If `EXPO_PUBLIC_CHECKOUT_URL` is set at build time, unpaid orders show "Continue to checkout", which opens that page with `?order_id=<id>` and nothing else.
+`unsattai://orders/<order id>` opens an order's status. If `EXPO_PUBLIC_CHECKOUT_URL` is set at build time, unpaid orders show "Continue to checkout", which opens that page with `?order_id=<id>` and nothing else.
 
 ## What the app does
 
@@ -159,7 +159,7 @@ cd ../web && npm test && npm run lint && npm run build && npm run e2e   # see we
 cd ../ops && npm test && npm run build && npm run e2e:full               # starts its own API
 ```
 
-Last full run: 119 server tests; mobile app 59 unit tests plus a 13-step browser run; web store 47 unit tests plus a 25-step browser run; operations app 62 unit tests plus an 18-step browser run. All three browser runs used the same API code.
+Latest checked run: 161 server tests; mobile app 125 unit tests plus typecheck and Expo doctor; web store 113 unit tests plus lint, typecheck and production build; operations app 126 unit tests plus typecheck and production build. Browser end-to-end runs were not part of this pass.
 
 ## Platform notes and limits
 

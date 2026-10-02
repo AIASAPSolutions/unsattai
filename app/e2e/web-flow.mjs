@@ -1,4 +1,4 @@
-// End-to-end run of the web build against a local UrJersey API.
+// End-to-end run of the web build against a local Unsattai API.
 //   APP_URL=http://127.0.0.1:8081 API_URL=http://127.0.0.1:8000 node e2e/web-flow.mjs
 // Needs Playwright (npm i -g playwright) and a Chromium it can launch. The API must
 // run with ADMIN_EMAIL / ADMIN_PASSWORD set (defaults below): the run signs in to the
@@ -7,13 +7,14 @@
 // opens the size guide and checks the order's options, fits and measurements via the ops API.
 import { createRequire } from 'module';
 import { mkdirSync } from 'fs';
+import { fileURLToPath } from 'url';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('playwright');
 const APP = process.env.APP_URL ?? 'http://127.0.0.1:8081';
 const OUT = process.env.SHOTS ?? 'e2e/shots';
 const API = (process.env.API_URL ?? 'http://127.0.0.1:8000').replace(/\/$/, '') + '/api/v1';
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? 'admin@urjersey.test';
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? 'admin@unsattai.test';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? 'Adm1nPassword!';
 // A fresh email per run so sign-in always starts as a new account.
 const EMAIL = `e2e.${Date.now().toString(36)}@example.com`;
@@ -523,7 +524,7 @@ try {
     if (!/No text, no letters/.test(prompt)) throw new Error(`unexpected prompt: ${prompt.slice(0, 80)}`);
     const chooser = page.waitForEvent('filechooser');
     await id('choose-picture').click();
-    await (await chooser).setFiles(new URL('./fixtures/hoops-jersey.png', import.meta.url).pathname);
+    await (await chooser).setFiles(fileURLToPath(new URL('./fixtures/hoops-jersey.png', import.meta.url)));
     await id('picked-picture').waitFor({ timeout: 15000 });
     await id('recognise').click();
     await id('picture-result').waitFor({ timeout: 30000 });

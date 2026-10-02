@@ -1,9 +1,9 @@
-// Pure helpers for the server-side API proxy (src/app/api/uj/[...path]/route.ts).
+// Pure helpers for the server-side API proxy (src/app/api/unsattai/[...path]/route.ts).
 // Kept free of Next.js imports so they can be unit tested.
 
-export const SESSION_COOKIE = 'uj_session';
-export const DEVICE_COOKIE = 'uj_device';
-export const LANG_COOKIE = 'uj_lang';
+export const SESSION_COOKIE = 'unsattai_session';
+export const DEVICE_COOKIE = 'unsattai_device';
+export const LANG_COOKIE = 'unsattai_lang';
 
 const DEVICE_RE = /^[A-Za-z0-9_-]{8,64}$/;
 const SEGMENT_RE = /^[A-Za-z0-9._~@:=,+-]+$/;
@@ -124,7 +124,11 @@ export function isValidDeviceId(v: string | undefined): v is string {
 }
 
 export function apiBase(env: Record<string, string | undefined> = process.env): string {
-  return (env.UJ_API_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '');
+  return (env.UNSATTAI_API_URL || 'http://127.0.0.1:8000').replace(/\/+$/, '');
+}
+
+export function apiKey(env: Record<string, string | undefined> = process.env): string | undefined {
+  return env.UNSATTAI_API_KEY || undefined;
 }
 
 /**

@@ -1,4 +1,4 @@
-# Hosting UrJersey on one server
+# Hosting Unsattai on one server
 
 This guide puts the whole product on one small Linux server:
 
@@ -104,26 +104,26 @@ echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 
 ## 5. Put the code on the server
 
-There is no GitHub repository yet, so the code travels as the git bundle `urjersey.bundle`. From your computer:
+There is no GitHub repository yet, so the code travels as the git bundle `unsattai.bundle`. From your computer:
 
 ```bash
-scp urjersey.bundle ubuntu@<server IP>:~
+scp unsattai.bundle ubuntu@<server IP>:~
 ```
 
 Then on the server:
 
 ```bash
-sudo mkdir -p /opt/urjersey && sudo chown $USER /opt/urjersey
-git clone ~/urjersey.bundle /opt/urjersey
-cd /opt/urjersey
+sudo mkdir -p /opt/unsattai && sudo chown $USER /opt/unsattai
+git clone ~/unsattai.bundle /opt/unsattai
+cd /opt/unsattai
 ```
 
-**Once a GitHub repository exists** (recommended), clone it instead with `git clone https://github.com/<you>/urjersey.git /opt/urjersey`. Upgrades then become a `git pull` (step 10).
+**Once a GitHub repository exists** (recommended), clone it instead with `git clone https://github.com/<you>/unsattai.git /opt/unsattai`. Upgrades then become a `git pull` (step 10).
 
 ## 6. Settings (`.env`)
 
 ```bash
-cd /opt/urjersey/deploy
+cd /opt/unsattai/deploy
 cp .env.example .env
 nano .env
 ```
@@ -143,7 +143,7 @@ Everything else can stay as it is. Every setting is explained in [configuration.
 ## 7. Start everything
 
 ```bash
-cd /opt/urjersey/deploy
+cd /opt/unsattai/deploy
 docker compose up -d --build
 ```
 
@@ -157,14 +157,14 @@ curl https://api.yourdomain/api/v1/health  # {"status":"ok",...}
 
 Open `https://shop.yourdomain` and `https://ops.yourdomain` in a browser.
 
-**Data survives restarts.** The containers restart by themselves after a crash or a server reboot, and the database lives in the Docker volume `urjersey_api-data`. `docker compose down` keeps it; **never run `docker compose down -v`**, which deletes it.
+**Data survives restarts.** The containers restart by themselves after a crash or a server reboot, and the database lives in the Docker volume `unsattai_api-data`. `docker compose down` keeps it; **never run `docker compose down -v`**, which deletes it.
 
 ## 8. First sign-in and setup in the operations app
 
 1. Go to `https://ops.yourdomain` and sign in with `ADMIN_EMAIL` and `ADMIN_PASSWORD`. Change the password at once on the **Account** page.
 2. **Settings:** set prices, fabrics, delivery zones and charges, cash on delivery (fee and maximum order value), coupons and offers, and production stages and capacity.
 3. **Sellers:**
-   - Edit the company's own unit (`UrJersey`): its address, GSTIN, delivery areas and holidays.
+   - Edit the company's own unit (`Unsattai`): its address, GSTIN, delivery areas and holidays.
    - Add partner sellers with their PIN code coverage, and use the PIN code test to check them.
    - Give each seller a staff login with the **seller** role, so they see only their own orders.
 4. **Staff:** add the rest of the team with the right roles.
@@ -179,7 +179,7 @@ Sending is built into the API. Pick a service for each channel in `deploy/.env`,
 
 ```
 EMAIL_PROVIDER=smtp
-EMAIL_FROM=UrJersey <no-reply@yourdomain>
+EMAIL_FROM=Unsattai <no-reply@yourdomain>
 SMTP_HOST=smtp-relay.brevo.com
 SMTP_PORT=587
 SMTP_SECURITY=starttls
@@ -223,9 +223,9 @@ MSG91_SENDER_ID=...
 To upgrade to a new version of the code:
 
 ```bash
-cd /opt/urjersey/deploy
+cd /opt/unsattai/deploy
 ./backup.sh                     # 1. always back up first
-git pull                        # 2. new code (or: git pull ~/urjersey.bundle main, after copying a new bundle)
+git pull                        # 2. new code (or: git pull ~/unsattai.bundle main, after copying a new bundle)
 docker compose up -d --build    # 3. rebuild and restart; the schema upgrades on start
 docker compose ps && curl -s https://api.yourdomain/api/v1/health
 ```
@@ -245,14 +245,14 @@ It checks that the file isn't damaged, saves the current database as `backups/be
 
 ## 11. Backups
 
-`deploy/backup.sh` makes a safe copy while the apps keep running. It writes it to `deploy/backups/urjersey-<time>.db.gz` and keeps the last 14.
+`deploy/backup.sh` makes a safe copy while the apps keep running. It writes it to `deploy/backups/unsattai-<time>.db.gz` and keeps the last 14.
 
 Run it every night at 02:30 with cron:
 
 ```bash
 crontab -e
 # add this line:
-30 2 * * * /opt/urjersey/deploy/backup.sh >> /opt/urjersey/deploy/backups/backup.log 2>&1
+30 2 * * * /opt/unsattai/deploy/backup.sh >> /opt/unsattai/deploy/backups/backup.log 2>&1
 ```
 
 **Copy the backups off the server.** A backup that lives only on the same machine is lost with it. The free option is Cloudflare R2 (10 GB free) with rclone:
@@ -261,10 +261,10 @@ crontab -e
 sudo apt -y install rclone
 rclone config            # add a remote named "r2": type s3, provider Cloudflare, with your R2 keys
 # then add this line to crontab, after the backup:
-45 2 * * * rclone copy /opt/urjersey/deploy/backups r2:urjersey-backups --include "*.gz"
+45 2 * * * rclone copy /opt/unsattai/deploy/backups r2:unsattai-backups --include "*.gz"
 ```
 
-Restore any backup with `./restore.sh backups/urjersey-YYYYMMDD-HHMMSS.db.gz`. Try a restore once after launch so you know it works.
+Restore any backup with `./restore.sh backups/unsattai-YYYYMMDD-HHMMSS.db.gz`. Try a restore once after launch so you know it works.
 
 Also keep `deploy/.env` somewhere safe. The HTTPS certificates are renewed automatically and don't need a backup.
 
@@ -288,10 +288,23 @@ The URL is not a secret. No API key is put into the app.
 
 The operations app and the web store are already built by `docker compose` with the right addresses. Nothing extra is needed for them.
 
-## 13. Everyday commands
+## 13. Go-live checklist
+
+Use this list before sharing the site with customers:
+
+- **Domain and HTTPS:** `shop`, `api` and `ops` DNS records point to the server, and `curl https://api.yourdomain/api/v1/health` returns `{"status":"ok"}`.
+- **Production secrets:** `deploy/.env` has a strong `ADMIN_PASSWORD`, `BRAND_NAME=Unsattai`, a private `API_KEYS` value when you want channel keys, and `API_KEY_WEB` set to one of those keys.
+- **Customer messages:** at least one real code channel is enabled (`EMAIL_PROVIDER=smtp|resend|webhook` or `SMS_PROVIDER=msg91|twilio|webhook`). `SMS_PROVIDER=log` and `EMAIL_PROVIDER=log` are only for private testing.
+- **Payments:** leave `DEMO_PAYMENTS` empty for launch unless this is a closed pilot. Connect Razorpay, Cashfree or your payment provider before taking prepaid online payments.
+- **Backups:** run `./backup.sh`, restore once with `./restore.sh`, and copy nightly backups off the server with rclone or another remote backup.
+- **Operations setup:** sign in to `ops`, change the first admin password, set company details, GSTIN, prices, delivery zones, seller coverage, products, COD limits and staff roles.
+- **Smoke tests:** place one test order from the web store, verify it appears in ops, send a test email/SMS from **Messages**, download an invoice, then cancel or mark the test order clearly.
+- **Monitoring:** add uptime checks for `https://api.yourdomain/api/v1/health`, `https://shop.yourdomain` and `https://ops.yourdomain`.
+
+## 14. Everyday commands
 
 ```bash
-cd /opt/urjersey/deploy
+cd /opt/unsattai/deploy
 docker compose ps                      # status
 docker compose logs -f api             # live API log (also web, caddy)
 docker compose restart api             # restart one app
@@ -304,7 +317,7 @@ docker image prune -f                  # remove old images after upgrades
 
 **Operating system updates:** run `sudo apt update && sudo apt -y upgrade` monthly, then reboot. The apps come back by themselves.
 
-## 14. Security checklist
+## 15. Security checklist
 
 - A long `ADMIN_PASSWORD`, changed after the first sign-in. The stack runs with `APP_ENV=production`, so sign-in codes are never shown in API answers.
 - `deploy/.env` holds your keys. It is readable only by you (`chmod 600 deploy/.env`) and is never committed.
@@ -314,7 +327,7 @@ docker image prune -f                  # remove old images after upgrades
 - Optional: set up SSH key sign-in only (`PasswordAuthentication no` in `/etc/ssh/sshd_config`) and install `fail2ban`.
 - Payments are still in demo mode. Connecting a real payment gateway, for example Razorpay, is a separate step before taking real money.
 
-## 15. When you outgrow one server
+## 16. When you outgrow one server
 
 One server comfortably handles a small business: thousands of orders a month. SQLite with one API process is simple and fast at that size.
 

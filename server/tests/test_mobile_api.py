@@ -1,4 +1,4 @@
-"""API contract the UrJersey app relies on: understanding, layers, refinement, logos and orders."""
+"""API contract the Unsattai app relies on: understanding, layers, refinement, logos and orders."""
 import base64
 import sys
 from pathlib import Path

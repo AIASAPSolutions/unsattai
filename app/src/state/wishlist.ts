@@ -76,6 +76,6 @@ export const useWishlist = create<WishlistState>()(
         signOut: () => set({ ids: [], products: {}, remote: false, error: null }),
       };
     },
-    { name: 'urjersey.wishlist', storage: safeStorage, version: 1, partialize: (s) => (s.remote ? {} : { ids: s.ids, products: s.products }) },
+    { name: 'unsattai.wishlist', storage: safeStorage, version: 1, partialize: (s) => (s.remote ? {} : { ids: s.ids, products: s.products }) },
   ),
 );

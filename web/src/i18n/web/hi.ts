@@ -65,7 +65,7 @@ const web: WebStrings = {
 
   // generic
   signInNeeded: 'आगे बढ़ने के लिए साइन इन करें।',
-  errNetworkWeb: 'अभी UrJersey से संपर्क नहीं हो पा रहा। अपना कनेक्शन जाँचें और फिर कोशिश करें।',
+  errNetworkWeb: 'अभी Unsattai से संपर्क नहीं हो पा रहा। अपना कनेक्शन जाँचें और फिर कोशिश करें।',
   errAuthWeb: 'अनुमति नहीं है: {detail}',
   notFoundTitle: 'पेज नहीं मिला',
   notFoundText: 'यह पेज मौजूद नहीं है या कहीं और चला गया है।',
@@ -274,7 +274,7 @@ const web: WebStrings = {
   tstatus_resolved: 'हल हो गया',
   tstatus_closed: 'बंद',
   accYou: 'आप',
-  accTeam: 'UrJersey टीम',
+  accTeam: 'Unsattai टीम',
   accTicketClosed: 'यह अनुरोध बंद है। और मदद चाहिए तो नया अनुरोध शुरू करें।',
   accReply: 'जवाब',
   accSendReply: 'जवाब भेजें',

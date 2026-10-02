@@ -94,13 +94,13 @@ DELIVERY = {
 }
 
 COMPANY = {
-    "name": "UrJersey",
+    "name": "Unsattai",
     "legal_name": "",
     "tax_id": "",
     "email": "",
     "phone": "",
     "address": "",
-    "invoice_prefix": "UJ",
+    "invoice_prefix": "US",
     "quote_valid_days": 14,
     "support_hours": "Mon-Sat 9:30-18:30",
 }

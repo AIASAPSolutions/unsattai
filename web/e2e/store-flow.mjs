@@ -1,22 +1,40 @@
-// End-to-end walk through the UrJersey web store with Playwright (Chromium).
+// End-to-end walk through the Unsattai web store with Playwright (Chromium).
 //
-//   npm run e2e            (NODE_PATH=$(npm root -g) so the global playwright is found)
+//   npm run e2e
 //
 // Needs the store running (WEB_URL, default http://127.0.0.1:3100) against an API
 // with its own database (API_URL, default http://127.0.0.1:8100) and the admin user
 // from ADMIN_EMAIL / ADMIN_PASSWORD (sellers, shipping and the sales quote go
 // through the ops API as that admin). Screenshots go to e2e/shots/.
 import { mkdirSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
-const { chromium } = require('playwright');
+function requirePackage(name) {
+  try {
+    return require(name);
+  } catch (error) {
+    if (!process.env.NODE_PATH) {
+      const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+      process.env.NODE_PATH = execFileSync(npm, ['root', '-g'], { encoding: 'utf8' }).trim();
+      require('node:module')._initPaths();
+    }
+    try {
+      return require(name);
+    } catch {
+      throw error;
+    }
+  }
+}
+const { chromium } = requirePackage('playwright');
 
 const WEB = process.env.WEB_URL || 'http://127.0.0.1:3100';
 const API = process.env.API_URL || 'http://127.0.0.1:8100';
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@urjersey.test';
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@unsattai.test';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'Adm1nPassword!';
-const SHOTS = new URL('./shots/', import.meta.url).pathname;
+const SHOTS = fileURLToPath(new URL('./shots/', import.meta.url));
 mkdirSync(SHOTS, { recursive: true });
 
 const run = Date.now().toString().slice(-5);
@@ -99,9 +117,9 @@ async function main() {
     await page.locator(tid('garment-card-jersey')).waitFor();
     const card = await page.locator(tid('garment-card-jersey')).innerText();
     assert(/₹/.test(card), `price on jersey card: ${card}`);
-    assert(await page.locator('footer').innerText().then((t) => /UrJersey/.test(t)), 'footer brand');
+    assert(await page.locator('footer').innerText().then((t) => /Unsattai/.test(t)), 'footer brand');
     const title = await page.title();
-    assert(/UrJersey/.test(title), 'page title');
+    assert(/Unsattai/.test(title), 'page title');
     const desc = await page.locator('meta[name="description"]').getAttribute('content');
     assert(desc && desc.length > 40, 'meta description');
     await shot('01-landing');
@@ -227,7 +245,7 @@ async function main() {
     await page.locator(tid('offer-list')).waitFor();
     assert(await page.locator(`${tid('offer-list')} li`).count() === 2, 'two sellers deliver to 600001');
     await page.click(tid('offer-sel_house'));
-    await page.waitForFunction(() => /Sold by UrJersey/.test(document.querySelector('[data-testid="product-delivery"]')?.textContent || ''), null, { timeout: 10_000 });
+    await page.waitForFunction(() => /Sold by Unsattai/.test(document.querySelector('[data-testid="product-delivery"]')?.textContent || ''), null, { timeout: 10_000 });
     // A colourway other than the original, with long sleeves: the picture follows both.
     await page.click(tid('colourway-midnight-volt'));
     await page.click(tid('product-opt-sleeves-long'));
@@ -482,12 +500,12 @@ async function main() {
     assert(/Midnight Volt/.test(ready) && /Long sleeves/.test(ready), `ready-made options in the cart: ${ready}`);
     const custom = rows.find((x) => /7 pieces/.test(x));
     assert(/Sleeveless/.test(custom) && /Polo/.test(custom) && /Kids/.test(custom) && /Women/.test(custom), `custom options and fits in the cart: ${custom}`);
-    await page.waitForFunction(() => /Sold by UrJersey/.test(document.body.textContent || '') && /Sold by Chennai Quick Prints/.test(document.body.textContent || ''), null, { timeout: 15_000 });
+    await page.waitForFunction(() => /Sold by Unsattai/.test(document.body.textContent || '') && /Sold by Chennai Quick Prints/.test(document.body.textContent || ''), null, { timeout: 15_000 });
     await page.locator(tid('cart-totals-total')).waitFor({ timeout: 15_000 });
     // The server's cart quote: one delivery charge per seller, summed in the totals.
     const [req, same] = await page.evaluate(async () => {
-      const cart = await (await fetch('/api/uj/me/cart')).json();
-      const quote = async (items) => (await fetch('/api/uj/shop/cart/quote', {
+      const cart = await (await fetch('/api/unsattai/me/cart')).json();
+      const quote = async (items) => (await fetch('/api/unsattai/shop/cart/quote', {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ items, delivery: { method: 'ship', pincode: '600001', state: '' }, coupon: '', rush: false, payment_method: 'online' }),
       })).json();
@@ -542,7 +560,7 @@ async function main() {
   let checkoutId = '';
   let productOrderId = '';
   await step('place order online, demo payment and confirmation with invoice', async () => {
-    const req = page.waitForRequest((r) => r.url().endsWith('/api/uj/checkout') && r.method() === 'POST');
+    const req = page.waitForRequest((r) => r.url().endsWith('/api/unsattai/checkout') && r.method() === 'POST');
     await page.click(tid('place-order'));
     checkoutRequest = (await req).postDataJSON();
     assert(checkoutRequest.channel === 'web' && checkoutRequest.payment_method === 'online' && checkoutRequest.items.length === 2, 'web checkout of two items');
@@ -560,11 +578,11 @@ async function main() {
     await page.waitForURL(/\/checkout\/[^/]+(\?.*)?$/, { timeout: 30_000 });
     await page.locator(tid('checkout-number')).waitFor();
     assert(await page.locator('[data-testid^="checkout-order-ord"]').count() === 2, 'one order per item');
-    const ck = await page.evaluate(async (id) => (await fetch(`/api/uj/checkouts/${id}`)).json(), checkoutId);
+    const ck = await page.evaluate(async (id) => (await fetch(`/api/unsattai/checkouts/${id}`)).json(), checkoutId);
     assert(ck.status === 'paid', `checkout paid: ${ck.status}`);
     orderId = ck.orders.find((o) => !o.product_id).id;
     productOrderId = ck.orders.find((o) => o.product_id).id;
-    const [designOrder, productOrder] = await page.evaluate(async (ids) => Promise.all(ids.map(async (id) => (await fetch(`/api/uj/orders/${encodeURIComponent(id)}`)).json())), [orderId, productOrderId]);
+    const [designOrder, productOrder] = await page.evaluate(async (ids) => Promise.all(ids.map(async (id) => (await fetch(`/api/unsattai/orders/${encodeURIComponent(id)}`)).json())), [orderId, productOrderId]);
     const lineFits = (o) => (o.items ?? o.lines ?? []).map((l) => `${l.fit ?? 'men'}:${l.size}`);
     assert(lineFits(designOrder).includes('women:S') && lineFits(designOrder).includes('kids:10Y'), `order lines keep their fits: ${lineFits(designOrder)}`);
     assert(designOrder.options?.sleeves === 'none' && designOrder.options?.collar === 'polo', `design order options: ${JSON.stringify(designOrder.options)}`);
@@ -585,13 +603,13 @@ async function main() {
   await step('same checkout key is not placed twice; staff API not exposed', async () => {
     // Replaying the exact checkout request with its idempotency key returns the same checkout.
     const again = await page.evaluate(async (body) => {
-      const r = await fetch('/api/uj/checkout', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      const r = await fetch('/api/unsattai/checkout', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
       return { status: r.status, data: await r.json() };
     }, checkoutRequest);
     assert(again.status === 200 && again.data.id === checkoutId && again.data.duplicate === true, `idempotent replay: ${again.status} ${again.data.id}`);
-    const blocked = await page.request.get(`${WEB}/api/uj/ops/orders`);
+    const blocked = await page.request.get(`${WEB}/api/unsattai/ops/orders`);
     assert(blocked.status() === 404 || blocked.status() === 403, `ops API not exposed: ${blocked.status()}`);
-    const verify = await page.request.post(`${WEB}/api/uj/auth/login`, { data: { identifier: ORGANISER, password: 'x' }, headers: { origin: WEB } });
+    const verify = await page.request.post(`${WEB}/api/unsattai/auth/login`, { data: { identifier: ORGANISER, password: 'x' }, headers: { origin: WEB } });
     assert(verify.status() === 404 || verify.status() === 403, `password login only through the session route: ${verify.status()}`);
   });
 
@@ -1064,7 +1082,7 @@ async function main() {
     const off = await browser.newContext({ viewport: { width: 1360, height: 900 } });
     const o = await off.newPage();
     o.on('pageerror', (e) => consoleErrors.push(`${o.url()}: ${e}`));
-    await o.route('**/api/uj/health', async (route) => {
+    await o.route('**/api/unsattai/health', async (route) => {
       const res = await route.fetch();
       await route.fulfill({ response: res, json: { ...(await res.json()), demo_payments: false } });
     });
@@ -1088,7 +1106,7 @@ async function main() {
     // Once the price is known, cash on delivery is chosen for the customer.
     await o.waitForFunction(() => document.querySelector('[data-testid="pay-cod"] input')?.checked === true, null, { timeout: 15_000 });
     await shot('26-checkout-demo-off', o);
-    const req = o.waitForRequest((r) => r.url().endsWith('/api/uj/checkout') && r.method() === 'POST');
+    const req = o.waitForRequest((r) => r.url().endsWith('/api/unsattai/checkout') && r.method() === 'POST');
     await o.click(tid('place-order'));
     const body = (await req).postDataJSON();
     assert(body.payment_method === 'cod' && body.items[0].lines[0].fit === 'women', `COD order with the women fit: ${body.payment_method}`);

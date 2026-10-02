@@ -1,6 +1,6 @@
-# Where to host UrJersey
+# Where to host Unsattai
 
-UrJersey has three parts that run all the time: the **API** (with its database), the **web store** and the **operations app**. The mobile app is published through the Play Store and App Store and talks to the API. All of them only need to reach the API's address, so they can live together on one machine or apart.
+Unsattai has three parts that run all the time: the **API** (with its database), the **web store** and the **operations app**. The mobile app is published through the Play Store and App Store and talks to the API. All of them only need to reach the API's address, so they can live together on one machine or apart.
 
 The API keeps its data in one SQLite file. Two rules follow from that, wherever you host:
 
@@ -49,15 +49,15 @@ Each part is deployed separately from the GitHub repository:
 
 | Part | How | Settings |
 |---|---|---|
-| API | Docker service from `server/Dockerfile` (root directory `server`) | A volume mounted at `/data`, one instance, and the API variables from [configuration.md](configuration.md), including `APP_ENV=production`, `DB_PATH=/data/urjersey.db`, `CORS_ORIGINS` and `PUBLIC_SHOP_URL`. Health check path: `/api/v1/health`. |
-| Web store | Docker service from `web/Dockerfile` (root directory `web`) | `UJ_API_URL` (the platform's private address for the API if it has one, else `https://api.yourdomain`) and `NEXT_PUBLIC_SITE_URL` |
+| API | Docker service from `server/Dockerfile` (root directory `server`) | A volume mounted at `/data`, one instance, and the API variables from [configuration.md](configuration.md), including `APP_ENV=production`, `DB_PATH=/data/unsattai.db`, `CORS_ORIGINS` and `PUBLIC_SHOP_URL`. Health check path: `/api/v1/health`. |
+| Web store | Docker service from `web/Dockerfile` (root directory `web`) | `UNSATTAI_API_URL` (the platform's private address for the API if it has one, else `https://api.yourdomain`) and `NEXT_PUBLIC_SITE_URL` |
 | Operations app | Static site: root directory `ops`, build command `npm ci && npx vite build`, output folder `dist` | `VITE_API_BASE_URL`, `VITE_WEB_STORE_URL`. `ops/public/_redirects` already sends every page to the app. |
 
 Both Dockerfiles listen on the `PORT` the platform gives them.
 
 Then add your three domains (`api.`, `shop.`, `ops.`) in the platform's settings and point DNS where it says. HTTPS is automatic.
 
-| Platform | What it costs for UrJersey | Notes |
+| Platform | What it costs for Unsattai | Notes |
 |---|---|---|
 | **Railway** | Hobby plan $5 a month, which includes $5 of usage. Expect about $10–20 a month for the API and store, plus a volume at about $0.15 per GB a month. | Easiest setup, with private networking between services. The nearest region is Singapore. Usage-based billing, so set a spending limit. |
 | **Render** | Two Starter services at $7 a month each, plus a disk (about $0.25 per GB a month). Static sites are free. About $15–20 a month, more on a paid workspace plan. | Fixed prices. The nearest region is Singapore. Free services sleep and can't have a disk, so the API needs a paid instance. |

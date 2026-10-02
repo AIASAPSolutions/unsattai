@@ -1,20 +1,15 @@
 {
   "expo": {
-    "name": "UrJersey",
-    "slug": "urjersey",
-    "scheme": "urjersey",
+    "name": "Unsattai",
+    "slug": "unsattai",
+    "scheme": "unsattai",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
     "backgroundColor": "#0b1124",
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#0b1124"
-    },
     "ios": {
-      "bundleIdentifier": "com.urjersey.app",
+      "bundleIdentifier": "com.unsattai.app",
       "supportsTablet": true,
       "infoPlist": {
         "NSAppTransportSecurity": {
@@ -23,7 +18,7 @@
       }
     },
     "android": {
-      "package": "com.urjersey.app",
+      "package": "com.unsattai.app",
       "adaptiveIcon": {
         "backgroundColor": "#0b1124",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -31,11 +26,10 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "usesCleartextTraffic": true,
       "intentFilters": [
         {
           "action": "VIEW",
-          "data": [{ "scheme": "urjersey" }],
+          "data": [{ "scheme": "unsattai" }],
           "category": ["BROWSABLE", "DEFAULT"]
         }
       ]
@@ -53,18 +47,26 @@
       "expo-secure-store",
       "expo-sharing",
       [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#0b1124"
+        }
+      ],
+      [
         "expo-image-picker",
         {
-          "photosPermission": "UrJersey needs your photos to add your team logo or a design picture.",
+          "photosPermission": "Unsattai needs your photos to add your team logo or a design picture.",
           "cameraPermission": false,
-          "microphonePermission": "UrJersey uses the microphone so you can describe designs by voice."
+          "microphonePermission": "Unsattai uses the microphone so you can describe designs by voice."
         }
       ],
       [
         "expo-speech-recognition",
         {
-          "microphonePermission": "UrJersey uses the microphone so you can describe designs by voice.",
-          "speechRecognitionPermission": "UrJersey turns your speech into text for design briefs and edits.",
+          "microphonePermission": "Unsattai uses the microphone so you can describe designs by voice.",
+          "speechRecognitionPermission": "Unsattai turns your speech into text for design briefs and edits.",
           "androidSpeechServicePackages": ["com.google.android.googlequicksearchbox"]
         }
       ]

@@ -1,6 +1,6 @@
-# UrJersey on one server: API + web store + operations app behind Caddy (HTTPS).
+# Unsattai on one server: API + web store + operations app behind Caddy (HTTPS).
 # Usage: cp .env.example .env && edit .env && docker compose up -d --build
-name: urjersey
+name: unsattai
 
 services:
   api:
@@ -11,7 +11,7 @@ services:
     env_file: .env
     environment:
       APP_ENV: production
-      DB_PATH: /data/urjersey.db
+      DB_PATH: /data/unsattai.db
       CORS_ORIGINS: https://${OPS_DOMAIN},https://${SHOP_DOMAIN}
       PUBLIC_SHOP_URL: https://${SHOP_DOMAIN}
     volumes:
@@ -26,8 +26,8 @@ services:
         NEXT_PUBLIC_SITE_URL: https://${SHOP_DOMAIN}
     restart: unless-stopped
     environment:
-      UJ_API_URL: http://api:8000          # inside the server network; never leaves the machine
-      UJ_API_KEY: ${API_KEY_WEB:-}
+      UNSATTAI_API_URL: http://api:8000          # inside the server network; never leaves the machine
+      UNSATTAI_API_KEY: ${API_KEY_WEB:-}
     depends_on:
       api:
         condition: service_healthy

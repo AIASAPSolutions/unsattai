@@ -5,7 +5,7 @@ import s from './layout.module.css';
 
 export function Footer({ t, catalogue, demoPayments = true }: { t: T; catalogue: Catalogue | null; demoPayments?: boolean }) {
   const co = catalogue?.company;
-  const name = co?.name || 'UrJersey';
+  const name = co?.name || 'Unsattai';
   return (
     <footer className={s.footer}>
       <div className="container">

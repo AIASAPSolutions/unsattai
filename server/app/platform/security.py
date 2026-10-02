@@ -22,7 +22,7 @@ from fastapi import Depends, Header, HTTPException, Request
 from ..config import env_bool, env_int, is_production
 from .db import PlatformStore, now
 
-log = logging.getLogger("urjersey.auth")
+log = logging.getLogger("unsattai.auth")
 
 ROLES = ("admin", "manager", "sales", "production", "dispatch", "viewer", "seller")
 
@@ -77,7 +77,7 @@ def _sha(token: str) -> str:
 
 
 def device_label(user_agent: str | None) -> str:
-    """A short, human label for a session list: "Chrome on Android", "UrJersey app on iPhone"."""
+    """A short, human label for a session list: "Chrome on Android", "Unsattai app on iPhone"."""
     ua = user_agent or ""
     if not ua:
         return "Unknown device"
@@ -85,8 +85,8 @@ def device_label(user_agent: str | None) -> str:
     os_name = next((name for key, name in (("iphone", "iPhone"), ("ipad", "iPad"), ("android", "Android"),
                                            ("windows", "Windows"), ("mac os", "Mac"), ("macintosh", "Mac"),
                                            ("cros", "Chromebook"), ("linux", "Linux")) if key in low), "")
-    app = next((name for key, name in (("urjersey", "UrJersey app"), ("okhttp", "UrJersey app"), ("dart", "UrJersey app"),
-                                       ("expo", "UrJersey app"), ("edg/", "Edge"), ("opr/", "Opera"),
+    app = next((name for key, name in (("unsattai", "Unsattai app"), ("okhttp", "Unsattai app"), ("dart", "Unsattai app"),
+                                       ("expo", "Unsattai app"), ("edg/", "Edge"), ("opr/", "Opera"),
                                        ("firefox", "Firefox"), ("samsungbrowser", "Samsung Internet"),
                                        ("chrome", "Chrome"), ("safari", "Safari"), ("curl", "curl"),
                                        ("python", "Script"), ("testclient", "Test client")) if key in low), "Browser")

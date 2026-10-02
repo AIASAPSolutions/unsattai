@@ -4,7 +4,7 @@ import { TrackClient } from './TrackClient';
 
 export const metadata: Metadata = {
   title: 'Track your order',
-  description: 'Check the status and delivery date of your UrJersey order with your order number and phone number.',
+  description: 'Check the status and delivery date of your Unsattai order with your order number and phone number.',
   alternates: { canonical: '/track' },
 };
 

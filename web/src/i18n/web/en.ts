@@ -63,7 +63,7 @@ const webEn = {
 
   // generic
   signInNeeded: 'Please sign in to continue.',
-  errNetworkWeb: 'Can\'t reach UrJersey right now. Check your connection and try again.',
+  errNetworkWeb: 'Can\'t reach Unsattai right now. Check your connection and try again.',
   errAuthWeb: 'Not allowed: {detail}',
   notFoundTitle: 'Page not found',
   notFoundText: 'This page doesn\'t exist or has moved.',
@@ -271,7 +271,7 @@ const webEn = {
   tstatus_resolved: 'Resolved',
   tstatus_closed: 'Closed',
   accYou: 'You',
-  accTeam: 'UrJersey team',
+  accTeam: 'Unsattai team',
   accTicketClosed: 'This request is closed. Start a new request if you need more help.',
   accReply: 'Reply',
   accSendReply: 'Send reply',
